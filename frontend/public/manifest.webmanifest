@@ -1,0 +1,15 @@
+{
+  "name": "Lanchonete Shalom",
+  "short_name": "Shalom",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f8f5",
+  "theme_color": "#142F53",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

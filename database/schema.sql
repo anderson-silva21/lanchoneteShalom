@@ -1,0 +1,138 @@
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'cashier')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS products (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  cost_price REAL NOT NULL DEFAULT 0,
+  sale_price REAL NOT NULL DEFAULT 0,
+  stock_quantity REAL NOT NULL DEFAULT 0,
+  min_stock REAL NOT NULL DEFAULT 0,
+  supplier TEXT,
+  internal_code TEXT NOT NULL UNIQUE,
+  unit TEXT NOT NULL DEFAULT 'unidade',
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS combos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  sale_price REAL NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS combo_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  combo_id INTEGER NOT NULL REFERENCES combos(id) ON DELETE CASCADE,
+  product_id INTEGER NOT NULL REFERENCES products(id),
+  quantity REAL NOT NULL DEFAULT 1,
+  UNIQUE (combo_id, product_id)
+);
+
+CREATE TABLE IF NOT EXISTS sales (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  total REAL NOT NULL DEFAULT 0,
+  estimated_profit REAL NOT NULL DEFAULT 0,
+  payment_method TEXT NOT NULL DEFAULT 'dinheiro',
+  notes TEXT,
+  sold_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sale_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+  product_id INTEGER REFERENCES products(id),
+  combo_id INTEGER REFERENCES combos(id),
+  item_name TEXT NOT NULL,
+  quantity REAL NOT NULL,
+  unit_price REAL NOT NULL,
+  unit_cost REAL NOT NULL DEFAULT 0,
+  line_total REAL NOT NULL,
+  line_profit REAL NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS inventory_movements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER NOT NULL REFERENCES products(id),
+  type TEXT NOT NULL CHECK (type IN ('sale', 'purchase', 'adjustment', 'waste')),
+  quantity_change REAL NOT NULL,
+  quantity_before REAL NOT NULL,
+  quantity_after REAL NOT NULL,
+  reference_type TEXT,
+  reference_id INTEGER,
+  notes TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_products_status ON products(active, category, stock_quantity);
+CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(created_at);
+CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
+CREATE INDEX IF NOT EXISTS idx_movements_product_date ON inventory_movements(product_id, created_at);
+
+CREATE TRIGGER IF NOT EXISTS trg_products_updated_at
+AFTER UPDATE ON products
+FOR EACH ROW
+BEGIN
+  UPDATE products SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+END;
+
+CREATE VIEW IF NOT EXISTS v_products_sheet AS
+SELECT
+  id,
+  internal_code AS codigo,
+  name AS produto,
+  category AS categoria,
+  unit AS unidade,
+  cost_price AS custo,
+  sale_price AS preco,
+  stock_quantity AS estoque,
+  min_stock AS estoque_minimo,
+  supplier AS fornecedor,
+  CASE
+    WHEN stock_quantity <= min_stock * 0.5 THEN 'critico'
+    WHEN stock_quantity <= min_stock THEN 'atencao'
+    ELSE 'normal'
+  END AS status_estoque,
+  updated_at AS atualizado_em
+FROM products
+WHERE active = 1;
+
+CREATE VIEW IF NOT EXISTS v_sales_sheet AS
+SELECT
+  s.id AS venda_id,
+  s.created_at AS data_hora,
+  u.name AS operador,
+  s.payment_method AS pagamento,
+  s.total AS faturamento,
+  s.estimated_profit AS lucro_estimado,
+  s.notes AS observacoes
+FROM sales s
+LEFT JOIN users u ON u.id = s.sold_by;
+
+CREATE VIEW IF NOT EXISTS v_movements_sheet AS
+SELECT
+  m.id,
+  m.created_at AS data_hora,
+  p.internal_code AS codigo_produto,
+  p.name AS produto,
+  m.type AS tipo,
+  m.quantity_change AS quantidade,
+  m.quantity_before AS antes,
+  m.quantity_after AS depois,
+  m.notes AS observacoes
+FROM inventory_movements m
+JOIN products p ON p.id = m.product_id;
