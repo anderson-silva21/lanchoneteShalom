@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppShell } from './components/AppShell'
 import { Dashboard } from './components/Dashboard'
 import { LoginScreen } from './components/LoginScreen'
@@ -9,14 +9,20 @@ import { SettingsView } from './components/SettingsView'
 import { SpreadsheetView } from './components/SpreadsheetView'
 import { api, getToken, setToken } from './services/api'
 
+const INACTIVITY_TIMEOUT_MS = 3 * 60 * 1000
+const activityEvents = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'pointerdown']
+
 function App() {
   const [user, setUser] = useState(() => {
     const stored = localStorage.getItem('lanchonete_user')
     return stored ? JSON.parse(stored) : null
   })
   const [activeView, setActiveView] = useState('dashboard')
+  const [productIntent, setProductIntent] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('lanchonete_theme') === 'dark')
+  const inactivityTimerRef = useRef(null)
+  const lastActivityRef = useRef(0)
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode)
@@ -40,14 +46,59 @@ function App() {
     localStorage.setItem('lanchonete_user', JSON.stringify(payload.user))
   }
 
-  function logout() {
+  const logout = useCallback(() => {
+    if (inactivityTimerRef.current) {
+      window.clearTimeout(inactivityTimerRef.current)
+      inactivityTimerRef.current = null
+    }
     setToken('')
     setUser(null)
+    setActiveView('dashboard')
+    setProductIntent(null)
     localStorage.removeItem('lanchonete_user')
-  }
+  }, [])
+
+  useEffect(() => {
+    if (!user) return undefined
+
+    function scheduleLogout() {
+      if (inactivityTimerRef.current) window.clearTimeout(inactivityTimerRef.current)
+
+      const elapsed = Date.now() - lastActivityRef.current
+      const remaining = Math.max(INACTIVITY_TIMEOUT_MS - elapsed, 0)
+      inactivityTimerRef.current = window.setTimeout(() => {
+        logout()
+      }, remaining)
+    }
+
+    function registerActivity() {
+      lastActivityRef.current = Date.now()
+      scheduleLogout()
+    }
+
+    registerActivity()
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, registerActivity, { passive: true })
+    })
+
+    return () => {
+      if (inactivityTimerRef.current) {
+        window.clearTimeout(inactivityTimerRef.current)
+        inactivityTimerRef.current = null
+      }
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, registerActivity)
+      })
+    }
+  }, [logout, user])
 
   function refresh() {
     setRefreshKey((key) => key + 1)
+  }
+
+  function navigateToProducts(intent = {}) {
+    setProductIntent({ ...intent, requestedAt: Date.now() })
+    setActiveView('products')
   }
 
   if (!user) {
@@ -55,9 +106,9 @@ function App() {
   }
 
   const views = {
-    dashboard: <Dashboard refreshKey={refreshKey} />,
+    dashboard: <Dashboard refreshKey={refreshKey} onNavigateToProducts={navigateToProducts} />,
     sales: <SalesTerminal onSaleComplete={refresh} />,
-    products: <ProductManager refreshKey={refreshKey} onChanged={refresh} />,
+    products: <ProductManager refreshKey={refreshKey} onChanged={refresh} intent={productIntent} />,
     sheet: <SpreadsheetView refreshKey={refreshKey} onChanged={refresh} />,
     reports: <ReportsView />,
     settings: <SettingsView user={user} darkMode={darkMode} setDarkMode={setDarkMode} />

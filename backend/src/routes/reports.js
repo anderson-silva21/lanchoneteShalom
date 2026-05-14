@@ -2,6 +2,7 @@ const express = require('express');
 const { db } = require('../db');
 const { authenticate } = require('../middleware/auth');
 const { toCsv, toXlsxBuffer, toPdfStream } = require('../services/exportService');
+const { formatQuantityWithUnit } = require('../utils/unitFormatter');
 
 const router = express.Router();
 
@@ -16,7 +17,22 @@ const reportQueries = {
   },
   movements: {
     title: 'Movimentacao de estoque',
-    query: 'SELECT * FROM v_movements_sheet ORDER BY data_hora DESC'
+    query: `
+      SELECT
+        m.id,
+        m.created_at AS data_hora,
+        p.internal_code AS codigo_produto,
+        p.name AS produto,
+        p.unit AS unidade,
+        m.type AS tipo,
+        m.quantity_change AS quantidade,
+        m.quantity_before AS antes,
+        m.quantity_after AS depois,
+        m.notes AS observacoes
+      FROM inventory_movements m
+      JOIN products p ON p.id = m.product_id
+      ORDER BY m.created_at DESC
+    `
   },
   sale_items: {
     title: 'Itens vendidos',
@@ -24,6 +40,7 @@ const reportQueries = {
       SELECT
         s.created_at AS data_hora,
         si.item_name AS item,
+        COALESCE(p.unit, 'unidade') AS unidade,
         si.quantity AS quantidade,
         si.unit_price AS preco_unitario,
         si.line_total AS faturamento,
@@ -31,10 +48,66 @@ const reportQueries = {
         s.payment_method AS pagamento
       FROM sale_items si
       JOIN sales s ON s.id = si.sale_id
+      LEFT JOIN products p ON p.id = si.product_id
       ORDER BY s.created_at DESC
     `
   }
 };
+
+function formatReportRows(type, rows) {
+  if (type === 'products') {
+    return rows.map((row) => ({
+      id: row.id,
+      codigo: row.codigo,
+      produto: row.produto,
+      categoria: row.categoria,
+      estoque: row.estoque,
+      unidade: row.unidade,
+      estoque_formatado: formatQuantityWithUnit(row.estoque, row.unidade),
+      estoque_minimo: row.estoque_minimo,
+      estoque_minimo_formatado: formatQuantityWithUnit(row.estoque_minimo, row.unidade),
+      custo: row.custo,
+      preco: row.preco,
+      fornecedor: row.fornecedor,
+      status_estoque: row.status_estoque,
+      atualizado_em: row.atualizado_em
+    }));
+  }
+
+  if (type === 'movements') {
+    return rows.map((row) => ({
+      id: row.id,
+      data_hora: row.data_hora,
+      codigo_produto: row.codigo_produto,
+      produto: row.produto,
+      tipo: row.tipo,
+      quantidade: row.quantidade,
+      quantidade_formatada: formatQuantityWithUnit(row.quantidade, row.unidade),
+      unidade: row.unidade,
+      antes: row.antes,
+      antes_formatado: formatQuantityWithUnit(row.antes, row.unidade),
+      depois: row.depois,
+      depois_formatado: formatQuantityWithUnit(row.depois, row.unidade),
+      observacoes: row.observacoes
+    }));
+  }
+
+  if (type === 'sale_items') {
+    return rows.map((row) => ({
+      data_hora: row.data_hora,
+      item: row.item,
+      quantidade: row.quantidade,
+      unidade: row.unidade,
+      quantidade_formatada: formatQuantityWithUnit(row.quantidade, row.unidade),
+      preco_unitario: row.preco_unitario,
+      faturamento: row.faturamento,
+      lucro_estimado: row.lucro_estimado,
+      pagamento: row.pagamento
+    }));
+  }
+
+  return rows;
+}
 
 router.use(authenticate);
 
@@ -46,7 +119,7 @@ router.get('/export', async (req, res, next) => {
 
     if (!report) return res.status(400).json({ message: 'Relatorio invalido.' });
 
-    const rows = db.prepare(report.query).all();
+    const rows = formatReportRows(type, db.prepare(report.query).all());
     const filename = `${type}-${new Date().toISOString().slice(0, 10)}`;
 
     if (format === 'csv') {

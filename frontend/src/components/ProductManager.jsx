@@ -1,7 +1,7 @@
 import { PackagePlus, Save, Search, SlidersHorizontal } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../services/api'
-import { decimal, money } from '../utils/formatters'
+import { formatQuantityWithUnit, money } from '../utils/formatters'
 import { StatusPill } from './StatusPill'
 
 const emptyProduct = {
@@ -16,13 +16,15 @@ const emptyProduct = {
   unit: 'unidade'
 }
 
-export function ProductManager({ refreshKey, onChanged }) {
+export function ProductManager({ refreshKey, onChanged, intent }) {
   const [products, setProducts] = useState([])
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('')
   const [draft, setDraft] = useState(emptyProduct)
   const [adjustment, setAdjustment] = useState({ product_id: '', type: 'purchase', quantity: 1, notes: '' })
   const [message, setMessage] = useState('')
+  const movementFormRef = useRef(null)
+  const movementProductRef = useRef(null)
 
   const loadProducts = useCallback(async () => {
     const rows = await api.products({ status })
@@ -32,6 +34,31 @@ export function ProductManager({ refreshKey, onChanged }) {
   useEffect(() => {
     loadProducts().catch((err) => setMessage(err.message))
   }, [loadProducts, refreshKey])
+
+  useEffect(() => {
+    if (!intent) return
+
+    if (intent.action === 'viewStock') {
+      setQuery('')
+      setStatus(intent.status || 'low')
+      return
+    }
+
+    if (intent.action === 'purchase') {
+      setQuery('')
+      setStatus('')
+      setAdjustment((current) => ({
+        ...current,
+        type: 'purchase',
+        product_id: intent.productId ? String(intent.productId) : current.product_id
+      }))
+
+      window.setTimeout(() => {
+        movementFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        movementProductRef.current?.focus({ preventScroll: true })
+      }, 80)
+    }
+  }, [intent])
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase()
@@ -141,7 +168,7 @@ export function ProductManager({ refreshKey, onChanged }) {
                       <input type="number" className="mission-input w-24 px-2 py-1" value={product.sale_price} onChange={(event) => updateRow(product.id, 'sale_price', Number(event.target.value))} />
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                      {decimal.format(product.stock_quantity)} {product.unit}
+                      {formatQuantityWithUnit(product.stock_quantity, product.unit)}
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
                       <input type="number" className="mission-input w-20 px-2 py-1" value={product.min_stock} onChange={(event) => updateRow(product.id, 'min_stock', Number(event.target.value))} />
@@ -198,14 +225,14 @@ export function ProductManager({ refreshKey, onChanged }) {
             </button>
           </form>
 
-          <form className="mission-panel p-4" onSubmit={createMovement}>
+          <form ref={movementFormRef} className="mission-panel p-4" onSubmit={createMovement}>
             <div className="mb-4 flex items-center gap-2">
               <SlidersHorizontal size={20} />
               <h2 className="font-display text-lg font-semibold">Movimentar estoque</h2>
             </div>
             <label className="text-sm font-medium">
               Produto
-              <select className="mission-input mt-1 w-full px-3 py-2" value={adjustment.product_id} onChange={(event) => setAdjustment({ ...adjustment, product_id: event.target.value })}>
+              <select ref={movementProductRef} className="mission-input mt-1 w-full px-3 py-2" value={adjustment.product_id} onChange={(event) => setAdjustment({ ...adjustment, product_id: event.target.value })}>
                 <option value="">Selecione</option>
                 {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
               </select>

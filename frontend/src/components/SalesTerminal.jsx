@@ -1,7 +1,7 @@
 import { Minus, Plus, ReceiptText, ShoppingCart, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../services/api'
-import { decimal, money } from '../utils/formatters'
+import { formatQuantityWithUnit, money } from '../utils/formatters'
 import { StatusPill } from './StatusPill'
 
 export function SalesTerminal({ onSaleComplete }) {
@@ -115,7 +115,7 @@ export function SalesTerminal({ onSaleComplete }) {
                   </div>
                   <span className="mt-3 block text-2xl font-semibold text-shalom-blue dark:text-shalom-gold">{money.format(product.sale_price)}</span>
                   <span className="mission-muted mt-1 block text-sm">
-                    {decimal.format(product.stock_quantity)} {product.unit}
+                    {formatQuantityWithUnit(product.stock_quantity, product.unit)}
                   </span>
                 </button>
               ))}

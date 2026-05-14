@@ -5,6 +5,18 @@ function money(value) {
   return Number(value || 0);
 }
 
+function localDayRange(date = dayjs()) {
+  const start = dayjs(date).startOf('day');
+  return {
+    start: start.toISOString(),
+    end: start.add(1, 'day').toISOString()
+  };
+}
+
+function localStartDaysAgo(days) {
+  return dayjs().subtract(days, 'day').startOf('day').toISOString();
+}
+
 function fillDailySeries(rows, days = 14) {
   const byDate = new Map(rows.map((row) => [row.date, row]));
   const series = [];
@@ -25,8 +37,9 @@ function fillDailySeries(rows, days = 14) {
 }
 
 function getDashboardAnalytics() {
-  const today = dayjs().format('YYYY-MM-DD');
-  const thirtyDaysAgo = dayjs().subtract(30, 'day').format('YYYY-MM-DD');
+  const todayRange = localDayRange();
+  const thirtyDaysAgo = localStartDaysAgo(30);
+  const thirteenDaysAgo = localStartDaysAgo(13);
 
   const todayStats = db.prepare(`
     SELECT
@@ -35,16 +48,36 @@ function getDashboardAnalytics() {
       COUNT(*) AS sales_count,
       COALESCE(AVG(total), 0) AS average_ticket
     FROM sales
-    WHERE date(created_at) = ?
-  `).get(today);
+    WHERE unixepoch(created_at) >= unixepoch(?)
+      AND unixepoch(created_at) < unixepoch(?)
+  `).get(todayRange.start, todayRange.end);
 
-  const lowStock = db.prepare(`
+  const lowStockProducts = db.prepare(`
     SELECT
-      COUNT(*) AS total,
-      SUM(CASE WHEN stock_quantity <= min_stock * 0.5 THEN 1 ELSE 0 END) AS critical
+      id,
+      name,
+      category,
+      stock_quantity,
+      min_stock,
+      unit,
+      supplier,
+      internal_code,
+      CASE
+        WHEN stock_quantity <= min_stock * 0.5 THEN 'critical'
+        WHEN stock_quantity <= min_stock THEN 'warning'
+        ELSE 'normal'
+      END AS status
     FROM products
     WHERE active = 1 AND stock_quantity <= min_stock
-  `).get();
+    ORDER BY
+      CASE
+        WHEN stock_quantity <= min_stock * 0.5 THEN 0
+        WHEN stock_quantity <= min_stock THEN 1
+        ELSE 2
+      END,
+      stock_quantity ASC,
+      name ASC
+  `).all();
 
   const topProducts = db.prepare(`
     SELECT
@@ -54,7 +87,7 @@ function getDashboardAnalytics() {
       SUM(line_profit) AS profit
     FROM sale_items si
     JOIN sales s ON s.id = si.sale_id
-    WHERE date(s.created_at) >= ?
+    WHERE unixepoch(s.created_at) >= unixepoch(?)
     GROUP BY item_name
     ORDER BY quantity DESC
     LIMIT 6
@@ -67,10 +100,17 @@ function getDashboardAnalytics() {
       p.category,
       p.stock_quantity,
       p.min_stock,
-      COALESCE(SUM(si.quantity), 0) AS sold_quantity
+      COALESCE(sold.quantity, 0) AS sold_quantity
     FROM products p
-    LEFT JOIN sale_items si ON si.product_id = p.id
-    LEFT JOIN sales s ON s.id = si.sale_id AND date(s.created_at) >= ?
+    LEFT JOIN (
+      SELECT
+        si.product_id,
+        SUM(si.quantity) AS quantity
+      FROM sale_items si
+      JOIN sales s ON s.id = si.sale_id
+      WHERE unixepoch(s.created_at) >= unixepoch(?)
+      GROUP BY si.product_id
+    ) sold ON sold.product_id = p.id
     WHERE p.active = 1 AND p.sale_price > 0
     GROUP BY p.id
     ORDER BY sold_quantity ASC, p.stock_quantity DESC
@@ -79,15 +119,15 @@ function getDashboardAnalytics() {
 
   const dailyRows = db.prepare(`
     SELECT
-      date(created_at) AS date,
+      date(created_at, 'localtime') AS date,
       SUM(total) AS revenue,
       SUM(estimated_profit) AS profit,
       COUNT(*) AS sales
     FROM sales
-    WHERE date(created_at) >= date('now', '-13 days')
-    GROUP BY date(created_at)
-    ORDER BY date(created_at)
-  `).all();
+    WHERE unixepoch(created_at) >= unixepoch(?)
+    GROUP BY date(created_at, 'localtime')
+    ORDER BY date(created_at, 'localtime')
+  `).all(thirteenDaysAgo);
 
   const stockConsumption = db.prepare(`
     SELECT
@@ -96,11 +136,12 @@ function getDashboardAnalytics() {
       SUM(ABS(m.quantity_change)) AS quantity
     FROM inventory_movements m
     JOIN products p ON p.id = m.product_id
-    WHERE m.type = 'sale' AND date(m.created_at) >= date('now', '-13 days')
+    WHERE m.type = 'sale'
+      AND unixepoch(m.created_at) >= unixepoch(?)
     GROUP BY p.id
     ORDER BY quantity DESC
     LIMIT 8
-  `).all();
+  `).all(thirteenDaysAgo);
 
   const categoryRevenue = db.prepare(`
     SELECT
@@ -110,7 +151,7 @@ function getDashboardAnalytics() {
     FROM sale_items si
     JOIN sales s ON s.id = si.sale_id
     LEFT JOIN products p ON p.id = si.product_id
-    WHERE date(s.created_at) >= ?
+    WHERE unixepoch(s.created_at) >= unixepoch(?)
     GROUP BY COALESCE(p.category, 'Combos')
     ORDER BY revenue DESC
   `).all(thirtyDaysAgo);
@@ -123,9 +164,13 @@ function getDashboardAnalytics() {
       p.stock_quantity,
       p.min_stock,
       p.unit,
-      COALESCE(ABS(SUM(CASE WHEN date(m.created_at) >= date('now', '-13 days') THEN m.quantity_change ELSE 0 END)) / 14.0, 0) AS avg_daily_usage
+      p.supplier,
+      p.internal_code,
+      COALESCE(ABS(SUM(m.quantity_change)) / 14.0, 0) AS avg_daily_usage
     FROM products p
-    LEFT JOIN inventory_movements m ON m.product_id = p.id AND m.type = 'sale'
+    LEFT JOIN inventory_movements m ON m.product_id = p.id
+      AND m.type = 'sale'
+      AND unixepoch(m.created_at) >= unixepoch(?)
     WHERE p.active = 1
     GROUP BY p.id
     HAVING p.stock_quantity <= p.min_stock OR avg_daily_usage > 0
@@ -136,8 +181,7 @@ function getDashboardAnalytics() {
         ELSE 2
       END,
       p.stock_quantity ASC
-    LIMIT 10
-  `).all().map((item) => {
+  `).all(thirteenDaysAgo).map((item) => {
     const avgDailyUsage = Number(item.avg_daily_usage || 0);
     const daysToOut = avgDailyUsage > 0 ? item.stock_quantity / avgDailyUsage : null;
     const status = item.stock_quantity <= item.min_stock * 0.5
@@ -157,12 +201,12 @@ function getDashboardAnalytics() {
 
   const peakHours = db.prepare(`
     SELECT
-      strftime('%H', created_at) AS hour,
+      strftime('%H', created_at, 'localtime') AS hour,
       COUNT(*) AS sales,
       SUM(total) AS revenue
     FROM sales
-    WHERE date(created_at) >= ?
-    GROUP BY strftime('%H', created_at)
+    WHERE unixepoch(created_at) >= unixepoch(?)
+    GROUP BY strftime('%H', created_at, 'localtime')
     ORDER BY sales DESC
     LIMIT 6
   `).all(thirtyDaysAgo);
@@ -175,11 +219,14 @@ function getDashboardAnalytics() {
       CASE WHEN SUM(line_total) > 0 THEN SUM(line_profit) / SUM(line_total) ELSE 0 END AS margin
     FROM sale_items si
     JOIN sales s ON s.id = si.sale_id
-    WHERE date(s.created_at) >= ?
+    WHERE unixepoch(s.created_at) >= unixepoch(?)
     GROUP BY item_name
     ORDER BY profit DESC
     LIMIT 6
   `).all(thirtyDaysAgo);
+
+  const criticalStockCount = lowStockProducts.filter((item) => item.status === 'critical').length;
+  const purchaseSuggestions = alerts.filter((item) => item.suggested_purchase > 0);
 
   return {
     kpis: {
@@ -187,16 +234,17 @@ function getDashboardAnalytics() {
       estimated_profit_today: money(todayStats.profit),
       sales_today: Number(todayStats.sales_count || 0),
       average_ticket_today: money(todayStats.average_ticket),
-      low_stock_count: Number(lowStock.total || 0),
-      critical_stock_count: Number(lowStock.critical || 0)
+      low_stock_count: lowStockProducts.length,
+      critical_stock_count: criticalStockCount
     },
     top_products: topProducts,
     slow_products: slowProducts,
     sales_by_day: fillDailySeries(dailyRows),
     stock_consumption: stockConsumption,
     category_revenue: categoryRevenue,
-    alerts,
-    purchase_suggestions: alerts.filter((item) => item.suggested_purchase > 0),
+    alerts: alerts.slice(0, 10),
+    low_stock_products: lowStockProducts,
+    purchase_suggestions: purchaseSuggestions,
     peak_hours: peakHours.map((item) => ({
       ...item,
       label: `${item.hour}h`

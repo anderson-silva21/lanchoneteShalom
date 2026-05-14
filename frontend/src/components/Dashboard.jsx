@@ -3,10 +3,13 @@ import {
   Banknote,
   Boxes,
   LineChart,
+  PackagePlus,
   ReceiptText,
-  TrendingUp
+  TrendingUp,
+  X
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Area,
   Bar,
@@ -23,43 +26,152 @@ import {
   YAxis
 } from 'recharts'
 import { api } from '../services/api'
-import { decimal, money } from '../utils/formatters'
+import { decimal, formatQuantityWithUnit, money } from '../utils/formatters'
 import { MetricCard } from './MetricCard'
 import { StatusPill } from './StatusPill'
 
 const chartColors = ['#142F53', '#184E7F', '#FAE088', '#F27C23', '#7A1E2D', '#A8B8C8']
 
-export function Dashboard({ refreshKey }) {
+function formatDays(value) {
+  if (!value && value !== 0) return 'Sem consumo recente'
+  if (value < 1) return 'Menos de 1 dia'
+  return `${decimal.format(value)} dias`
+}
+
+function DashboardModal({ title, description, children, footer, onClose }) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [])
+
+  return createPortal(
+    <div
+      className="dashboard-modal-overlay"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <section
+        className="dashboard-modal-panel mission-panel text-ink shadow-blue dark:text-slate-50"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dashboard-modal-title"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-line/80 p-4 dark:border-shalom-gold/10">
+          <div>
+            <h2 id="dashboard-modal-title" className="font-display text-lg font-semibold sm:text-xl">{title}</h2>
+            {description ? <p className="mission-muted mt-1 text-sm">{description}</p> : null}
+          </div>
+          <button
+            type="button"
+            className="mission-btn border border-line/80 bg-white/70 p-2 text-shalom-deep hover:bg-shalom-cream dark:border-shalom-gold/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+            onClick={onClose}
+            aria-label="Fechar modal"
+            autoFocus
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="dashboard-modal-body scrollbar-thin p-4">
+          {children}
+        </div>
+        {footer ? <div className="border-t border-line/80 p-4 dark:border-shalom-gold/10">{footer}</div> : null}
+      </section>
+    </div>,
+    document.body
+  )
+}
+
+export function Dashboard({ refreshKey, onNavigateToProducts }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [activeModal, setActiveModal] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let mounted = true
+    setLoading(true)
+    setError('')
     api.dashboard()
-      .then((payload) => mounted && setData(payload))
-      .catch((err) => mounted && setError(err.message))
+      .then((payload) => {
+        if (!mounted) return
+        setData(payload)
+      })
+      .catch((err) => {
+        if (!mounted) return
+        setError(err.message)
+      })
+      .finally(() => {
+        if (mounted) setLoading(false)
+      })
     return () => {
       mounted = false
     }
-  }, [refreshKey])
+  }, [refreshKey, reloadKey])
 
-  if (error) {
-    return <div className="mission-panel p-4 text-shalom-wine dark:text-rose-100">{error}</div>
+  useEffect(() => {
+    if (!activeModal) return undefined
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setActiveModal('')
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [activeModal])
+
+  function openProducts(intent) {
+    setActiveModal('')
+    onNavigateToProducts?.(intent)
   }
 
-  if (!data) {
+  if (error) {
+    return (
+      <div className="mission-panel p-4 text-shalom-wine dark:text-rose-100">
+        <p className="font-semibold">Nao foi possivel carregar a dashboard.</p>
+        <p className="mt-1 text-sm">{error}</p>
+        <button type="button" className="mission-btn mission-btn-primary mt-4 px-4 py-2 text-sm font-semibold" onClick={() => setReloadKey((key) => key + 1)}>
+          Tentar novamente
+        </button>
+      </div>
+    )
+  }
+
+  if (loading || !data) {
     return <div className="mission-panel p-6">Carregando dashboard...</div>
   }
 
+  const suggestions = data.purchase_suggestions || []
+  const lowStockProducts = data.low_stock_products || []
+
   return (
     <div className="space-y-5">
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+      <section className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
         <MetricCard icon={Banknote} label="Faturamento hoje" value={money.format(data.kpis.revenue_today)} detail={`${data.kpis.sales_today} vendas`} tone="green" />
         <MetricCard icon={ReceiptText} label="Ticket medio" value={money.format(data.kpis.average_ticket_today)} detail="Media do dia" tone="blue" />
         <MetricCard icon={TrendingUp} label="Lucro estimado" value={money.format(data.kpis.estimated_profit_today)} detail="Baseado em custo" />
-        <MetricCard icon={AlertTriangle} label="Estoque baixo" value={data.kpis.low_stock_count} detail={`${data.kpis.critical_stock_count} criticos`} tone={data.kpis.critical_stock_count ? 'red' : 'amber'} />
+        <MetricCard
+          icon={AlertTriangle}
+          label="Estoque baixo"
+          value={data.kpis.low_stock_count}
+          detail={`${data.kpis.critical_stock_count} criticos`}
+          tone={data.kpis.critical_stock_count ? 'red' : 'amber'}
+          onClick={() => setActiveModal('lowStock')}
+          ariaLabel="Abrir produtos com estoque baixo"
+        />
         <MetricCard icon={LineChart} label="Produtos top" value={data.top_products[0]?.name || '-'} detail={data.top_products[0] ? `${decimal.format(data.top_products[0].quantity)} vendidos` : 'Sem vendas'} />
-        <MetricCard icon={Boxes} label="Sugestoes" value={data.purchase_suggestions.length} detail="Compras indicadas" tone="amber" />
+        <MetricCard
+          icon={Boxes}
+          label="Sugestoes"
+          value={suggestions.length}
+          detail="Compras indicadas"
+          onClick={() => setActiveModal('suggestions')}
+          ariaLabel="Abrir sugestoes de compra"
+        />
       </section>
 
       <section className="grid gap-5 xl:grid-cols-3">
@@ -67,7 +179,7 @@ export function Dashboard({ refreshKey }) {
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <h2 className="font-display text-lg font-semibold">Vendas por periodo</h2>
-              <p className="mission-muted text-sm">Faturamento, lucro e quantidade</p>
+              <p className="mission-muted text-sm">Faturamento e lucro</p>
             </div>
           </div>
           <div className="h-80">
@@ -82,11 +194,10 @@ export function Dashboard({ refreshKey }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="#E7DFCD" />
                 <XAxis dataKey="label" tickLine={false} axisLine={false} />
                 <YAxis tickLine={false} axisLine={false} width={46} />
-                <Tooltip formatter={(value, name) => name === 'sales' ? value : money.format(value)} />
+                <Tooltip formatter={(value) => money.format(value)} />
                 <Legend />
                 <Area type="monotone" name="Faturamento" dataKey="revenue" stroke="#184E7F" fill="url(#revenue)" strokeWidth={2.4} />
                 <Area type="monotone" name="Lucro" dataKey="profit" stroke="#F27C23" fill="#F27C2320" strokeWidth={2.4} />
-                <Bar name="Vendas" dataKey="sales" fill="#FAE088" radius={[5, 5, 0, 0]} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -100,7 +211,7 @@ export function Dashboard({ refreshKey }) {
                 <div>
                   <p className="font-medium">{item.name}</p>
                   <p className="mission-muted text-sm">
-                    {decimal.format(item.stock_quantity)} {item.unit} em estoque
+                    {formatQuantityWithUnit(item.stock_quantity, item.unit)} em estoque
                   </p>
                 </div>
                 <StatusPill status={item.status} />
@@ -190,6 +301,115 @@ export function Dashboard({ refreshKey }) {
           </div>
         </div>
       </section>
+
+      {activeModal === 'suggestions' ? (
+        <DashboardModal
+          title="Sugestoes de compra"
+          description="Itens com reposicao recomendada com base no estoque minimo e no consumo recente."
+          onClose={() => setActiveModal('')}
+          footer={(
+            <button
+              type="button"
+              className="mission-btn mission-btn-gold flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold sm:w-auto"
+              onClick={() => openProducts({ action: 'purchase', productId: suggestions[0]?.id })}
+            >
+              <PackagePlus size={17} />
+              Registrar compra
+            </button>
+          )}
+        >
+          {suggestions.length ? (
+            <div className="space-y-3">
+              {suggestions.map((item) => (
+                <article key={item.id} className="mission-card p-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="font-semibold">{item.name}</p>
+                      <p className="mission-muted text-sm">{item.category}{item.supplier ? ` - ${item.supplier}` : ''}</p>
+                    </div>
+                    <StatusPill status={item.status} />
+                  </div>
+                  <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-4">
+                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                      <dt className="mission-muted">Estoque atual</dt>
+                      <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.stock_quantity, item.unit)}</dd>
+                    </div>
+                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                      <dt className="mission-muted">Minimo</dt>
+                      <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.min_stock, item.unit)}</dd>
+                    </div>
+                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                      <dt className="mission-muted">Uso medio</dt>
+                      <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.avg_daily_usage, item.unit)}/dia</dd>
+                    </div>
+                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                      <dt className="mission-muted">Comprar</dt>
+                      <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.suggested_purchase, item.unit)}</dd>
+                    </div>
+                  </dl>
+                  <p className="mission-muted mt-3 text-sm">Previsao de ruptura: {formatDays(item.days_to_out)}</p>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
+              Nenhuma compra sugerida no momento.
+            </div>
+          )}
+        </DashboardModal>
+      ) : null}
+
+      {activeModal === 'lowStock' ? (
+        <DashboardModal
+          title="Estoque baixo"
+          description="Produtos ativos com quantidade atual abaixo ou igual ao estoque minimo."
+          onClose={() => setActiveModal('')}
+          footer={(
+            <button
+              type="button"
+              className="mission-btn mission-btn-primary flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold sm:w-auto"
+              onClick={() => openProducts({ action: 'viewStock', status: 'low' })}
+            >
+              <Boxes size={17} />
+              Ver estoque
+            </button>
+          )}
+        >
+          {lowStockProducts.length ? (
+            <div className="space-y-3">
+              {lowStockProducts.map((item) => (
+                <article key={item.id} className="mission-card p-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="font-semibold">{item.name}</p>
+                      <p className="mission-muted text-sm">{item.category} - {item.internal_code}</p>
+                    </div>
+                    <StatusPill status={item.status} />
+                  </div>
+                  <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                      <dt className="mission-muted">Atual</dt>
+                      <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.stock_quantity, item.unit)}</dd>
+                    </div>
+                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                      <dt className="mission-muted">Minimo</dt>
+                      <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.min_stock, item.unit)}</dd>
+                    </div>
+                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                      <dt className="mission-muted">Fornecedor</dt>
+                      <dd className="mt-1 font-semibold">{item.supplier || '-'}</dd>
+                    </div>
+                  </dl>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
+              Nenhum produto abaixo do estoque minimo.
+            </div>
+          )}
+        </DashboardModal>
+      ) : null}
     </div>
   )
 }
