@@ -17,6 +17,24 @@ function runSchema() {
   db.exec(fs.readFileSync(schemaPath, 'utf8'));
 }
 
+function tableExists(table) {
+  return Boolean(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table));
+}
+
+function columnExists(table, column) {
+  return db.prepare(`PRAGMA table_info(${table})`).all().some((item) => item.name === column);
+}
+
+function addColumnIfMissing(table, column, definition) {
+  if (!tableExists(table) || columnExists(table, column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+function runMigrations() {
+  addColumnIfMissing('products', 'expiration_date', 'TEXT');
+  addColumnIfMissing('inventory_movements', 'expiration_date', 'TEXT');
+}
+
 function countRows(table) {
   return db.prepare(`SELECT COUNT(*) AS total FROM ${table}`).get().total;
 }
@@ -134,7 +152,9 @@ function seedSalesHistory() {
 }
 
 function initDatabase() {
+  runMigrations();
   runSchema();
+  runMigrations();
   const seed = db.transaction(() => {
     seedUsers();
     seedProducts();

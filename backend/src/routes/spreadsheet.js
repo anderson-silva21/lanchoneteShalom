@@ -35,6 +35,10 @@ const sheets = {
     label: 'Movimentacoes',
     query: 'SELECT * FROM v_movements_sheet ORDER BY data_hora DESC LIMIT 1000'
   },
+  inventarios_evento: {
+    label: 'Inventarios',
+    query: 'SELECT * FROM v_post_event_inventory_sheet ORDER BY registrado_em DESC LIMIT 1000'
+  },
   indicadores: {
     label: 'Indicadores',
     query: `
@@ -74,6 +78,7 @@ router.patch('/produtos/:id', requireRole('admin', 'manager'), (req, res) => {
     estoque: 'stock_quantity',
     estoque_minimo: 'min_stock',
     fornecedor: 'supplier',
+    validade: 'expiration_date',
     codigo: 'internal_code'
   };
 
@@ -88,6 +93,14 @@ router.patch('/produtos/:id', requireRole('admin', 'manager'), (req, res) => {
   });
 
   if (!assignments.length) return res.status(400).json({ message: 'Nenhum campo editavel enviado.' });
+
+  const nonnegativeColumns = ['cost_price', 'sale_price', 'stock_quantity', 'min_stock'];
+  const invalidNumber = nonnegativeColumns.some((column) => params[column] !== undefined && Number(params[column]) < 0);
+  if (invalidNumber) return res.status(400).json({ message: 'Valores numericos nao podem ser negativos.' });
+
+  if (params.expiration_date && !/^\d{4}-\d{2}-\d{2}$/.test(String(params.expiration_date))) {
+    return res.status(400).json({ message: 'Validade invalida.' });
+  }
 
   params.id = Number(req.params.id);
   db.prepare(`UPDATE products SET ${assignments.join(', ')} WHERE id = @id`).run(params);

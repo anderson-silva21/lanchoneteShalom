@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Boxes,
+  ClipboardCheck,
   ClipboardList,
   FileSpreadsheet,
   LogOut,
@@ -15,6 +16,7 @@ const navItems = [
   { key: 'dashboard', label: 'Dashboard', icon: BarChart3 },
   { key: 'sales', label: 'PDV', icon: ReceiptText },
   { key: 'products', label: 'Produtos', icon: Boxes },
+  { key: 'inventory', label: 'Inventario', icon: ClipboardCheck },
   { key: 'sheet', label: 'Planilha', icon: FileSpreadsheet },
   { key: 'reports', label: 'Relatorios', icon: ClipboardList },
   { key: 'settings', label: 'Sistema', icon: Settings }

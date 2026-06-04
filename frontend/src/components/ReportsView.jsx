@@ -1,4 +1,4 @@
-import { Database, Download, FileBarChart, FileSpreadsheet, FileText, Send } from 'lucide-react'
+import { ClipboardCheck, Database, Download, FileBarChart, FileSpreadsheet, FileText, Send } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api } from '../services/api'
 import { formatDateTime } from '../utils/formatters'
@@ -7,7 +7,8 @@ const reports = [
   { type: 'sales', label: 'Vendas', icon: FileBarChart },
   { type: 'sale_items', label: 'Itens vendidos', icon: FileText },
   { type: 'products', label: 'Estoque', icon: FileSpreadsheet },
-  { type: 'movements', label: 'Movimentacoes', icon: Database }
+  { type: 'movements', label: 'Movimentacoes', icon: Database },
+  { type: 'post_event_inventory', label: 'Inventario', icon: ClipboardCheck }
 ]
 
 export function ReportsView() {

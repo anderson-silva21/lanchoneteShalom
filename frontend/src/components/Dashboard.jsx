@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Banknote,
   Boxes,
+  CalendarClock,
   LineChart,
   PackagePlus,
   ReceiptText,
@@ -26,7 +27,7 @@ import {
   YAxis
 } from 'recharts'
 import { api } from '../services/api'
-import { decimal, formatQuantityWithUnit, money } from '../utils/formatters'
+import { decimal, formatDate, formatQuantityWithUnit, money } from '../utils/formatters'
 import { MetricCard } from './MetricCard'
 import { StatusPill } from './StatusPill'
 
@@ -36,6 +37,12 @@ function formatDays(value) {
   if (!value && value !== 0) return 'Sem consumo recente'
   if (value < 1) return 'Menos de 1 dia'
   return `${decimal.format(value)} dias`
+}
+
+function validityLabel(item) {
+  if (item.expiration_status === 'expired') return `Vencido ha ${Math.abs(Number(item.days_to_expire || 0))} dias`
+  if (Number(item.days_to_expire) === 0) return 'Vence hoje'
+  return `Vence em ${decimal.format(item.days_to_expire)} dias`
 }
 
 function DashboardModal({ title, description, children, footer, onClose }) {
@@ -147,10 +154,12 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
 
   const suggestions = data.purchase_suggestions || []
   const lowStockProducts = data.low_stock_products || []
+  const expirationAlerts = data.expiration_alerts || []
+  const missingExpirationProducts = data.missing_expiration_products || []
 
   return (
     <div className="space-y-5">
-      <section className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+      <section className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7">
         <MetricCard icon={Banknote} label="Faturamento hoje" value={money.format(data.kpis.revenue_today)} detail={`${data.kpis.sales_today} vendas`} tone="green" />
         <MetricCard icon={ReceiptText} label="Ticket medio" value={money.format(data.kpis.average_ticket_today)} detail="Media do dia" tone="blue" />
         <MetricCard icon={TrendingUp} label="Lucro estimado" value={money.format(data.kpis.estimated_profit_today)} detail="Baseado em custo" />
@@ -171,6 +180,15 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
           detail="Compras indicadas"
           onClick={() => setActiveModal('suggestions')}
           ariaLabel="Abrir sugestoes de compra"
+        />
+        <MetricCard
+          icon={CalendarClock}
+          label="Validades"
+          value={data.kpis.validity_attention_count}
+          detail={`${data.kpis.expired_count} vencidos`}
+          tone={data.kpis.expired_count ? 'red' : 'amber'}
+          onClick={() => setActiveModal('expiration')}
+          ariaLabel="Abrir alertas de validade"
         />
       </section>
 
@@ -408,6 +426,71 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
               Nenhum produto abaixo do estoque minimo.
             </div>
           )}
+        </DashboardModal>
+      ) : null}
+
+      {activeModal === 'expiration' ? (
+        <DashboardModal
+          title="Alertas de validade"
+          description="Produtos com estoque vencido, proximo do vencimento ou sem validade cadastrada."
+          onClose={() => setActiveModal('')}
+        >
+          {expirationAlerts.length ? (
+            <div className="space-y-3">
+              {expirationAlerts.map((item) => (
+                <article key={item.id} className="mission-card p-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="font-semibold">{item.name}</p>
+                      <p className="mission-muted text-sm">{item.category} - {item.internal_code}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${
+                      item.expiration_status === 'expired'
+                        ? 'bg-shalom-wine/10 text-shalom-wine ring-shalom-wine/25 dark:bg-shalom-wine/25 dark:text-rose-100'
+                        : item.expiration_status === 'critical'
+                          ? 'bg-shalom-orange/15 text-shalom-wine ring-shalom-orange/25 dark:bg-shalom-orange/20 dark:text-shalom-gold'
+                          : 'bg-shalom-gold/35 text-shalom-deep ring-shalom-orange/20 dark:bg-shalom-gold/20 dark:text-shalom-gold'
+                    }`}
+                    >
+                      {validityLabel(item)}
+                    </span>
+                  </div>
+                  <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                      <dt className="mission-muted">Validade</dt>
+                      <dd className="mt-1 font-semibold">{formatDate(item.expiration_date)}</dd>
+                    </div>
+                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                      <dt className="mission-muted">Estoque</dt>
+                      <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.stock_quantity, item.unit)}</dd>
+                    </div>
+                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                      <dt className="mission-muted">Fornecedor</dt>
+                      <dd className="mt-1 font-semibold">{item.supplier || '-'}</dd>
+                    </div>
+                  </dl>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
+              Nenhum produto vencido ou proximo do vencimento.
+            </div>
+          )}
+
+          {missingExpirationProducts.length ? (
+            <div className="mt-4">
+              <h3 className="font-display text-base font-semibold">Sem validade cadastrada</h3>
+              <div className="mt-3 space-y-2">
+                {missingExpirationProducts.map((item) => (
+                  <div key={item.id} className="flex flex-col gap-1 rounded-xl bg-shalom-mist/70 p-3 text-sm dark:bg-white/10 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="font-semibold">{item.name}</span>
+                    <span className="mission-muted">{formatQuantityWithUnit(item.stock_quantity, item.unit)} em estoque</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </DashboardModal>
       ) : null}
     </div>

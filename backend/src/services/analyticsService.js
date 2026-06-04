@@ -62,6 +62,7 @@ function getDashboardAnalytics() {
       unit,
       supplier,
       internal_code,
+      expiration_date,
       CASE
         WHEN stock_quantity <= min_stock * 0.5 THEN 'critical'
         WHEN stock_quantity <= min_stock THEN 'warning'
@@ -77,6 +78,59 @@ function getDashboardAnalytics() {
       END,
       stock_quantity ASC,
       name ASC
+  `).all();
+
+  const expirationAlerts = db.prepare(`
+    SELECT
+      id,
+      name,
+      category,
+      stock_quantity,
+      min_stock,
+      unit,
+      supplier,
+      internal_code,
+      expiration_date,
+      CAST(julianday(date(expiration_date)) - julianday(date('now', 'localtime')) AS INTEGER) AS days_to_expire,
+      CASE
+        WHEN date(expiration_date) < date('now', 'localtime') THEN 'expired'
+        WHEN date(expiration_date) <= date('now', 'localtime', '+7 days') THEN 'critical'
+        ELSE 'warning'
+      END AS expiration_status
+    FROM products
+    WHERE active = 1
+      AND stock_quantity > 0
+      AND expiration_date IS NOT NULL
+      AND expiration_date != ''
+      AND date(expiration_date) <= date('now', 'localtime', '+30 days')
+    ORDER BY date(expiration_date) ASC, name ASC
+  `).all();
+
+  const missingExpirationCount = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM products
+    WHERE active = 1
+      AND stock_quantity > 0
+      AND (expiration_date IS NULL OR expiration_date = '')
+  `).get().total;
+
+  const missingExpirationProducts = db.prepare(`
+    SELECT
+      id,
+      name,
+      category,
+      stock_quantity,
+      min_stock,
+      unit,
+      supplier,
+      internal_code,
+      expiration_date
+    FROM products
+    WHERE active = 1
+      AND stock_quantity > 0
+      AND (expiration_date IS NULL OR expiration_date = '')
+    ORDER BY category, name
+    LIMIT 20
   `).all();
 
   const topProducts = db.prepare(`
@@ -166,6 +220,7 @@ function getDashboardAnalytics() {
       p.unit,
       p.supplier,
       p.internal_code,
+      p.expiration_date,
       COALESCE(ABS(SUM(m.quantity_change)) / 14.0, 0) AS avg_daily_usage
     FROM products p
     LEFT JOIN inventory_movements m ON m.product_id = p.id
@@ -227,6 +282,7 @@ function getDashboardAnalytics() {
 
   const criticalStockCount = lowStockProducts.filter((item) => item.status === 'critical').length;
   const purchaseSuggestions = alerts.filter((item) => item.suggested_purchase > 0);
+  const expiredCount = expirationAlerts.filter((item) => item.expiration_status === 'expired').length;
 
   return {
     kpis: {
@@ -235,7 +291,11 @@ function getDashboardAnalytics() {
       sales_today: Number(todayStats.sales_count || 0),
       average_ticket_today: money(todayStats.average_ticket),
       low_stock_count: lowStockProducts.length,
-      critical_stock_count: criticalStockCount
+      critical_stock_count: criticalStockCount,
+      expiration_alert_count: expirationAlerts.length,
+      expired_count: expiredCount,
+      missing_expiration_count: Number(missingExpirationCount || 0),
+      validity_attention_count: expirationAlerts.length + Number(missingExpirationCount || 0)
     },
     top_products: topProducts,
     slow_products: slowProducts,
@@ -244,6 +304,8 @@ function getDashboardAnalytics() {
     category_revenue: categoryRevenue,
     alerts: alerts.slice(0, 10),
     low_stock_products: lowStockProducts,
+    expiration_alerts: expirationAlerts,
+    missing_expiration_products: missingExpirationProducts,
     purchase_suggestions: purchaseSuggestions,
     peak_hours: peakHours.map((item) => ({
       ...item,
@@ -262,6 +324,7 @@ function getPowerBiDataset() {
     products: db.prepare('SELECT * FROM v_products_sheet ORDER BY produto').all(),
     sales: db.prepare('SELECT * FROM v_sales_sheet ORDER BY data_hora DESC LIMIT 5000').all(),
     movements: db.prepare('SELECT * FROM v_movements_sheet ORDER BY data_hora DESC LIMIT 5000').all(),
+    post_event_inventories: db.prepare('SELECT * FROM v_post_event_inventory_sheet ORDER BY registrado_em DESC LIMIT 5000').all(),
     sales_by_day: analytics.sales_by_day,
     stock_alerts: analytics.alerts,
     top_products: analytics.top_products

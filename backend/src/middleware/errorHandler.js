@@ -29,6 +29,7 @@ function errorHandler(error, req, res, next) {
   };
 
   if (isValidationError) payload.issues = error.issues;
+  if (error.details && status < 500) payload.details = error.details;
 
   if (process.env.NODE_ENV !== 'production' && status === 500) {
     payload.detail = error.message;
@@ -36,7 +37,8 @@ function errorHandler(error, req, res, next) {
 
   logRequestError(error, req, status, {
     responseMessage: payload.message,
-    issues: isValidationError ? error.issues : undefined
+    issues: isValidationError ? error.issues : undefined,
+    details: error.details
   });
 
   return res.status(status).json(payload);

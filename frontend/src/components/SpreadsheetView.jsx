@@ -87,7 +87,7 @@ export function SpreadsheetView({ refreshKey, onChanged }) {
             {filteredRows.map((row, rowIndex) => (
               <tr key={row.id || rowIndex} className="odd:bg-white/60 even:bg-shalom-mist/40 dark:odd:bg-white/5 dark:even:bg-white/[0.025]">
                 {columns.map((column) => {
-                  const editable = activeSheet === 'produtos' && !['id', 'status_estoque', 'atualizado_em'].includes(column)
+                  const editable = activeSheet === 'produtos' && !['id', 'status_estoque', 'status_validade', 'atualizado_em'].includes(column)
                   return (
                     <td key={column} className="whitespace-nowrap border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">
                       {editable ? (

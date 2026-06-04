@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppShell } from './components/AppShell'
 import { Dashboard } from './components/Dashboard'
 import { LoginScreen } from './components/LoginScreen'
+import { PostEventInventory } from './components/PostEventInventory'
 import { ProductManager } from './components/ProductManager'
 import { ReportsView } from './components/ReportsView'
 import { SalesTerminal } from './components/SalesTerminal'
@@ -109,6 +110,7 @@ function App() {
     dashboard: <Dashboard refreshKey={refreshKey} onNavigateToProducts={navigateToProducts} />,
     sales: <SalesTerminal onSaleComplete={refresh} />,
     products: <ProductManager refreshKey={refreshKey} onChanged={refresh} intent={productIntent} />,
+    inventory: <PostEventInventory refreshKey={refreshKey} onChanged={refresh} />,
     sheet: <SpreadsheetView refreshKey={refreshKey} onChanged={refresh} />,
     reports: <ReportsView />,
     settings: <SettingsView user={user} darkMode={darkMode} setDarkMode={setDarkMode} />

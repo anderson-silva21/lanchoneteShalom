@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS products (
   supplier TEXT,
   internal_code TEXT NOT NULL UNIQUE,
   unit TEXT NOT NULL DEFAULT 'unidade',
+  expiration_date TEXT,
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -74,14 +75,43 @@ CREATE TABLE IF NOT EXISTS inventory_movements (
   reference_type TEXT,
   reference_id INTEGER,
   notes TEXT,
+  expiration_date TEXT,
   created_by INTEGER REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS post_event_inventories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_name TEXT NOT NULL,
+  event_date TEXT NOT NULL,
+  notes TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS post_event_inventory_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  inventory_id INTEGER NOT NULL REFERENCES post_event_inventories(id) ON DELETE CASCADE,
+  product_id INTEGER NOT NULL REFERENCES products(id),
+  product_name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  internal_code TEXT NOT NULL,
+  unit TEXT NOT NULL,
+  quantity_before REAL NOT NULL,
+  physical_quantity REAL NOT NULL,
+  difference REAL NOT NULL,
+  consumed_quantity REAL NOT NULL,
+  quantity_change REAL NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (inventory_id, product_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_products_status ON products(active, category, stock_quantity);
 CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(created_at);
 CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
 CREATE INDEX IF NOT EXISTS idx_movements_product_date ON inventory_movements(product_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_post_event_inventories_date ON post_event_inventories(event_date, created_at);
+CREATE INDEX IF NOT EXISTS idx_post_event_inventory_items_inventory ON post_event_inventory_items(inventory_id);
 
 CREATE TRIGGER IF NOT EXISTS trg_products_updated_at
 AFTER UPDATE ON products
@@ -89,6 +119,11 @@ FOR EACH ROW
 BEGIN
   UPDATE products SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
 END;
+
+DROP VIEW IF EXISTS v_products_sheet;
+DROP VIEW IF EXISTS v_sales_sheet;
+DROP VIEW IF EXISTS v_movements_sheet;
+DROP VIEW IF EXISTS v_post_event_inventory_sheet;
 
 CREATE VIEW IF NOT EXISTS v_products_sheet AS
 SELECT
@@ -102,11 +137,19 @@ SELECT
   stock_quantity AS estoque,
   min_stock AS estoque_minimo,
   supplier AS fornecedor,
+  expiration_date AS validade,
   CASE
     WHEN stock_quantity <= min_stock * 0.5 THEN 'critico'
     WHEN stock_quantity <= min_stock THEN 'atencao'
     ELSE 'normal'
   END AS status_estoque,
+  CASE
+    WHEN expiration_date IS NULL OR expiration_date = '' THEN 'sem_validade'
+    WHEN date(expiration_date) < date('now', 'localtime') THEN 'vencido'
+    WHEN date(expiration_date) <= date('now', 'localtime', '+7 days') THEN 'vence_7_dias'
+    WHEN date(expiration_date) <= date('now', 'localtime', '+30 days') THEN 'vence_30_dias'
+    ELSE 'ok'
+  END AS status_validade,
   updated_at AS atualizado_em
 FROM products
 WHERE active = 1;
@@ -133,6 +176,28 @@ SELECT
   m.quantity_change AS quantidade,
   m.quantity_before AS antes,
   m.quantity_after AS depois,
+  m.expiration_date AS validade,
   m.notes AS observacoes
 FROM inventory_movements m
 JOIN products p ON p.id = m.product_id;
+
+CREATE VIEW IF NOT EXISTS v_post_event_inventory_sheet AS
+SELECT
+  i.id AS inventario_id,
+  i.event_name AS evento,
+  i.event_date AS data_evento,
+  i.created_at AS registrado_em,
+  u.name AS registrado_por,
+  item.internal_code AS codigo_produto,
+  item.product_name AS produto,
+  item.category AS categoria,
+  item.unit AS unidade,
+  item.quantity_before AS quantidade_sistema,
+  item.physical_quantity AS quantidade_inventario,
+  item.difference AS diferenca,
+  item.consumed_quantity AS quantidade_consumida,
+  item.quantity_change AS ajuste_estoque,
+  i.notes AS observacoes
+FROM post_event_inventory_items item
+JOIN post_event_inventories i ON i.id = item.inventory_id
+LEFT JOIN users u ON u.id = i.created_by;

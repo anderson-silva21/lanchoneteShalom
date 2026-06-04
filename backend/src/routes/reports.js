@@ -28,11 +28,16 @@ const reportQueries = {
         m.quantity_change AS quantidade,
         m.quantity_before AS antes,
         m.quantity_after AS depois,
+        m.expiration_date AS validade,
         m.notes AS observacoes
       FROM inventory_movements m
       JOIN products p ON p.id = m.product_id
       ORDER BY m.created_at DESC
     `
+  },
+  post_event_inventory: {
+    title: 'Inventario pos-evento',
+    query: 'SELECT * FROM v_post_event_inventory_sheet ORDER BY registrado_em DESC, categoria, produto'
   },
   sale_items: {
     title: 'Itens vendidos',
@@ -69,7 +74,9 @@ function formatReportRows(type, rows) {
       custo: row.custo,
       preco: row.preco,
       fornecedor: row.fornecedor,
+      validade: row.validade,
       status_estoque: row.status_estoque,
+      status_validade: row.status_validade,
       atualizado_em: row.atualizado_em
     }));
   }
@@ -88,6 +95,31 @@ function formatReportRows(type, rows) {
       antes_formatado: formatQuantityWithUnit(row.antes, row.unidade),
       depois: row.depois,
       depois_formatado: formatQuantityWithUnit(row.depois, row.unidade),
+      validade: row.validade,
+      observacoes: row.observacoes
+    }));
+  }
+
+  if (type === 'post_event_inventory') {
+    return rows.map((row) => ({
+      inventario_id: row.inventario_id,
+      evento: row.evento,
+      data_evento: row.data_evento,
+      registrado_em: row.registrado_em,
+      registrado_por: row.registrado_por,
+      codigo_produto: row.codigo_produto,
+      produto: row.produto,
+      categoria: row.categoria,
+      quantidade_sistema: row.quantidade_sistema,
+      quantidade_sistema_formatada: formatQuantityWithUnit(row.quantidade_sistema, row.unidade),
+      quantidade_inventario: row.quantidade_inventario,
+      quantidade_inventario_formatada: formatQuantityWithUnit(row.quantidade_inventario, row.unidade),
+      diferenca: row.diferenca,
+      diferenca_formatada: formatQuantityWithUnit(row.diferenca, row.unidade),
+      quantidade_consumida: row.quantidade_consumida,
+      quantidade_consumida_formatada: formatQuantityWithUnit(row.quantidade_consumida, row.unidade),
+      unidade: row.unidade,
+      ajuste_estoque: row.ajuste_estoque,
       observacoes: row.observacoes
     }));
   }

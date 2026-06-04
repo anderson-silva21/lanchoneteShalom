@@ -31,7 +31,9 @@ async function request(path, options = {}) {
 
   if (!response.ok) {
     const errorPayload = await response.json().catch(() => ({}))
-    throw new Error(errorPayload.message || 'Nao foi possivel completar a acao.')
+    const error = new Error(errorPayload.message || 'Nao foi possivel completar a acao.')
+    error.payload = errorPayload
+    throw error
   }
 
   if (response.status === 204) return null
@@ -59,6 +61,7 @@ export const api = {
   me: () => request('/auth/me'),
   dashboard: () => request('/analytics/dashboard', { cache: 'no-store' }),
   products: (params = {}) => request(`/products?${new URLSearchParams(params)}`),
+  productCategories: () => request('/products/categories'),
   createProduct: (product) => request('/products', { method: 'POST', body: product }),
   updateProduct: (id, product) => request(`/products/${id}`, { method: 'PATCH', body: product }),
   combos: () => request('/combos'),
@@ -66,6 +69,9 @@ export const api = {
   sales: () => request('/sales?limit=80'),
   movements: () => request('/inventory/movements'),
   createMovement: (movement) => request('/inventory/movements', { method: 'POST', body: movement }),
+  postEventInventories: () => request('/inventory/post-event'),
+  postEventInventory: (id) => request(`/inventory/post-event/${id}`),
+  createPostEventInventory: (inventory) => request('/inventory/post-event', { method: 'POST', body: inventory }),
   sheets: () => request('/spreadsheet/sheets'),
   sheet: (sheet) => request(`/spreadsheet/${sheet}`),
   updateSheetProduct: (id, payload) => request(`/spreadsheet/produtos/${id}`, { method: 'PATCH', body: payload }),

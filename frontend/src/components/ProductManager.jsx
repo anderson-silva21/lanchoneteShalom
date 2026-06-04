@@ -4,31 +4,45 @@ import { api } from '../services/api'
 import { formatQuantityWithUnit, money } from '../utils/formatters'
 import { StatusPill } from './StatusPill'
 
-const emptyProduct = {
-  name: '',
-  category: 'Lanches',
-  cost_price: 0,
-  sale_price: 0,
-  stock_quantity: 0,
-  min_stock: 0,
-  supplier: '',
-  internal_code: '',
-  unit: 'unidade'
+function createEmptyProduct(category = '') {
+  return {
+    name: '',
+    category,
+    cost_price: 0,
+    sale_price: 0,
+    stock_quantity: 0,
+    min_stock: 0,
+    supplier: '',
+    unit: 'unidade',
+    expiration_date: ''
+  }
 }
+
+const nonnegativeProductFields = ['cost_price', 'sale_price', 'stock_quantity', 'min_stock']
 
 export function ProductManager({ refreshKey, onChanged, intent }) {
   const [products, setProducts] = useState([])
+  const [categories, setCategories] = useState([])
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('')
-  const [draft, setDraft] = useState(emptyProduct)
-  const [adjustment, setAdjustment] = useState({ product_id: '', type: 'purchase', quantity: 1, notes: '' })
+  const [draft, setDraft] = useState(() => createEmptyProduct('Lanches'))
+  const [adjustment, setAdjustment] = useState({ product_id: '', type: 'purchase', quantity: 1, expiration_date: '', notes: '' })
   const [message, setMessage] = useState('')
   const movementFormRef = useRef(null)
   const movementProductRef = useRef(null)
 
   const loadProducts = useCallback(async () => {
-    const rows = await api.products({ status })
+    const [rows, categoryRows] = await Promise.all([
+      api.products({ status }),
+      api.productCategories()
+    ])
     setProducts(rows)
+    const categoryNames = categoryRows.map((item) => item.category)
+    setCategories(categoryNames)
+    setDraft((current) => {
+      if (categoryNames.includes(current.category)) return current
+      return { ...current, category: categoryNames[0] || '' }
+    })
   }, [status])
 
   useEffect(() => {
@@ -71,9 +85,17 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
   async function createProduct(event) {
     event.preventDefault()
     setMessage('')
+    if (!draft.category) {
+      setMessage('Selecione uma categoria.')
+      return
+    }
+    if (nonnegativeProductFields.some((field) => Number(draft[field]) < 0)) {
+      setMessage('Valores numericos nao podem ser negativos.')
+      return
+    }
     try {
       await api.createProduct(draft)
-      setDraft(emptyProduct)
+      setDraft(createEmptyProduct(draft.category))
       await loadProducts()
       onChanged()
       setMessage('Produto cadastrado.')
@@ -84,6 +106,10 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
 
   async function saveProduct(product) {
     setMessage('')
+    if (nonnegativeProductFields.some((field) => Number(product[field]) < 0)) {
+      setMessage('Valores numericos nao podem ser negativos.')
+      return
+    }
     try {
       await api.updateProduct(product.id, product)
       await loadProducts()
@@ -99,7 +125,7 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
     setMessage('')
     try {
       await api.createMovement(adjustment)
-      setAdjustment({ product_id: '', type: 'purchase', quantity: 1, notes: '' })
+      setAdjustment({ product_id: '', type: 'purchase', quantity: 1, expiration_date: '', notes: '' })
       await loadProducts()
       onChanged()
       setMessage('Estoque ajustado.')
@@ -140,7 +166,7 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
           </div>
 
           <div className="mt-4 overflow-x-auto scrollbar-thin">
-            <table className="min-w-[920px] w-full border-separate border-spacing-0 text-left text-sm">
+            <table className="min-w-[1080px] w-full border-separate border-spacing-0 text-left text-sm">
               <thead>
                 <tr className="text-xs uppercase tracking-[0.12em] text-shalom-blue/70 dark:text-shalom-gold/80">
                   <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Produto</th>
@@ -149,6 +175,7 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
                   <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Venda</th>
                   <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Estoque</th>
                   <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Minimo</th>
+                  <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Validade</th>
                   <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Status</th>
                   <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10"></th>
                 </tr>
@@ -161,17 +188,22 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
                       <p className="mission-muted px-2 text-xs">{product.internal_code}</p>
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                      <input className="w-32 rounded-lg border border-transparent bg-transparent px-2 py-1 focus:border-shalom-gold/60" value={product.category} onChange={(event) => updateRow(product.id, 'category', event.target.value)} />
+                      <select className="mission-input w-32 px-2 py-1" value={product.category} onChange={(event) => updateRow(product.id, 'category', event.target.value)}>
+                        {categories.map((categoryName) => <option key={categoryName} value={categoryName}>{categoryName}</option>)}
+                      </select>
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{money.format(product.cost_price)}</td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                      <input type="number" className="mission-input w-24 px-2 py-1" value={product.sale_price} onChange={(event) => updateRow(product.id, 'sale_price', Number(event.target.value))} />
+                      <input type="number" min="0" step="0.01" className="mission-input w-24 px-2 py-1" value={product.sale_price} onChange={(event) => updateRow(product.id, 'sale_price', Number(event.target.value))} />
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
                       {formatQuantityWithUnit(product.stock_quantity, product.unit)}
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                      <input type="number" className="mission-input w-20 px-2 py-1" value={product.min_stock} onChange={(event) => updateRow(product.id, 'min_stock', Number(event.target.value))} />
+                      <input type="number" min="0" step="1" className="mission-input w-20 px-2 py-1" value={product.min_stock} onChange={(event) => updateRow(product.id, 'min_stock', Number(event.target.value))} />
+                    </td>
+                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
+                      <input type="date" className="mission-input w-36 px-2 py-1" value={product.expiration_date || ''} onChange={(event) => updateRow(product.id, 'expiration_date', event.target.value)} />
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10"><StatusPill status={product.stock_status} /></td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
@@ -193,28 +225,39 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
               <h2 className="font-display text-lg font-semibold">Novo produto</h2>
             </div>
             <div className="grid gap-3">
-              {[
-                ['name', 'Nome'],
-                ['category', 'Categoria'],
-                ['internal_code', 'Codigo'],
-                ['unit', 'Unidade'],
-                ['supplier', 'Fornecedor']
-              ].map(([field, label]) => (
-                <label key={field} className="text-sm font-medium">
-                  {label}
-                  <input className="mission-input mt-1 w-full px-3 py-2" value={draft[field]} onChange={(event) => setDraft({ ...draft, [field]: event.target.value })} />
-                </label>
-              ))}
+              <label className="text-sm font-medium">
+                Nome
+                <input className="mission-input mt-1 w-full px-3 py-2" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+              </label>
+              <label className="text-sm font-medium">
+                Categoria
+                <select className="mission-input mt-1 w-full px-3 py-2" value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>
+                  <option value="" disabled>Selecione</option>
+                  {categories.map((categoryName) => <option key={categoryName} value={categoryName}>{categoryName}</option>)}
+                </select>
+              </label>
+              <label className="text-sm font-medium">
+                Unidade
+                <input className="mission-input mt-1 w-full px-3 py-2" value={draft.unit} onChange={(event) => setDraft({ ...draft, unit: event.target.value })} />
+              </label>
+              <label className="text-sm font-medium">
+                Fornecedor
+                <input className="mission-input mt-1 w-full px-3 py-2" value={draft.supplier} onChange={(event) => setDraft({ ...draft, supplier: event.target.value })} />
+              </label>
+              <label className="text-sm font-medium">
+                Validade
+                <input type="date" className="mission-input mt-1 w-full px-3 py-2" value={draft.expiration_date} onChange={(event) => setDraft({ ...draft, expiration_date: event.target.value })} />
+              </label>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  ['cost_price', 'Custo'],
-                  ['sale_price', 'Venda'],
-                  ['stock_quantity', 'Estoque'],
-                  ['min_stock', 'Minimo']
-                ].map(([field, label]) => (
+                  ['cost_price', 'Custo', '0.01'],
+                  ['sale_price', 'Venda', '0.01'],
+                  ['stock_quantity', 'Estoque', '1'],
+                  ['min_stock', 'Minimo', '1']
+                ].map(([field, label, step]) => (
                   <label key={field} className="text-sm font-medium">
                     {label}
-                    <input type="number" step="0.01" className="mission-input mt-1 w-full px-3 py-2" value={draft[field]} onChange={(event) => setDraft({ ...draft, [field]: Number(event.target.value) })} />
+                    <input type="number" min="0" step={step} className="mission-input mt-1 w-full px-3 py-2" value={draft[field]} onChange={(event) => setDraft({ ...draft, [field]: Number(event.target.value) })} />
                   </label>
                 ))}
               </div>
@@ -248,9 +291,13 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
               </label>
               <label className="text-sm font-medium">
                 Quantidade
-                <input type="number" step="0.01" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.quantity} onChange={(event) => setAdjustment({ ...adjustment, quantity: Number(event.target.value) })} />
+                <input type="number" min="1" step="1" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.quantity} onChange={(event) => setAdjustment({ ...adjustment, quantity: Number(event.target.value) })} />
               </label>
             </div>
+            <label className="mt-3 block text-sm font-medium">
+              Validade do lote
+              <input type="date" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.expiration_date} onChange={(event) => setAdjustment({ ...adjustment, expiration_date: event.target.value })} />
+            </label>
             <label className="mt-3 block text-sm font-medium">
               Observacao
               <input className="mission-input mt-1 w-full px-3 py-2" value={adjustment.notes} onChange={(event) => setAdjustment({ ...adjustment, notes: event.target.value })} />

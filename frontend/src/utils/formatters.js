@@ -90,6 +90,13 @@ export function formatDateTime(value) {
   }).format(new Date(value))
 }
 
+export function formatDate(value) {
+  if (!value) return '-'
+  const [year, month, day] = String(value).slice(0, 10).split('-')
+  if (!year || !month || !day) return '-'
+  return `${day}/${month}/${year}`
+}
+
 export function stockLabel(status) {
   if (status === 'critical' || status === 'critico') return 'Critico'
   if (status === 'warning' || status === 'atencao') return 'Atencao'

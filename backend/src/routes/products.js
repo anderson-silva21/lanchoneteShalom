@@ -5,6 +5,11 @@ const { authenticate, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
+const optionalDateSchema = z.preprocess(
+  (value) => value === '' || value === undefined ? null : value,
+  z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).nullable()
+);
+
 const productSchema = z.object({
   name: z.string().trim().min(2),
   category: z.string().trim().min(2),
@@ -13,10 +18,37 @@ const productSchema = z.object({
   stock_quantity: z.coerce.number().nonnegative(),
   min_stock: z.coerce.number().nonnegative(),
   supplier: z.preprocess((value) => value === '' ? null : value, z.string().trim().optional().nullable()),
-  internal_code: z.string().trim().min(2),
+  internal_code: z.string().trim().min(2).optional(),
   unit: z.string().trim().min(1),
+  expiration_date: optionalDateSchema,
   active: z.coerce.number().int().min(0).max(1).default(1)
 });
+
+function categoryPrefix(category) {
+  const normalized = String(category || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/gi, '')
+    .toUpperCase();
+
+  return (normalized.slice(0, 3) || 'PRO').padEnd(3, 'X');
+}
+
+function generateProductCode(category) {
+  const prefix = categoryPrefix(category);
+  const rows = db.prepare(`
+    SELECT internal_code
+    FROM products
+    WHERE internal_code LIKE ?
+  `).all(`${prefix}-%`);
+
+  const lastNumber = rows.reduce((max, row) => {
+    const match = String(row.internal_code || '').match(new RegExp(`^${prefix}-(\\d+)$`));
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+
+  return `${prefix}-${String(lastNumber + 1).padStart(3, '0')}`;
+}
 
 router.use(authenticate);
 
@@ -65,12 +97,16 @@ router.get('/categories', (req, res) => {
 });
 
 router.post('/', requireRole('admin', 'manager'), (req, res) => {
-  const product = productSchema.parse(req.body);
+  const payload = productSchema.parse(req.body);
+  const product = {
+    ...payload,
+    internal_code: generateProductCode(payload.category)
+  };
   const result = db.prepare(`
     INSERT INTO products
-      (name, category, cost_price, sale_price, stock_quantity, min_stock, supplier, internal_code, unit, active)
+      (name, category, cost_price, sale_price, stock_quantity, min_stock, supplier, internal_code, unit, expiration_date, active)
     VALUES
-      (@name, @category, @cost_price, @sale_price, @stock_quantity, @min_stock, @supplier, @internal_code, @unit, @active)
+      (@name, @category, @cost_price, @sale_price, @stock_quantity, @min_stock, @supplier, @internal_code, @unit, @expiration_date, @active)
   `).run(product);
 
   return res.status(201).json(db.prepare('SELECT * FROM products WHERE id = ?').get(result.lastInsertRowid));
@@ -92,6 +128,7 @@ router.patch('/:id', requireRole('admin', 'manager'), (req, res) => {
       supplier = @supplier,
       internal_code = @internal_code,
       unit = @unit,
+      expiration_date = @expiration_date,
       active = COALESCE(@active, 1)
     WHERE id = @id
   `).run({ ...merged, id: Number(req.params.id) });
