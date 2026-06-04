@@ -57,7 +57,7 @@ async function download(path, filename) {
 }
 
 export const api = {
-  login: (email, password) => request('/auth/login', { method: 'POST', body: { email, password } }),
+  login: (username, password) => request('/auth/login', { method: 'POST', body: { username, password } }),
   me: () => request('/auth/me'),
   dashboard: () => request('/analytics/dashboard', { cache: 'no-store' }),
   products: (params = {}) => request(`/products?${new URLSearchParams(params)}`),

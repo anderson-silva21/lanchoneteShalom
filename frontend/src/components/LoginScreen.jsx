@@ -3,8 +3,8 @@ import { useState } from 'react'
 import { BrandMark } from './BrandMark'
 
 export function LoginScreen({ onLogin }) {
-  const [email, setEmail] = useState('admin@lanchonete.local')
-  const [password, setPassword] = useState('admin123')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -13,7 +13,7 @@ export function LoginScreen({ onLogin }) {
     setError('')
     setLoading(true)
     try {
-      await onLogin(email, password)
+      await onLogin(username, password)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -36,12 +36,13 @@ export function LoginScreen({ onLogin }) {
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <label className="block text-sm font-medium">
-            Email
+            Usuario
             <input
               className="mission-input mt-2 w-full px-3 py-3"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              type="email"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              type="text"
+              autoComplete="username"
             />
           </label>
           <label className="block text-sm font-medium">
@@ -51,6 +52,7 @@ export function LoginScreen({ onLogin }) {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               type="password"
+              autoComplete="current-password"
             />
           </label>
           {error ? <p className="rounded-xl bg-shalom-wine/10 px-3 py-2 text-sm text-shalom-wine dark:bg-shalom-wine/25 dark:text-rose-100">{error}</p> : null}
@@ -65,10 +67,6 @@ export function LoginScreen({ onLogin }) {
         <div className="flex items-center gap-2 rounded-2xl bg-shalom-cream/70 p-3 text-sm text-shalom-deep dark:bg-white/10 dark:text-shalom-gold">
           <Sparkles size={16} />
           Servir é amar.
-        </div>
-
-        <div className="mt-3 rounded-2xl bg-white/60 p-3 text-sm mission-muted dark:bg-white/10">
-          Demo: admin@lanchonete.local / admin123
         </div>
       </section>
     </main>

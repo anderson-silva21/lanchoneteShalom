@@ -40,8 +40,8 @@ function App() {
       .catch(() => setToken(''))
   }, [user])
 
-  async function handleLogin(email, password) {
-    const payload = await api.login(email, password)
+  async function handleLogin(username, password) {
+    const payload = await api.login(username, password)
     setToken(payload.token)
     setUser(payload.user)
     localStorage.setItem('lanchonete_user', JSON.stringify(payload.user))

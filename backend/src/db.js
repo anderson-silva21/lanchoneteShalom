@@ -30,7 +30,47 @@ function addColumnIfMissing(table, column, definition) {
   db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
+function normalizeUsername(value, fallback = 'user') {
+  const normalized = String(value || fallback)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9._-]/gi, '')
+    .toLowerCase();
+
+  return normalized || fallback;
+}
+
+function fillMissingUsernames() {
+  if (!tableExists('users') || !columnExists('users', 'username')) return;
+
+  const users = db.prepare('SELECT id, name, email, username FROM users ORDER BY id').all();
+  const used = new Set(users.map((user) => user.username).filter(Boolean));
+  const updateUsername = db.prepare('UPDATE users SET username = ? WHERE id = ?');
+
+  users.forEach((user) => {
+    if (user.username) return;
+
+    const defaultUsername = user.email === 'admin@lanchonete.local'
+      ? 'admin'
+      : user.email === 'caixa@lanchonete.local'
+        ? 'caixa'
+        : normalizeUsername(String(user.email || user.name).split('@')[0], `user${user.id}`);
+
+    let nextUsername = normalizeUsername(defaultUsername, `user${user.id}`);
+    let suffix = 2;
+    while (used.has(nextUsername)) {
+      nextUsername = `${normalizeUsername(defaultUsername, `user${user.id}`)}${suffix}`;
+      suffix += 1;
+    }
+
+    used.add(nextUsername);
+    updateUsername.run(nextUsername, user.id);
+  });
+}
+
 function runMigrations() {
+  addColumnIfMissing('users', 'username', 'TEXT');
+  fillMissingUsernames();
   addColumnIfMissing('products', 'expiration_date', 'TEXT');
   addColumnIfMissing('inventory_movements', 'expiration_date', 'TEXT');
 }
@@ -43,12 +83,13 @@ function seedUsers() {
   if (countRows('users') > 0) return;
 
   const insert = db.prepare(`
-    INSERT INTO users (name, email, password_hash, role)
-    VALUES (@name, @email, @password_hash, @role)
+    INSERT INTO users (name, username, email, password_hash, role)
+    VALUES (@name, @username, @email, @password_hash, @role)
   `);
 
   insert.run({
     name: 'Administrador da Lanchonete',
+    username: 'admin',
     email: 'admin@lanchonete.local',
     password_hash: bcrypt.hashSync('admin123', 10),
     role: 'admin'
@@ -56,6 +97,7 @@ function seedUsers() {
 
   insert.run({
     name: 'Operador de Caixa',
+    username: 'caixa',
     email: 'caixa@lanchonete.local',
     password_hash: bcrypt.hashSync('caixa123', 10),
     role: 'cashier'

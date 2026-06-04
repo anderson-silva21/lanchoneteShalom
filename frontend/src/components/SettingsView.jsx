@@ -3,7 +3,7 @@ import { DatabaseZap, KeyRound, Moon, ShieldCheck, Smartphone } from 'lucide-rea
 export function SettingsView({ user, darkMode, setDarkMode }) {
   const items = [
     { icon: ShieldCheck, label: 'Perfil', value: user?.role || '-' },
-    { icon: KeyRound, label: 'Sessao', value: user?.email || '-' },
+    { icon: KeyRound, label: 'Sessao', value: user?.username || '-' },
     { icon: DatabaseZap, label: 'Base', value: 'SQLite central' },
     { icon: Smartphone, label: 'PWA', value: 'Instalavel' }
   ]

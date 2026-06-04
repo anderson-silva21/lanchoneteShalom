@@ -6,16 +6,18 @@ const { authenticate, signUser } = require('../middleware/auth');
 const router = express.Router();
 
 router.post('/login', (req, res) => {
-  const { email, password } = req.body;
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  const { username, password } = req.body;
+  const normalizedUsername = String(username || '').trim().toLowerCase();
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(normalizedUsername);
 
   if (!user || !bcrypt.compareSync(password || '', user.password_hash)) {
-    return res.status(401).json({ message: 'Email ou senha invalidos.' });
+    return res.status(401).json({ message: 'Usuario ou senha invalidos.' });
   }
 
   const publicUser = {
     id: user.id,
     name: user.name,
+    username: user.username,
     email: user.email,
     role: user.role
   };

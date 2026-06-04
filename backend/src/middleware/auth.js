@@ -29,7 +29,7 @@ function requireRole(...roles) {
 
 function signUser(user) {
   return jwt.sign(
-    { id: user.id, name: user.name, email: user.email, role: user.role },
+    { id: user.id, name: user.name, username: user.username, email: user.email, role: user.role },
     jwtSecret,
     { expiresIn: '12h' }
   );
