@@ -9,7 +9,7 @@ import { SettingsView } from './components/SettingsView'
 import { SpreadsheetView } from './components/SpreadsheetView'
 import { api, getToken, setToken } from './services/api'
 
-const INACTIVITY_TIMEOUT_MS = 3 * 60 * 1000
+const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes
 const activityEvents = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'pointerdown']
 
 function App() {

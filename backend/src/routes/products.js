@@ -6,16 +6,16 @@ const { authenticate, requireRole } = require('../middleware/auth');
 const router = express.Router();
 
 const productSchema = z.object({
-  name: z.string().min(2),
-  category: z.string().min(2),
+  name: z.string().trim().min(2),
+  category: z.string().trim().min(2),
   cost_price: z.coerce.number().nonnegative(),
   sale_price: z.coerce.number().nonnegative(),
   stock_quantity: z.coerce.number().nonnegative(),
   min_stock: z.coerce.number().nonnegative(),
-  supplier: z.string().optional().nullable(),
-  internal_code: z.string().min(2),
-  unit: z.string().min(1),
-  active: z.coerce.number().optional()
+  supplier: z.preprocess((value) => value === '' ? null : value, z.string().trim().optional().nullable()),
+  internal_code: z.string().trim().min(2),
+  unit: z.string().trim().min(1),
+  active: z.coerce.number().int().min(0).max(1).default(1)
 });
 
 router.use(authenticate);
@@ -70,7 +70,7 @@ router.post('/', requireRole('admin', 'manager'), (req, res) => {
     INSERT INTO products
       (name, category, cost_price, sale_price, stock_quantity, min_stock, supplier, internal_code, unit, active)
     VALUES
-      (@name, @category, @cost_price, @sale_price, @stock_quantity, @min_stock, @supplier, @internal_code, @unit, COALESCE(@active, 1))
+      (@name, @category, @cost_price, @sale_price, @stock_quantity, @min_stock, @supplier, @internal_code, @unit, @active)
   `).run(product);
 
   return res.status(201).json(db.prepare('SELECT * FROM products WHERE id = ?').get(result.lastInsertRowid));

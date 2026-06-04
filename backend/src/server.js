@@ -3,9 +3,9 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const morgan = require('morgan');
 const { initDatabase, dbPath } = require('./db');
 const errorHandler = require('./middleware/errorHandler');
+const { assignRequestId, httpLogger } = require('./middleware/requestLogger');
 
 const authRoutes = require('./routes/auth');
 const analyticsRoutes = require('./routes/analytics');
@@ -65,6 +65,8 @@ function isAllowedOrigin(origin) {
   }
 }
 
+app.use(assignRequestId);
+app.use(httpLogger);
 app.use(helmet());
 app.use(cors({
   origin(origin, callback) {
@@ -74,7 +76,6 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json({ limit: '2mb' }));
-app.use(morgan('dev'));
 
 app.get('/health', (req, res) => {
   res.json({
