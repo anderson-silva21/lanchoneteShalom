@@ -1,4 +1,5 @@
 const { db } = require('../db');
+const { consumeStockFefo } = require('./stockService');
 
 const createSaleTransaction = db.transaction((payload, user) => {
   const items = payload.items || [];
@@ -19,12 +20,6 @@ const createSaleTransaction = db.transaction((payload, user) => {
       (sale_id, product_id, combo_id, item_name, quantity, unit_price, unit_cost, line_total, line_profit)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const insertMovement = db.prepare(`
-    INSERT INTO inventory_movements
-      (product_id, type, quantity_change, quantity_before, quantity_after, reference_type, reference_id, notes, created_by)
-    VALUES (?, 'sale', ?, ?, ?, 'sale', ?, ?, ?)
-  `);
-  const updateStock = db.prepare('UPDATE products SET stock_quantity = ? WHERE id = ?');
   const getProduct = db.prepare('SELECT * FROM products WHERE id = ? AND active = 1');
   const getCombo = db.prepare('SELECT * FROM combos WHERE id = ? AND active = 1');
   const getComboItems = db.prepare(`
@@ -38,15 +33,15 @@ const createSaleTransaction = db.transaction((payload, user) => {
   let profit = 0;
 
   function reduceProduct(product, quantity, note) {
-    if (product.stock_quantity < quantity) {
-      const error = new Error(`${product.name} nao possui estoque suficiente.`);
-      error.status = 400;
-      throw error;
-    }
-
-    const after = Number((product.stock_quantity - quantity).toFixed(3));
-    updateStock.run(after, product.id);
-    insertMovement.run(product.id, -quantity, product.stock_quantity, after, saleId, note, user.id);
+    consumeStockFefo({
+      productId: product.id,
+      quantity,
+      movementType: 'sale',
+      referenceType: 'sale',
+      referenceId: saleId,
+      notes: note,
+      userId: user.id
+    });
   }
 
   items.forEach((item) => {

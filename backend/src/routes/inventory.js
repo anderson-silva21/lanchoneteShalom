@@ -2,6 +2,15 @@ const express = require('express');
 const { z } = require('zod');
 const { db } = require('../db');
 const { authenticate, requireRole } = require('../middleware/auth');
+const {
+  addStock,
+  getProductStock,
+  listStockBatches,
+  removeStockFromBatch,
+  roundQuantity,
+  sameQuantity,
+  setProductStock
+} = require('../services/stockService');
 
 const router = express.Router();
 
@@ -12,7 +21,9 @@ const optionalDateSchema = z.preprocess(
 
 const movementSchema = z.object({
   product_id: z.coerce.number(),
+  batch_id: z.preprocess((value) => value === '' || value === undefined ? null : value, z.coerce.number().int().positive().nullable()),
   type: z.enum(['purchase', 'adjustment', 'waste']),
+  operation: z.enum(['in', 'out']).optional(),
   quantity: z.coerce.number().finite().positive(),
   expiration_date: optionalDateSchema,
   notes: z.string().optional().nullable()
@@ -42,21 +53,6 @@ function createHttpError(message, status, details) {
   error.status = status;
   if (details) error.details = details;
   return error;
-}
-
-function roundQuantity(value) {
-  return Number(Number(value || 0).toFixed(3));
-}
-
-function sameQuantity(left, right) {
-  return Math.abs(roundQuantity(left) - roundQuantity(right)) < 0.0005;
-}
-
-function nextProductExpiration(product, payload, nextStock) {
-  if (nextStock <= 0) return null;
-  if (!payload.expiration_date || payload.type === 'waste') return product.expiration_date || null;
-  if (!product.expiration_date || product.stock_quantity <= 0) return payload.expiration_date;
-  return payload.expiration_date < product.expiration_date ? payload.expiration_date : product.expiration_date;
 }
 
 function getPostEventInventory(id) {
@@ -144,15 +140,6 @@ function createPostEventInventory(payload, userId) {
         (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const insertMovement = db.prepare(`
-      INSERT INTO inventory_movements
-        (product_id, type, quantity_change, quantity_before, quantity_after, reference_type, reference_id, notes, expiration_date, created_by)
-      VALUES
-        (?, 'adjustment', ?, ?, ?, 'post_event_inventory', ?, ?, ?, ?)
-    `);
-
-    const updateProduct = db.prepare('UPDATE products SET stock_quantity = ?, expiration_date = ? WHERE id = ?');
-
     products.forEach((product) => {
       const item = itemsByProductId.get(product.id);
       const quantityBefore = roundQuantity(product.stock_quantity);
@@ -176,18 +163,15 @@ function createPostEventInventory(payload, userId) {
       );
 
       if (!sameQuantity(quantityChange, 0)) {
-        const nextExpiration = physicalQuantity <= 0 ? null : product.expiration_date;
-        updateProduct.run(physicalQuantity, nextExpiration, product.id);
-        insertMovement.run(
-          product.id,
-          quantityChange,
-          quantityBefore,
+        setProductStock({
+          productId: product.id,
           physicalQuantity,
-          inventoryId,
-          `Inventario pos-evento: ${payload.event_name}`,
-          nextExpiration,
+          expectedQuantity: quantityBefore,
+          referenceType: 'post_event_inventory',
+          referenceId: inventoryId,
+          notes: `Inventario pos-evento: ${payload.event_name}`,
           userId
-        );
+        });
       }
     });
 
@@ -199,11 +183,30 @@ function createPostEventInventory(payload, userId) {
 
 router.use(authenticate);
 
+router.get('/batches', (req, res) => {
+  const productId = req.query.product_id ? Number(req.query.product_id) : null;
+  const includeEmpty = req.query.include_empty === '1' || req.query.include_empty === 'true';
+  return res.json(listStockBatches({ productId, includeEmpty }));
+});
+
+router.get('/products/:id/stock', (req, res) => {
+  return res.json(getProductStock(Number(req.params.id), {
+    includeEmpty: req.query.include_empty === '1' || req.query.include_empty === 'true'
+  }));
+});
+
 router.get('/movements', (req, res) => {
   const movements = db.prepare(`
-    SELECT m.*, p.name AS product_name, p.internal_code, p.unit, u.name AS created_by_name
+    SELECT
+      m.*,
+      p.name AS product_name,
+      p.internal_code,
+      p.unit,
+      b.expiration_date AS batch_expiration_date,
+      u.name AS created_by_name
     FROM inventory_movements m
     JOIN products p ON p.id = m.product_id
+    LEFT JOIN stock_batches b ON b.id = m.batch_id
     LEFT JOIN users u ON u.id = m.created_by
     ORDER BY m.created_at DESC
     LIMIT 300
@@ -213,29 +216,79 @@ router.get('/movements', (req, res) => {
 
 router.post('/movements', requireRole('admin', 'manager'), (req, res) => {
   const payload = movementSchema.parse(req.body);
-  const product = db.prepare('SELECT * FROM products WHERE id = ? AND active = 1').get(payload.product_id);
-  if (!product) return res.status(404).json({ message: 'Produto nao encontrado.' });
-
-  const signedQuantity = payload.type === 'waste' ? -Math.abs(payload.quantity) : payload.quantity;
-  const nextStock = Math.max(0, Number((product.stock_quantity + signedQuantity).toFixed(3)));
-  const expirationDate = nextProductExpiration(product, payload, nextStock);
 
   const transaction = db.transaction(() => {
-    db.prepare('UPDATE products SET stock_quantity = ?, expiration_date = ? WHERE id = ?').run(nextStock, expirationDate, product.id);
-    const result = db.prepare(`
-      INSERT INTO inventory_movements
-        (product_id, type, quantity_change, quantity_before, quantity_after, reference_type, notes, expiration_date, created_by)
-      VALUES (?, ?, ?, ?, ?, 'manual', ?, ?, ?)
-    `).run(product.id, payload.type, signedQuantity, product.stock_quantity, nextStock, payload.notes || null, payload.expiration_date || null, req.user.id);
+    if (payload.type === 'purchase') {
+      const result = addStock({
+        productId: payload.product_id,
+        quantity: payload.quantity,
+        expirationDate: payload.expiration_date,
+        movementType: 'purchase',
+        referenceType: 'manual',
+        notes: payload.notes || null,
+        userId: req.user.id,
+        createNewBatch: true
+      });
+      return result.movement_id;
+    }
 
-    return result.lastInsertRowid;
+    if (payload.type === 'adjustment' && (payload.operation || 'in') === 'in') {
+      const result = addStock({
+        productId: payload.product_id,
+        batchId: payload.batch_id,
+        quantity: payload.quantity,
+        expirationDate: payload.expiration_date,
+        movementType: 'adjustment',
+        referenceType: 'manual',
+        notes: payload.notes || null,
+        userId: req.user.id,
+        createNewBatch: !payload.batch_id
+      });
+      return result.movement_id;
+    }
+
+    if (payload.type === 'adjustment' && payload.operation === 'out') {
+      if (!payload.batch_id) throw createHttpError('Informe o lote para ajustes negativos.', 400);
+      const result = removeStockFromBatch({
+        productId: payload.product_id,
+        batchId: payload.batch_id,
+        quantity: payload.quantity,
+        movementType: 'adjustment',
+        referenceType: 'manual',
+        notes: payload.notes || null,
+        userId: req.user.id
+      });
+      return result.movement_id;
+    }
+
+    if (payload.type === 'waste') {
+      if (!payload.batch_id) throw createHttpError('Informe o lote para registrar desperdicio.', 400);
+      const result = removeStockFromBatch({
+        productId: payload.product_id,
+        batchId: payload.batch_id,
+        quantity: payload.quantity,
+        movementType: 'waste',
+        referenceType: 'manual',
+        notes: payload.notes || null,
+        userId: req.user.id
+      });
+      return result.movement_id;
+    }
+
+    throw createHttpError('Tipo de movimentacao invalido.', 400);
   });
 
   const id = transaction();
   const movement = db.prepare(`
-    SELECT m.*, p.name AS product_name
+    SELECT
+      m.*,
+      p.name AS product_name,
+      p.internal_code,
+      p.unit,
+      b.expiration_date AS batch_expiration_date
     FROM inventory_movements m
     JOIN products p ON p.id = m.product_id
+    LEFT JOIN stock_batches b ON b.id = m.batch_id
     WHERE m.id = ?
   `).get(id);
 

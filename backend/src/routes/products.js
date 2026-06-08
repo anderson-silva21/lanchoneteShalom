@@ -2,6 +2,7 @@ const express = require('express');
 const { z } = require('zod');
 const { db } = require('../db');
 const { authenticate, requireRole } = require('../middleware/auth');
+const { addStock, roundQuantity } = require('../services/stockService');
 
 const router = express.Router();
 
@@ -100,16 +101,37 @@ router.post('/', requireRole('admin', 'manager'), (req, res) => {
   const payload = productSchema.parse(req.body);
   const product = {
     ...payload,
-    internal_code: generateProductCode(payload.category)
+    internal_code: generateProductCode(payload.category),
+    stock_quantity: 0,
+    expiration_date: null
   };
-  const result = db.prepare(`
-    INSERT INTO products
-      (name, category, cost_price, sale_price, stock_quantity, min_stock, supplier, internal_code, unit, expiration_date, active)
-    VALUES
-      (@name, @category, @cost_price, @sale_price, @stock_quantity, @min_stock, @supplier, @internal_code, @unit, @expiration_date, @active)
-  `).run(product);
 
-  return res.status(201).json(db.prepare('SELECT * FROM products WHERE id = ?').get(result.lastInsertRowid));
+  const transaction = db.transaction(() => {
+    const result = db.prepare(`
+      INSERT INTO products
+        (name, category, cost_price, sale_price, stock_quantity, min_stock, supplier, internal_code, unit, expiration_date, active)
+      VALUES
+        (@name, @category, @cost_price, @sale_price, @stock_quantity, @min_stock, @supplier, @internal_code, @unit, @expiration_date, @active)
+    `).run(product);
+
+    if (roundQuantity(payload.stock_quantity) > 0) {
+      addStock({
+        productId: result.lastInsertRowid,
+        quantity: payload.stock_quantity,
+        expirationDate: payload.expiration_date,
+        movementType: 'purchase',
+        referenceType: 'product_creation',
+        notes: 'Estoque inicial do produto',
+        userId: req.user.id,
+        createNewBatch: true
+      });
+    }
+
+    return result.lastInsertRowid;
+  });
+
+  const productId = transaction();
+  return res.status(201).json(db.prepare('SELECT * FROM products WHERE id = ?').get(productId));
 });
 
 router.patch('/:id', requireRole('admin', 'manager'), (req, res) => {
@@ -123,12 +145,10 @@ router.patch('/:id', requireRole('admin', 'manager'), (req, res) => {
       category = @category,
       cost_price = @cost_price,
       sale_price = @sale_price,
-      stock_quantity = @stock_quantity,
       min_stock = @min_stock,
       supplier = @supplier,
       internal_code = @internal_code,
       unit = @unit,
-      expiration_date = @expiration_date,
       active = COALESCE(@active, 1)
     WHERE id = @id
   `).run({ ...merged, id: Number(req.params.id) });

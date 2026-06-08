@@ -7,6 +7,7 @@ const reports = [
   { type: 'sales', label: 'Vendas', icon: FileBarChart },
   { type: 'sale_items', label: 'Itens vendidos', icon: FileText },
   { type: 'products', label: 'Estoque', icon: FileSpreadsheet },
+  { type: 'batches', label: 'Lotes', icon: Database },
   { type: 'movements', label: 'Movimentacoes', icon: Database },
   { type: 'post_event_inventory', label: 'Inventario', icon: ClipboardCheck }
 ]

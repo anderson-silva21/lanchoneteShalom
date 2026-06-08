@@ -438,11 +438,11 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
           {expirationAlerts.length ? (
             <div className="space-y-3">
               {expirationAlerts.map((item) => (
-                <article key={item.id} className="mission-card p-3">
+                <article key={`${item.id}-${item.batch_id || 'produto'}`} className="mission-card p-3">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <p className="font-semibold">{item.name}</p>
-                      <p className="mission-muted text-sm">{item.category} - {item.internal_code}</p>
+                      <p className="mission-muted text-sm">{item.category} - {item.internal_code}{item.batch_id ? ` - Lote #${item.batch_id}` : ''}</p>
                     </div>
                     <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${
                       item.expiration_status === 'expired'

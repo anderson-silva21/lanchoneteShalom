@@ -27,6 +27,15 @@ CREATE TABLE IF NOT EXISTS products (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS stock_batches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  expiration_date TEXT,
+  quantity_available REAL NOT NULL DEFAULT 0 CHECK (quantity_available >= 0),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS combos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -69,6 +78,7 @@ CREATE TABLE IF NOT EXISTS sale_items (
 CREATE TABLE IF NOT EXISTS inventory_movements (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   product_id INTEGER NOT NULL REFERENCES products(id),
+  batch_id INTEGER REFERENCES stock_batches(id),
   type TEXT NOT NULL CHECK (type IN ('sale', 'purchase', 'adjustment', 'waste')),
   quantity_change REAL NOT NULL,
   quantity_before REAL NOT NULL,
@@ -108,10 +118,12 @@ CREATE TABLE IF NOT EXISTS post_event_inventory_items (
 );
 
 CREATE INDEX IF NOT EXISTS idx_products_status ON products(active, category, stock_quantity);
+CREATE INDEX IF NOT EXISTS idx_stock_batches_product_expiration ON stock_batches(product_id, quantity_available, expiration_date);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(created_at);
 CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
 CREATE INDEX IF NOT EXISTS idx_movements_product_date ON inventory_movements(product_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_movements_batch_date ON inventory_movements(batch_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_post_event_inventories_date ON post_event_inventories(event_date, created_at);
 CREATE INDEX IF NOT EXISTS idx_post_event_inventory_items_inventory ON post_event_inventory_items(inventory_id);
 
@@ -122,7 +134,15 @@ BEGIN
   UPDATE products SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
 END;
 
+CREATE TRIGGER IF NOT EXISTS trg_stock_batches_updated_at
+AFTER UPDATE ON stock_batches
+FOR EACH ROW
+BEGIN
+  UPDATE stock_batches SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+END;
+
 DROP VIEW IF EXISTS v_products_sheet;
+DROP VIEW IF EXISTS v_stock_batches_sheet;
 DROP VIEW IF EXISTS v_sales_sheet;
 DROP VIEW IF EXISTS v_movements_sheet;
 DROP VIEW IF EXISTS v_post_event_inventory_sheet;
@@ -156,6 +176,31 @@ SELECT
 FROM products
 WHERE active = 1;
 
+CREATE VIEW IF NOT EXISTS v_stock_batches_sheet AS
+SELECT
+  b.id AS lote_id,
+  p.id AS produto_id,
+  p.internal_code AS codigo_produto,
+  p.name AS produto,
+  p.category AS categoria,
+  p.unit AS unidade,
+  b.quantity_available AS quantidade,
+  b.expiration_date AS validade,
+  CAST(julianday(date(b.expiration_date)) - julianday(date('now', 'localtime')) AS INTEGER) AS dias_para_vencer,
+  CASE
+    WHEN b.quantity_available <= 0 THEN 'esgotado'
+    WHEN b.expiration_date IS NULL OR b.expiration_date = '' THEN 'sem_validade'
+    WHEN date(b.expiration_date) < date('now', 'localtime') THEN 'vencido'
+    WHEN date(b.expiration_date) <= date('now', 'localtime', '+7 days') THEN 'vence_7_dias'
+    WHEN date(b.expiration_date) <= date('now', 'localtime', '+30 days') THEN 'vence_30_dias'
+    ELSE 'ok'
+  END AS status_validade,
+  b.created_at AS criado_em,
+  b.updated_at AS atualizado_em
+FROM stock_batches b
+JOIN products p ON p.id = b.product_id
+WHERE p.active = 1;
+
 CREATE VIEW IF NOT EXISTS v_sales_sheet AS
 SELECT
   s.id AS venda_id,
@@ -174,6 +219,7 @@ SELECT
   m.created_at AS data_hora,
   p.internal_code AS codigo_produto,
   p.name AS produto,
+  m.batch_id AS lote_id,
   m.type AS tipo,
   m.quantity_change AS quantidade,
   m.quantity_before AS antes,

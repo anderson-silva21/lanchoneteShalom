@@ -82,54 +82,59 @@ function getDashboardAnalytics() {
 
   const expirationAlerts = db.prepare(`
     SELECT
-      id,
-      name,
-      category,
-      stock_quantity,
-      min_stock,
-      unit,
-      supplier,
-      internal_code,
-      expiration_date,
-      CAST(julianday(date(expiration_date)) - julianday(date('now', 'localtime')) AS INTEGER) AS days_to_expire,
+      p.id,
+      b.id AS batch_id,
+      p.name,
+      p.category,
+      b.quantity_available AS stock_quantity,
+      p.min_stock,
+      p.unit,
+      p.supplier,
+      p.internal_code,
+      b.expiration_date,
+      CAST(julianday(date(b.expiration_date)) - julianday(date('now', 'localtime')) AS INTEGER) AS days_to_expire,
       CASE
-        WHEN date(expiration_date) < date('now', 'localtime') THEN 'expired'
-        WHEN date(expiration_date) <= date('now', 'localtime', '+7 days') THEN 'critical'
+        WHEN date(b.expiration_date) < date('now', 'localtime') THEN 'expired'
+        WHEN date(b.expiration_date) <= date('now', 'localtime', '+7 days') THEN 'critical'
         ELSE 'warning'
       END AS expiration_status
-    FROM products
-    WHERE active = 1
-      AND stock_quantity > 0
-      AND expiration_date IS NOT NULL
-      AND expiration_date != ''
-      AND date(expiration_date) <= date('now', 'localtime', '+30 days')
-    ORDER BY date(expiration_date) ASC, name ASC
+    FROM stock_batches b
+    JOIN products p ON p.id = b.product_id
+    WHERE p.active = 1
+      AND b.quantity_available > 0
+      AND b.expiration_date IS NOT NULL
+      AND b.expiration_date != ''
+      AND date(b.expiration_date) <= date('now', 'localtime', '+30 days')
+    ORDER BY date(b.expiration_date) ASC, p.name ASC, b.id ASC
   `).all();
 
   const missingExpirationCount = db.prepare(`
     SELECT COUNT(*) AS total
-    FROM products
-    WHERE active = 1
-      AND stock_quantity > 0
-      AND (expiration_date IS NULL OR expiration_date = '')
+    FROM stock_batches b
+    JOIN products p ON p.id = b.product_id
+    WHERE p.active = 1
+      AND b.quantity_available > 0
+      AND (b.expiration_date IS NULL OR b.expiration_date = '')
   `).get().total;
 
   const missingExpirationProducts = db.prepare(`
     SELECT
-      id,
-      name,
-      category,
-      stock_quantity,
-      min_stock,
-      unit,
-      supplier,
-      internal_code,
-      expiration_date
-    FROM products
-    WHERE active = 1
-      AND stock_quantity > 0
-      AND (expiration_date IS NULL OR expiration_date = '')
-    ORDER BY category, name
+      p.id,
+      p.name,
+      p.category,
+      SUM(b.quantity_available) AS stock_quantity,
+      p.min_stock,
+      p.unit,
+      p.supplier,
+      p.internal_code,
+      NULL AS expiration_date
+    FROM stock_batches b
+    JOIN products p ON p.id = b.product_id
+    WHERE p.active = 1
+      AND b.quantity_available > 0
+      AND (b.expiration_date IS NULL OR b.expiration_date = '')
+    GROUP BY p.id
+    ORDER BY p.category, p.name
     LIMIT 20
   `).all();
 
@@ -322,6 +327,7 @@ function getPowerBiDataset() {
     generated_at: new Date().toISOString(),
     kpis: [analytics.kpis],
     products: db.prepare('SELECT * FROM v_products_sheet ORDER BY produto').all(),
+    batches: db.prepare('SELECT * FROM v_stock_batches_sheet ORDER BY produto, date(validade), lote_id').all(),
     sales: db.prepare('SELECT * FROM v_sales_sheet ORDER BY data_hora DESC LIMIT 5000').all(),
     movements: db.prepare('SELECT * FROM v_movements_sheet ORDER BY data_hora DESC LIMIT 5000').all(),
     post_event_inventories: db.prepare('SELECT * FROM v_post_event_inventory_sheet ORDER BY registrado_em DESC LIMIT 5000').all(),

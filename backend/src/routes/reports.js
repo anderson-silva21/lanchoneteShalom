@@ -11,6 +11,10 @@ const reportQueries = {
     title: 'Produtos e estoque',
     query: 'SELECT * FROM v_products_sheet ORDER BY categoria, produto'
   },
+  batches: {
+    title: 'Lotes de estoque',
+    query: 'SELECT * FROM v_stock_batches_sheet ORDER BY produto, date(validade), lote_id'
+  },
   sales: {
     title: 'Historico de vendas',
     query: 'SELECT * FROM v_sales_sheet ORDER BY data_hora DESC'
@@ -24,6 +28,7 @@ const reportQueries = {
         p.internal_code AS codigo_produto,
         p.name AS produto,
         p.unit AS unidade,
+        m.batch_id AS lote_id,
         m.type AS tipo,
         m.quantity_change AS quantidade,
         m.quantity_before AS antes,
@@ -87,6 +92,7 @@ function formatReportRows(type, rows) {
       data_hora: row.data_hora,
       codigo_produto: row.codigo_produto,
       produto: row.produto,
+      lote_id: row.lote_id,
       tipo: row.tipo,
       quantidade: row.quantidade,
       quantidade_formatada: formatQuantityWithUnit(row.quantidade, row.unidade),
@@ -97,6 +103,24 @@ function formatReportRows(type, rows) {
       depois_formatado: formatQuantityWithUnit(row.depois, row.unidade),
       validade: row.validade,
       observacoes: row.observacoes
+    }));
+  }
+
+  if (type === 'batches') {
+    return rows.map((row) => ({
+      lote_id: row.lote_id,
+      produto_id: row.produto_id,
+      codigo_produto: row.codigo_produto,
+      produto: row.produto,
+      categoria: row.categoria,
+      quantidade: row.quantidade,
+      quantidade_formatada: formatQuantityWithUnit(row.quantidade, row.unidade),
+      unidade: row.unidade,
+      validade: row.validade,
+      dias_para_vencer: row.dias_para_vencer,
+      status_validade: row.status_validade,
+      criado_em: row.criado_em,
+      atualizado_em: row.atualizado_em
     }));
   }
 

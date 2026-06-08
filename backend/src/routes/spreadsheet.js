@@ -1,6 +1,7 @@
 const express = require('express');
 const { db } = require('../db');
 const { authenticate, requireRole } = require('../middleware/auth');
+const { roundQuantity, sameQuantity, setProductStock } = require('../services/stockService');
 
 const router = express.Router();
 
@@ -8,6 +9,10 @@ const sheets = {
   produtos: {
     label: 'Produtos',
     query: 'SELECT * FROM v_products_sheet ORDER BY categoria, produto'
+  },
+  lotes: {
+    label: 'Lotes',
+    query: 'SELECT * FROM v_stock_batches_sheet ORDER BY produto, date(validade), lote_id'
   },
   vendas: {
     label: 'Vendas',
@@ -75,10 +80,8 @@ router.patch('/produtos/:id', requireRole('admin', 'manager'), (req, res) => {
     unidade: 'unit',
     custo: 'cost_price',
     preco: 'sale_price',
-    estoque: 'stock_quantity',
     estoque_minimo: 'min_stock',
     fornecedor: 'supplier',
-    validade: 'expiration_date',
     codigo: 'internal_code'
   };
 
@@ -92,18 +95,45 @@ router.patch('/produtos/:id', requireRole('admin', 'manager'), (req, res) => {
     params[column] = value;
   });
 
-  if (!assignments.length) return res.status(400).json({ message: 'Nenhum campo editavel enviado.' });
+  const requestedStock = req.body.estoque !== undefined && req.body.estoque !== ''
+    ? roundQuantity(req.body.estoque)
+    : null;
 
-  const nonnegativeColumns = ['cost_price', 'sale_price', 'stock_quantity', 'min_stock'];
+  if (!assignments.length && requestedStock === null) {
+    return res.status(400).json({ message: 'Nenhum campo editavel enviado.' });
+  }
+
+  const nonnegativeColumns = ['cost_price', 'sale_price', 'min_stock'];
   const invalidNumber = nonnegativeColumns.some((column) => params[column] !== undefined && Number(params[column]) < 0);
-  if (invalidNumber) return res.status(400).json({ message: 'Valores numericos nao podem ser negativos.' });
+  if (invalidNumber || (requestedStock !== null && requestedStock < 0)) return res.status(400).json({ message: 'Valores numericos nao podem ser negativos.' });
 
-  if (params.expiration_date && !/^\d{4}-\d{2}-\d{2}$/.test(String(params.expiration_date))) {
+  if (req.body.validade && !/^\d{4}-\d{2}-\d{2}$/.test(String(req.body.validade))) {
     return res.status(400).json({ message: 'Validade invalida.' });
   }
 
   params.id = Number(req.params.id);
-  db.prepare(`UPDATE products SET ${assignments.join(', ')} WHERE id = @id`).run(params);
+  const current = db.prepare('SELECT * FROM products WHERE id = ? AND active = 1').get(params.id);
+  if (!current) return res.status(404).json({ message: 'Produto nao encontrado.' });
+
+  const transaction = db.transaction(() => {
+    if (assignments.length) {
+      db.prepare(`UPDATE products SET ${assignments.join(', ')} WHERE id = @id`).run(params);
+    }
+
+    if (requestedStock !== null && !sameQuantity(requestedStock, current.stock_quantity)) {
+      setProductStock({
+        productId: params.id,
+        physicalQuantity: requestedStock,
+        expectedQuantity: current.stock_quantity,
+        referenceType: 'spreadsheet',
+        notes: 'Ajuste pela planilha central',
+        userId: req.user.id,
+        expirationDate: req.body.validade || null
+      });
+    }
+  });
+
+  transaction();
   return res.json(db.prepare('SELECT * FROM v_products_sheet WHERE id = ?').get(req.params.id));
 });
 

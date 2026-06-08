@@ -68,6 +68,8 @@ export const api = {
   createSale: (sale) => request('/sales', { method: 'POST', body: sale }),
   sales: () => request('/sales?limit=80'),
   movements: () => request('/inventory/movements'),
+  batches: (params = {}) => request(`/inventory/batches?${new URLSearchParams(params)}`),
+  productStock: (id, params = {}) => request(`/inventory/products/${id}/stock?${new URLSearchParams(params)}`),
   createMovement: (movement) => request('/inventory/movements', { method: 'POST', body: movement }),
   postEventInventories: () => request('/inventory/post-event'),
   postEventInventory: (id) => request(`/inventory/post-event/${id}`),

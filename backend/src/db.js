@@ -17,6 +17,29 @@ function runSchema() {
   db.exec(fs.readFileSync(schemaPath, 'utf8'));
 }
 
+function ensureStockBatchSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS stock_batches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      expiration_date TEXT,
+      quantity_available REAL NOT NULL DEFAULT 0 CHECK (quantity_available >= 0),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_stock_batches_product_expiration
+      ON stock_batches(product_id, quantity_available, expiration_date);
+
+    CREATE TRIGGER IF NOT EXISTS trg_stock_batches_updated_at
+    AFTER UPDATE ON stock_batches
+    FOR EACH ROW
+    BEGIN
+      UPDATE stock_batches SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+    END;
+  `);
+}
+
 function tableExists(table) {
   return Boolean(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table));
 }
@@ -28,6 +51,71 @@ function columnExists(table, column) {
 function addColumnIfMissing(table, column, definition) {
   if (!tableExists(table) || columnExists(table, column)) return;
   db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+function roundQuantity(value) {
+  return Number(Number(value || 0).toFixed(3));
+}
+
+function syncProductStockFromBatches(productId) {
+  if (!tableExists('stock_batches')) return;
+
+  const total = db.prepare(`
+    SELECT COALESCE(SUM(quantity_available), 0) AS total
+    FROM stock_batches
+    WHERE product_id = ?
+  `).get(productId).total;
+
+  const nextExpiration = db.prepare(`
+    SELECT expiration_date
+    FROM stock_batches
+    WHERE product_id = ?
+      AND quantity_available > 0
+      AND expiration_date IS NOT NULL
+      AND expiration_date != ''
+    ORDER BY date(expiration_date) ASC, id ASC
+    LIMIT 1
+  `).get(productId);
+
+  db.prepare('UPDATE products SET stock_quantity = ?, expiration_date = ? WHERE id = ?')
+    .run(roundQuantity(total), nextExpiration?.expiration_date || null, productId);
+}
+
+function syncAllProductStockFromBatches() {
+  if (!tableExists('stock_batches')) return;
+
+  const productIds = db.prepare(`
+    SELECT DISTINCT product_id
+    FROM stock_batches
+  `).all();
+
+  productIds.forEach((row) => syncProductStockFromBatches(row.product_id));
+}
+
+function migrateLegacyStockBatches() {
+  if (!tableExists('products') || !tableExists('stock_batches')) return;
+
+  const products = db.prepare(`
+    SELECT p.id, p.stock_quantity, p.expiration_date
+    FROM products p
+    WHERE p.stock_quantity > 0
+      AND NOT EXISTS (
+        SELECT 1
+        FROM stock_batches b
+        WHERE b.product_id = p.id
+      )
+  `).all();
+
+  const insertBatch = db.prepare(`
+    INSERT INTO stock_batches (product_id, expiration_date, quantity_available)
+    VALUES (?, ?, ?)
+  `);
+
+  products.forEach((product) => {
+    insertBatch.run(product.id, product.expiration_date || null, roundQuantity(product.stock_quantity));
+  });
+
+  syncAllProductStockFromBatches();
 }
 
 function normalizeUsername(value, fallback = 'user') {
@@ -73,6 +161,8 @@ function runMigrations() {
   fillMissingUsernames();
   addColumnIfMissing('products', 'expiration_date', 'TEXT');
   addColumnIfMissing('inventory_movements', 'expiration_date', 'TEXT');
+  addColumnIfMissing('inventory_movements', 'batch_id', 'INTEGER REFERENCES stock_batches(id)');
+  migrateLegacyStockBatches();
 }
 
 function countRows(table) {
@@ -105,7 +195,7 @@ function seedUsers() {
 }
 
 function seedProducts() {
-  if (countRows('products') > 0) return;
+  if (countRows('products') > 0) return false;
 
   const products = [
     ['X-Burger', 'Lanches', 8.5, 18.9, 32, 10, 'Cozinha interna', 'LAN-001', 'unidade'],
@@ -128,6 +218,7 @@ function seedProducts() {
   `);
 
   products.forEach((product) => insert.run(product));
+  return true;
 }
 
 function seedCombos() {
@@ -148,6 +239,40 @@ function seedCombos() {
   });
 }
 
+function consumeSeedProductStock(productId, quantity) {
+  if (!tableExists('stock_batches')) return [];
+
+  let remaining = roundQuantity(quantity);
+  const allocations = [];
+  const batches = db.prepare(`
+    SELECT *
+    FROM stock_batches
+    WHERE product_id = ? AND quantity_available > 0
+    ORDER BY
+      CASE WHEN expiration_date IS NULL OR expiration_date = '' THEN 1 ELSE 0 END,
+      date(expiration_date) ASC,
+      id ASC
+  `).all(productId);
+
+  const updateBatch = db.prepare('UPDATE stock_batches SET quantity_available = ? WHERE id = ?');
+
+  for (const batch of batches) {
+    if (remaining <= 0) break;
+
+    const quantityToConsume = Math.min(remaining, Number(batch.quantity_available || 0));
+    const nextQuantity = roundQuantity(Number(batch.quantity_available || 0) - quantityToConsume);
+    updateBatch.run(nextQuantity, batch.id);
+    allocations.push({
+      batch_id: batch.id,
+      expiration_date: batch.expiration_date || null,
+      quantity: roundQuantity(quantityToConsume)
+    });
+    remaining = roundQuantity(remaining - quantityToConsume);
+  }
+
+  return allocations;
+}
+
 function seedSalesHistory() {
   if (countRows('sales') > 0) return;
 
@@ -164,8 +289,8 @@ function seedSalesHistory() {
   `);
   const insertMovement = db.prepare(`
     INSERT INTO inventory_movements
-      (product_id, type, quantity_change, quantity_before, quantity_after, reference_type, reference_id, notes, created_by, created_at)
-    VALUES (?, 'sale', ?, ?, ?, 'sale', ?, ?, ?, ?)
+      (product_id, batch_id, type, quantity_change, quantity_before, quantity_after, reference_type, reference_id, notes, expiration_date, created_by, created_at)
+    VALUES (?, ?, 'sale', ?, ?, ?, 'sale', ?, ?, ?, ?, ?)
   `);
   const updateStock = db.prepare('UPDATE products SET stock_quantity = ? WHERE id = ?');
 
@@ -188,22 +313,48 @@ function seedSalesHistory() {
       const current = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(product.id).stock_quantity;
       const after = Math.max(current - quantity, 0);
       updateStock.run(after, product.id);
-      insertMovement.run(product.id, -quantity, current, after, saleId, 'Baixa automatica por venda seed', admin.id, iso);
+      const allocations = consumeSeedProductStock(product.id, quantity);
+      let movementBefore = current;
+      if (allocations.length) {
+        allocations.forEach((allocation) => {
+          const movementAfter = roundQuantity(movementBefore - allocation.quantity);
+          insertMovement.run(
+            product.id,
+            allocation.batch_id,
+            -allocation.quantity,
+            movementBefore,
+            movementAfter,
+            saleId,
+            'Baixa automatica por venda seed',
+            allocation.expiration_date,
+            admin.id,
+            iso
+          );
+          movementBefore = movementAfter;
+        });
+      } else {
+        insertMovement.run(product.id, null, -quantity, current, after, saleId, 'Baixa automatica por venda seed', null, admin.id, iso);
+      }
     }
   }
+
+  syncAllProductStockFromBatches();
 }
 
 function initDatabase() {
+  ensureStockBatchSchema();
   runMigrations();
   runSchema();
   runMigrations();
   const seed = db.transaction(() => {
     seedUsers();
-    seedProducts();
-    seedCombos();
-    seedSalesHistory();
+    const insertedDemoProducts = seedProducts();
+    if (insertedDemoProducts) seedCombos();
+    migrateLegacyStockBatches();
+    if (insertedDemoProducts) seedSalesHistory();
   });
   seed();
+  runMigrations();
 }
 
 module.exports = {
