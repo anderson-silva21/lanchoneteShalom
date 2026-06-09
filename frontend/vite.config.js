@@ -8,7 +8,8 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     allowedHosts: [
-      'intranet.lanchoneteshalom.local'
+      'intranet.lanchoneteshalom',
+      'https://containing-hydrogen-involves-quilt.trycloudflare.com'
     ]
   }
 })
