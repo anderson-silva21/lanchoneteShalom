@@ -474,44 +474,52 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
             </button>
           )}
         >
-          {suggestions.length ? (
-            <div className="space-y-3">
-              {suggestions.map((item) => (
-                <article key={item.id} className="mission-card p-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="font-semibold">{item.name}</p>
-                      <p className="mission-muted text-sm">{item.category}{item.supplier ? ` - ${item.supplier}` : ''}</p>
-                    </div>
-                    <StatusPill status={item.status} />
-                  </div>
-                  <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-4">
-                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
-                      <dt className="mission-muted">Estoque atual</dt>
-                      <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.stock_quantity, item.unit)}</dd>
-                    </div>
-                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
-                      <dt className="mission-muted">Minimo</dt>
-                      <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.min_stock, item.unit)}</dd>
-                    </div>
-                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
-                      <dt className="mission-muted">Uso medio</dt>
-                      <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.avg_daily_usage, item.unit)}/dia</dd>
-                    </div>
-                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
-                      <dt className="mission-muted">Comprar</dt>
-                      <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.suggested_purchase, item.unit)}</dd>
-                    </div>
-                  </dl>
-                  <p className="mission-muted mt-3 text-sm">Previsao de ruptura: {formatDays(item.days_to_out)}</p>
-                </article>
-              ))}
+          <div className="space-y-3">
+            <div className="rounded-xl bg-shalom-mist/70 p-3 text-sm dark:bg-white/10">
+              <p className="font-semibold">Como calculamos</p>
+              <p className="mission-muted mt-1">
+                O uso medio diario e o total vendido nos ultimos 14 dias dividido por 14. A sugestao completa o estoque ate o maior valor entre duas vezes o estoque minimo e sete dias de uso medio, descontando o estoque atual e arredondando para cima.
+              </p>
             </div>
-          ) : (
-            <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
-              Nenhuma compra sugerida no momento.
-            </div>
-          )}
+            {suggestions.length ? (
+              <div className="space-y-3">
+                {suggestions.map((item) => (
+                  <article key={item.id} className="mission-card p-3">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="font-semibold">{item.name}</p>
+                        <p className="mission-muted text-sm">{item.category}{item.supplier ? ` - ${item.supplier}` : ''}</p>
+                      </div>
+                      <StatusPill status={item.status} />
+                    </div>
+                    <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-4">
+                      <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                        <dt className="mission-muted">Estoque atual</dt>
+                        <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.stock_quantity, item.unit)}</dd>
+                      </div>
+                      <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                        <dt className="mission-muted">Minimo</dt>
+                        <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.min_stock, item.unit)}</dd>
+                      </div>
+                      <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                        <dt className="mission-muted">Uso medio</dt>
+                        <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.avg_daily_usage, item.unit)}/dia</dd>
+                      </div>
+                      <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                        <dt className="mission-muted">Comprar</dt>
+                        <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.suggested_purchase, item.unit)}</dd>
+                      </div>
+                    </dl>
+                    <p className="mission-muted mt-3 text-sm">Previsao de ruptura: {formatDays(item.days_to_out)}</p>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
+                Nenhuma compra sugerida no momento.
+              </div>
+            )}
+          </div>
         </DashboardModal>
       ) : null}
 
