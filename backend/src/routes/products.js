@@ -52,6 +52,10 @@ function generateProductCode(category) {
   return `${prefix}-${String(lastNumber + 1).padStart(3, '0')}`;
 }
 
+function ensureProductCategory(category) {
+  db.prepare('INSERT OR IGNORE INTO product_categories (name) VALUES (?)').run(category);
+}
+
 router.use(authenticate);
 
 router.get('/', (req, res) => {
@@ -89,11 +93,13 @@ router.get('/', (req, res) => {
 
 router.get('/categories', (req, res) => {
   const categories = db.prepare(`
-    SELECT category, COUNT(*) AS total
-    FROM products
-    WHERE active = 1
-    GROUP BY category
-    ORDER BY category
+    SELECT
+      pc.name AS category,
+      COUNT(p.id) AS total
+    FROM product_categories pc
+    LEFT JOIN products p ON p.category = pc.name AND p.active = 1
+    GROUP BY pc.id, pc.name
+    ORDER BY pc.name
   `).all();
   return res.json(categories);
 });
@@ -108,6 +114,7 @@ router.post('/', requireScreen('products'), (req, res) => {
   };
 
   const transaction = db.transaction(() => {
+    ensureProductCategory(product.category);
     const result = db.prepare(`
       INSERT INTO products
         (name, category, cost_price, sale_price, stock_quantity, min_stock, supplier, internal_code, unit, expiration_date, active)
@@ -140,19 +147,23 @@ router.patch('/:id', requireScreen('products'), (req, res) => {
   if (!current) return res.status(404).json({ message: 'Produto nao encontrado.' });
 
   const merged = productSchema.parse({ ...current, ...req.body });
-  db.prepare(`
-    UPDATE products SET
-      name = @name,
-      category = @category,
-      cost_price = @cost_price,
-      sale_price = @sale_price,
-      min_stock = @min_stock,
-      supplier = @supplier,
-      internal_code = @internal_code,
-      unit = @unit,
-      active = COALESCE(@active, 1)
-    WHERE id = @id
-  `).run({ ...merged, id: Number(req.params.id) });
+  const transaction = db.transaction(() => {
+    ensureProductCategory(merged.category);
+    db.prepare(`
+      UPDATE products SET
+        name = @name,
+        category = @category,
+        cost_price = @cost_price,
+        sale_price = @sale_price,
+        min_stock = @min_stock,
+        supplier = @supplier,
+        internal_code = @internal_code,
+        unit = @unit,
+        active = COALESCE(@active, 1)
+      WHERE id = @id
+    `).run({ ...merged, id: Number(req.params.id) });
+  });
+  transaction();
 
   return res.json(db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id));
 });

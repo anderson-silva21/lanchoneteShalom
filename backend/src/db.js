@@ -214,6 +214,27 @@ function seedUsers() {
   });
 }
 
+function seedProductCategories() {
+  const insert = db.prepare('INSERT OR IGNORE INTO product_categories (name) VALUES (?)');
+  const categories = [
+    'Bebidas',
+    'Descartáveis',
+    'Doces e snacks',
+    'Insumos',
+    'Lanches',
+    'Porcoes'
+  ];
+
+  categories.forEach((category) => insert.run(category));
+
+  db.prepare(`
+    INSERT OR IGNORE INTO product_categories (name)
+    SELECT DISTINCT category
+    FROM products
+    WHERE category IS NOT NULL AND trim(category) != ''
+  `).run();
+}
+
 function seedProducts() {
   if (countRows('products') > 0) return false;
 
@@ -425,6 +446,7 @@ function initDatabase() {
   runMigrations();
   const seed = db.transaction(() => {
     seedUsers();
+    seedProductCategories();
     const insertedDemoProducts = seedProducts();
     if (insertedDemoProducts) seedCombos();
     seedPrototypeEvents();
