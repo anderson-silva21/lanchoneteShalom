@@ -8,6 +8,9 @@ const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lanchonete-stock-'));
 process.env.DB_PATH = path.join(tempDir, 'test.sqlite');
 
 const { db, initDatabase } = require('../src/db');
+const { getDashboardAnalytics } = require('../src/services/analyticsService');
+const { createCombo, listActiveCombos } = require('../src/services/comboService');
+const { createEvent } = require('../src/services/eventsService');
 const { createSale } = require('../src/services/salesService');
 const { addStock, getProductStock } = require('../src/services/stockService');
 
@@ -25,6 +28,7 @@ function resetDatabase() {
     DELETE FROM combos;
     DELETE FROM post_event_inventory_items;
     DELETE FROM post_event_inventories;
+    DELETE FROM events;
     DELETE FROM stock_batches;
     DELETE FROM products;
     DELETE FROM users;
@@ -164,4 +168,124 @@ test('consulta de lotes identifica produtos vencidos', () => {
   assert.equal(stock.batches.length, 1);
   assert.equal(stock.batches[0].expiration_status, 'expired');
   assert.ok(stock.batches[0].days_to_expire < 0);
+});
+
+test('dashboard agrupa receita das vendas por evento no ano', () => {
+  const insert = db.prepare('INSERT INTO events (name, event_date) VALUES (?, ?)');
+  const year = new Date().getFullYear();
+
+  const servosJanuary = insert.run('Servos Apostolicos', `${year}-01-01`).lastInsertRowid;
+  const servosFebruary = insert.run('Servos Apostolicos', `${year}-02-01`).lastInsertRowid;
+  const corujao = insert.run('Corujao Shalom', `${year}-01-15`).lastInsertRowid;
+  const insertSale = db.prepare(`
+    INSERT INTO sales (total, estimated_profit, payment_method, event_id, sold_by)
+    VALUES (?, ?, 'pix', ?, ?)
+  `);
+
+  insertSale.run(100, 40, servosJanuary, userId);
+  insertSale.run(80, 30, servosFebruary, userId);
+  insertSale.run(250, 90, corujao, userId);
+
+  const events = getDashboardAnalytics().event_revenue;
+
+  assert.deepEqual(events.map((event) => [event.name, event.revenue, event.occurrences]), [
+    ['Corujao Shalom', 250, 1],
+    ['Servos Apostolicos', 180, 2]
+  ]);
+});
+
+test('venda pode ser vinculada a um evento', () => {
+  const product = createProduct({ name: 'Pastel' });
+  addStock({ productId: product.id, quantity: 2, expirationDate: '2026-12-20', userId });
+  const year = new Date().getFullYear();
+  const eventId = db.prepare('INSERT INTO events (name, event_date) VALUES (?, ?)').run('Corujao Shalom', `${year}-01-15`).lastInsertRowid;
+
+  const sale = createSale({
+    payment_method: 'pix',
+    event_id: eventId,
+    items: [{ product_id: product.id, quantity: 1 }]
+  }, { id: userId });
+
+  assert.equal(sale.event_id, eventId);
+  assert.equal(sale.event_name, 'Corujao Shalom');
+});
+
+test('registro de evento atribui vendas existentes realizadas na mesma data', () => {
+  const saleId = db.prepare(`
+    INSERT INTO sales (total, estimated_profit, payment_method, sold_by, created_at)
+    VALUES (150, 60, 'pix', ?, '2026-07-10 12:00:00')
+  `).run(userId).lastInsertRowid;
+
+  const event = createEvent({
+    name: 'Servos Apostolicos',
+    event_date: '2026-07-10'
+  });
+
+  const sale = db.prepare('SELECT event_id FROM sales WHERE id = ?').get(saleId);
+  assert.equal(sale.event_id, event.id);
+  assert.equal(event.assigned_sales, 1);
+  assert.equal(event.assigned_revenue, 150);
+});
+
+test('nova venda e atribuida automaticamente ao evento do dia', () => {
+  const today = db.prepare("SELECT date('now', 'localtime') AS date").get().date;
+  const event = createEvent({
+    name: 'Evento de Hoje',
+    event_date: today
+  });
+  const product = createProduct({ name: 'Cafe' });
+  addStock({ productId: product.id, quantity: 2, expirationDate: '2026-12-20', userId });
+
+  const sale = createSale({
+    payment_method: 'pix',
+    items: [{ product_id: product.id, quantity: 1 }]
+  }, { id: userId });
+
+  assert.equal(sale.event_id, event.id);
+  assert.equal(sale.event_name, 'Evento de Hoje');
+});
+
+test('caixa cria promocao e venda desconta o estoque dos produtos do combo', () => {
+  const pastel = createProduct({ name: 'Pastel', sale_price: 8, cost_price: 3 });
+  const coxinha = createProduct({ name: 'Coxinha', sale_price: 7, cost_price: 2.5 });
+  addStock({ productId: pastel.id, quantity: 10, expirationDate: '2026-12-20', userId });
+  addStock({ productId: coxinha.id, quantity: 6, expirationDate: '2026-12-20', userId });
+
+  const promotion = createCombo({
+    name: 'Queima de salgados',
+    sale_price: 18,
+    is_promotion: true,
+    expires_at: '2099-12-31T23:59:59.000Z',
+    items: [
+      { product_id: pastel.id, quantity: 2 },
+      { product_id: coxinha.id, quantity: 1 }
+    ]
+  }, userId);
+
+  assert.equal(promotion.regular_price, 23);
+  assert.equal(promotion.savings, 5);
+  assert.equal(promotion.max_available, 5);
+
+  const sale = createSale({
+    payment_method: 'pix',
+    items: [{ combo_id: promotion.id, quantity: 2 }]
+  }, { id: userId });
+
+  assert.equal(sale.total, 36);
+  assert.equal(db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(pastel.id).stock_quantity, 6);
+  assert.equal(db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(coxinha.id).stock_quantity, 4);
+});
+
+test('promocao expirada nao aparece no PDV', () => {
+  const product = createProduct({ name: 'Empada', sale_price: 9 });
+  addStock({ productId: product.id, quantity: 2, expirationDate: '2026-12-20', userId });
+  createCombo({
+    name: 'Promocao encerrada',
+    sale_price: 5,
+    is_promotion: true,
+    expires_at: '2000-01-01T23:59:59.000Z',
+    items: [{ product_id: product.id, quantity: 1 }]
+  }, userId);
+
+  assert.equal(listActiveCombos().length, 0);
 });

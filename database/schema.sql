@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS combos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   sale_price REAL NOT NULL DEFAULT 0,
+  is_promotion INTEGER NOT NULL DEFAULT 0,
+  expires_at TEXT,
+  created_by INTEGER REFERENCES users(id),
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -58,6 +61,7 @@ CREATE TABLE IF NOT EXISTS sales (
   estimated_profit REAL NOT NULL DEFAULT 0,
   payment_method TEXT NOT NULL DEFAULT 'dinheiro',
   notes TEXT,
+  event_id INTEGER REFERENCES events(id),
   sold_by INTEGER REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -100,6 +104,15 @@ CREATE TABLE IF NOT EXISTS post_event_inventories (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  event_date TEXT NOT NULL,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (name, event_date)
+);
+
 CREATE TABLE IF NOT EXISTS post_event_inventory_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   inventory_id INTEGER NOT NULL REFERENCES post_event_inventories(id) ON DELETE CASCADE,
@@ -120,10 +133,13 @@ CREATE TABLE IF NOT EXISTS post_event_inventory_items (
 CREATE INDEX IF NOT EXISTS idx_products_status ON products(active, category, stock_quantity);
 CREATE INDEX IF NOT EXISTS idx_stock_batches_product_expiration ON stock_batches(product_id, quantity_available, expiration_date);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_combos_active_expiration ON combos(active, expires_at);
 CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(created_at);
+CREATE INDEX IF NOT EXISTS idx_sales_event ON sales(event_id);
 CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
 CREATE INDEX IF NOT EXISTS idx_movements_product_date ON inventory_movements(product_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_movements_batch_date ON inventory_movements(batch_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_events_date_name ON events(event_date, name);
 CREATE INDEX IF NOT EXISTS idx_post_event_inventories_date ON post_event_inventories(event_date, created_at);
 CREATE INDEX IF NOT EXISTS idx_post_event_inventory_items_inventory ON post_event_inventory_items(inventory_id);
 
@@ -206,12 +222,15 @@ SELECT
   s.id AS venda_id,
   s.created_at AS data_hora,
   u.name AS operador,
+  e.name AS evento,
+  e.event_date AS data_evento,
   s.payment_method AS pagamento,
   s.total AS faturamento,
   s.estimated_profit AS lucro_estimado,
   s.notes AS observacoes
 FROM sales s
-LEFT JOIN users u ON u.id = s.sold_by;
+LEFT JOIN users u ON u.id = s.sold_by
+LEFT JOIN events e ON e.id = s.event_id;
 
 CREATE VIEW IF NOT EXISTS v_movements_sheet AS
 SELECT

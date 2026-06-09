@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
+const dayjs = require('dayjs');
 
 const dataDir = path.resolve(__dirname, '../../database');
 const dbPath = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(dataDir, 'lanchonete.sqlite');
@@ -37,6 +38,21 @@ function ensureStockBatchSchema() {
     BEGIN
       UPDATE stock_batches SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
     END;
+  `);
+}
+
+function ensureEventSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      event_date TEXT NOT NULL,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (name, event_date)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_events_date_name ON events(event_date, name);
   `);
 }
 
@@ -160,6 +176,10 @@ function runMigrations() {
   addColumnIfMissing('users', 'username', 'TEXT');
   fillMissingUsernames();
   addColumnIfMissing('products', 'expiration_date', 'TEXT');
+  addColumnIfMissing('combos', 'is_promotion', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('combos', 'expires_at', 'TEXT');
+  addColumnIfMissing('combos', 'created_by', 'INTEGER REFERENCES users(id)');
+  addColumnIfMissing('sales', 'event_id', 'INTEGER REFERENCES events(id)');
   addColumnIfMissing('inventory_movements', 'expiration_date', 'TEXT');
   addColumnIfMissing('inventory_movements', 'batch_id', 'INTEGER REFERENCES stock_batches(id)');
   migrateLegacyStockBatches();
@@ -236,6 +256,62 @@ function seedCombos() {
   ].forEach(([code, quantity]) => {
     const product = getProduct.get(code);
     if (product) insertItem.run(comboId, product.id, quantity);
+  });
+}
+
+function firstSaturday(year, month) {
+  let date = dayjs(`${year}-${String(month + 1).padStart(2, '0')}-01`);
+  while (date.day() !== 6) date = date.add(1, 'day');
+  return date;
+}
+
+function lastSaturday(year, month) {
+  let date = dayjs(`${year}-${String(month + 1).padStart(2, '0')}-01`).endOf('month');
+  while (date.day() !== 6) date = date.subtract(1, 'day');
+  return date;
+}
+
+function seedPrototypeEvents() {
+  if (countRows('events') > 0) return;
+
+  const today = dayjs();
+  const year = today.year();
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO events (name, event_date, notes)
+    VALUES (?, ?, ?)
+  `);
+
+  for (let month = 0; month <= today.month(); month += 1) {
+    const eventDate = firstSaturday(year, month);
+    if (!eventDate.isAfter(today, 'day')) {
+      insert.run('Servos Apostolicos', eventDate.format('YYYY-MM-DD'), 'Ocorrencia mensal - seed do prototipo');
+    }
+  }
+
+  [0, 3].forEach((month) => {
+    const eventDate = lastSaturday(year, month);
+    if (!eventDate.isAfter(today, 'day')) {
+      insert.run('Corujao Shalom', eventDate.format('YYYY-MM-DD'), 'Ocorrencia - seed do prototipo');
+    }
+  });
+}
+
+function seedPrototypeEventSales() {
+  if (!columnExists('sales', 'event_id') || countRows('events') === 0) return;
+
+  const events = db.prepare('SELECT id FROM events ORDER BY event_date, id').all();
+  const linkedSalesCount = db.prepare('SELECT COUNT(*) AS total FROM sales WHERE event_id IS NOT NULL').get().total;
+  const sales = db.prepare(`
+    SELECT id
+    FROM sales
+    WHERE event_id IS NULL
+      ${linkedSalesCount > 0 ? "AND notes = 'Venda seed'" : ''}
+    ORDER BY created_at, id
+  `).all();
+  const updateSale = db.prepare('UPDATE sales SET event_id = ? WHERE id = ?');
+
+  sales.forEach((sale, index) => {
+    updateSale.run(events[index % events.length].id, sale.id);
   });
 }
 
@@ -343,6 +419,7 @@ function seedSalesHistory() {
 
 function initDatabase() {
   ensureStockBatchSchema();
+  ensureEventSchema();
   runMigrations();
   runSchema();
   runMigrations();
@@ -350,8 +427,10 @@ function initDatabase() {
     seedUsers();
     const insertedDemoProducts = seedProducts();
     if (insertedDemoProducts) seedCombos();
+    seedPrototypeEvents();
     migrateLegacyStockBatches();
     if (insertedDemoProducts) seedSalesHistory();
+    seedPrototypeEventSales();
   });
   seed();
   runMigrations();

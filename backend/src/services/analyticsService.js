@@ -192,12 +192,13 @@ function getDashboardAnalytics() {
     SELECT
       p.name,
       p.category,
+      p.unit,
       SUM(ABS(m.quantity_change)) AS quantity
     FROM inventory_movements m
     JOIN products p ON p.id = m.product_id
     WHERE m.type = 'sale'
       AND unixepoch(m.created_at) >= unixepoch(?)
-    GROUP BY p.id
+    GROUP BY p.id, p.name, p.category, p.unit
     ORDER BY quantity DESC
     LIMIT 8
   `).all(thirteenDaysAgo);
@@ -259,17 +260,26 @@ function getDashboardAnalytics() {
     };
   });
 
-  const peakHours = db.prepare(`
+  const eventRevenue = db.prepare(`
     SELECT
-      strftime('%H', created_at, 'localtime') AS hour,
-      COUNT(*) AS sales,
-      SUM(total) AS revenue
-    FROM sales
-    WHERE unixepoch(created_at) >= unixepoch(?)
-    GROUP BY strftime('%H', created_at, 'localtime')
-    ORDER BY sales DESC
-    LIMIT 6
-  `).all(thirtyDaysAgo);
+      e.name,
+      COUNT(DISTINCT e.id) AS occurrences,
+      COUNT(s.id) AS sales,
+      SUM(s.total) AS revenue,
+      SUM(s.estimated_profit) AS profit
+    FROM events e
+    JOIN sales s ON s.event_id = e.id
+    WHERE date(e.event_date) >= date('now', 'localtime', 'start of year')
+      AND date(e.event_date) <= date('now', 'localtime')
+    GROUP BY e.name
+    ORDER BY revenue DESC, e.name ASC
+  `).all().map((item) => ({
+    ...item,
+    occurrences: Number(item.occurrences || 0),
+    sales: Number(item.sales || 0),
+    revenue: money(item.revenue),
+    profit: money(item.profit)
+  }));
 
   const profitableProducts = db.prepare(`
     SELECT
@@ -312,10 +322,7 @@ function getDashboardAnalytics() {
     expiration_alerts: expirationAlerts,
     missing_expiration_products: missingExpirationProducts,
     purchase_suggestions: purchaseSuggestions,
-    peak_hours: peakHours.map((item) => ({
-      ...item,
-      label: `${item.hour}h`
-    })),
+    event_revenue: eventRevenue,
     profitable_products: profitableProducts
   };
 }

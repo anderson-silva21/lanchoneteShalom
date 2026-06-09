@@ -111,6 +111,15 @@ button:disabled {
     z-index: 1;
   }
 
+  .dashboard-chart-panel {
+    z-index: 10;
+    overflow: visible;
+  }
+
+  .dashboard-chart-panel::before {
+    border-radius: inherit;
+  }
+
   .dark .mission-panel {
     border-color: rgba(250, 224, 136, 0.16);
     background: rgba(8, 27, 52, 0.74);

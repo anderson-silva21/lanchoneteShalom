@@ -3,24 +3,23 @@ import {
   Banknote,
   Boxes,
   CalendarClock,
+  CalendarPlus,
   LineChart,
   PackagePlus,
   ReceiptText,
   TrendingUp,
   X
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Area,
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ComposedChart,
+  LabelList,
   Legend,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -31,12 +30,24 @@ import { decimal, formatDate, formatQuantityWithUnit, money } from '../utils/for
 import { MetricCard } from './MetricCard'
 import { StatusPill } from './StatusPill'
 
-const chartColors = ['#142F53', '#184E7F', '#FAE088', '#F27C23', '#7A1E2D', '#A8B8C8']
-
 function formatDays(value) {
   if (!value && value !== 0) return 'Sem consumo recente'
   if (value < 1) return 'Menos de 1 dia'
   return `${decimal.format(value)} dias`
+}
+
+function todayInputValue() {
+  const date = new Date()
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+  return localDate.toISOString().slice(0, 10)
+}
+
+function createEmptyEventDraft() {
+  return {
+    name: '',
+    event_date: todayInputValue(),
+    notes: ''
+  }
 }
 
 function validityLabel(item) {
@@ -100,6 +111,11 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
   const [loading, setLoading] = useState(true)
   const [activeModal, setActiveModal] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
+  const [eventDraft, setEventDraft] = useState(createEmptyEventDraft)
+  const [eventSaving, setEventSaving] = useState(false)
+  const [eventMessage, setEventMessage] = useState('')
+  const [registeredEvent, setRegisteredEvent] = useState(null)
+  const retriedEventRevenueRef = useRef(false)
 
   useEffect(() => {
     let mounted = true
@@ -123,6 +139,12 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
   }, [refreshKey, reloadKey])
 
   useEffect(() => {
+    if (loading || !data || Array.isArray(data.event_revenue) || retriedEventRevenueRef.current) return
+    retriedEventRevenueRef.current = true
+    setReloadKey((key) => key + 1)
+  }, [data, loading])
+
+  useEffect(() => {
     if (!activeModal) return undefined
     function handleKeyDown(event) {
       if (event.key === 'Escape') setActiveModal('')
@@ -134,6 +156,30 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
   function openProducts(intent) {
     setActiveModal('')
     onNavigateToProducts?.(intent)
+  }
+
+  function openEventModal() {
+    setEventDraft(createEmptyEventDraft())
+    setEventMessage('')
+    setRegisteredEvent(null)
+    setActiveModal('event')
+  }
+
+  async function registerEvent(event) {
+    event.preventDefault()
+    setEventSaving(true)
+    setEventMessage('')
+    setRegisteredEvent(null)
+
+    try {
+      const created = await api.createEvent(eventDraft)
+      setRegisteredEvent(created)
+      setReloadKey((key) => key + 1)
+    } catch (err) {
+      setEventMessage(err.message)
+    } finally {
+      setEventSaving(false)
+    }
   }
 
   if (error) {
@@ -156,13 +202,18 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
   const lowStockProducts = data.low_stock_products || []
   const expirationAlerts = data.expiration_alerts || []
   const missingExpirationProducts = data.missing_expiration_products || []
+  const eventRevenue = data.event_revenue || []
 
   return (
     <div className="space-y-5">
-      <section className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7">
+      <section className="grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={Banknote} label="Faturamento hoje" value={money.format(data.kpis.revenue_today)} detail={`${data.kpis.sales_today} vendas`} tone="green" />
         <MetricCard icon={ReceiptText} label="Ticket medio" value={money.format(data.kpis.average_ticket_today)} detail="Media do dia" tone="blue" />
         <MetricCard icon={TrendingUp} label="Lucro estimado" value={money.format(data.kpis.estimated_profit_today)} detail="Baseado em custo" />
+        <MetricCard icon={LineChart} label="Produtos top" value={data.top_products[0]?.name || '-'} detail={data.top_products[0] ? `${decimal.format(data.top_products[0].quantity)} vendidos` : 'Sem vendas'} />
+      </section>
+
+      <section className="grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <MetricCard
           icon={AlertTriangle}
           label="Estoque baixo"
@@ -172,7 +223,6 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
           onClick={() => setActiveModal('lowStock')}
           ariaLabel="Abrir produtos com estoque baixo"
         />
-        <MetricCard icon={LineChart} label="Produtos top" value={data.top_products[0]?.name || '-'} detail={data.top_products[0] ? `${decimal.format(data.top_products[0].quantity)} vendidos` : 'Sem vendas'} />
         <MetricCard
           icon={Boxes}
           label="Sugestoes"
@@ -255,24 +305,32 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
           </div>
         </div>
 
-        <div className="mission-panel p-4">
-          <h2 className="font-display text-lg font-semibold">Consumo de estoque</h2>
+        <div className="dashboard-chart-panel mission-panel p-4">
+          <h2 className="font-display text-lg font-semibold">Saidas de estoque por vendas</h2>
+          <p className="mission-muted text-sm">8 produtos mais consumidos nos ultimos 14 dias, incluindo combos</p>
           <div className="mt-4 h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={data.stock_consumption} dataKey="quantity" nameKey="name" innerRadius={54} outerRadius={92} paddingAngle={2}>
-                  {data.stock_consumption.map((entry, index) => (
-                    <Cell key={entry.name} fill={chartColors[index % chartColors.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => decimal.format(value)} />
-              </PieChart>
+              <BarChart data={data.stock_consumption} layout="vertical" margin={{ left: 8, right: 18 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E7DFCD" />
+                <XAxis type="number" tickLine={false} axisLine={false} />
+                <YAxis dataKey="name" type="category" width={108} tickLine={false} axisLine={false} />
+                <Tooltip
+                  allowEscapeViewBox={{ x: true, y: true }}
+                  wrapperStyle={{ zIndex: 50 }}
+                  formatter={(value, name, item) => [
+                    formatQuantityWithUnit(value, item.payload.unit),
+                    name
+                  ]}
+                />
+                <Bar dataKey="quantity" name="Quantidade consumida" fill="#F27C23" radius={[0, 8, 8, 0]} />
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         <div className="mission-panel p-4">
           <h2 className="font-display text-lg font-semibold">Produtos parados</h2>
+          <p className="mission-muted text-sm">6 produtos com menos vendas diretas nos ultimos 30 dias</p>
           <div className="mt-4 divide-y divide-line/70 dark:divide-shalom-gold/10">
             {data.slow_products.map((item) => (
               <div key={item.id} className="flex items-center justify-between gap-3 py-3">
@@ -304,21 +362,101 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
           </div>
         </div>
 
-        <div className="mission-panel p-4">
-          <h2 className="font-display text-lg font-semibold">Horario de pico</h2>
+        <div className="dashboard-chart-panel mission-panel p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="font-display text-lg font-semibold">Receita por evento</h2>
+              <p className="mission-muted text-sm">Faturamento das vendas vinculadas a cada evento neste ano</p>
+            </div>
+            <button type="button" className="mission-btn mission-btn-primary flex shrink-0 items-center gap-2 px-3 py-2 text-sm font-semibold" onClick={openEventModal}>
+              <CalendarPlus size={17} />
+              Registrar
+            </button>
+          </div>
           <div className="mt-4 h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.peak_hours}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E7DFCD" />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                <YAxis tickLine={false} axisLine={false} />
-                <Tooltip formatter={(value, name) => name === 'revenue' ? money.format(value) : value} />
-                <Bar dataKey="sales" name="Vendas" fill="#FAE088" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {eventRevenue.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={eventRevenue} layout="vertical" margin={{ left: 8, right: 96 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E7DFCD" />
+                  <XAxis type="number" tickLine={false} axisLine={false} />
+                  <YAxis dataKey="name" type="category" width={132} tickLine={false} axisLine={false} />
+                  <Tooltip
+                    allowEscapeViewBox={{ x: true, y: true }}
+                    wrapperStyle={{ zIndex: 50 }}
+                    formatter={(value) => [money.format(value), 'Faturamento']}
+                  />
+                  <Bar dataKey="revenue" name="Faturamento" fill="#184E7F" radius={[0, 8, 8, 0]} minPointSize={4}>
+                    <LabelList dataKey="revenue" position="right" formatter={(value) => money.format(value)} fill="#184E7F" fontSize={12} fontWeight={600} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-dashed border-shalom-gold/50 p-6 text-center">
+                <p className="font-semibold">Nenhuma receita por evento encontrada.</p>
+                <p className="mission-muted mt-1 text-sm">Vincule um evento ao registrar vendas no PDV.</p>
+                <button type="button" className="mission-btn mission-btn-primary mt-4 px-4 py-2 text-sm font-semibold" onClick={() => setReloadKey((key) => key + 1)}>
+                  Atualizar dados
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </section>
+
+      {activeModal === 'event' ? (
+        <DashboardModal
+          title="Registrar evento"
+          description="Todas as vendas realizadas nesta data serao vinculadas automaticamente ao evento."
+          onClose={() => setActiveModal('')}
+        >
+          <form className="space-y-4" onSubmit={registerEvent}>
+            <label className="block text-sm font-medium">
+              Nome do evento
+              <input
+                className="mission-input mt-2 w-full px-3 py-2.5"
+                value={eventDraft.name}
+                onChange={(event) => setEventDraft((current) => ({ ...current, name: event.target.value }))}
+                placeholder="Ex.: Servos Apostolicos"
+                required
+              />
+            </label>
+            <label className="block text-sm font-medium">
+              Data do evento
+              <input
+                className="mission-input mt-2 w-full px-3 py-2.5"
+                type="date"
+                value={eventDraft.event_date}
+                onChange={(event) => setEventDraft((current) => ({ ...current, event_date: event.target.value }))}
+                required
+              />
+            </label>
+            <label className="block text-sm font-medium">
+              Observacoes
+              <textarea
+                className="mission-input mt-2 min-h-20 w-full px-3 py-2.5"
+                value={eventDraft.notes}
+                onChange={(event) => setEventDraft((current) => ({ ...current, notes: event.target.value }))}
+              />
+            </label>
+
+            {eventMessage ? <p className="rounded-xl bg-shalom-wine/10 px-3 py-2 text-sm text-shalom-wine dark:text-rose-100">{eventMessage}</p> : null}
+
+            {registeredEvent ? (
+              <div className="rounded-xl bg-shalom-mist/70 p-3 text-sm dark:bg-white/10">
+                <p className="font-semibold">Evento registrado para {formatDate(registeredEvent.event_date)}.</p>
+                <p className="mission-muted mt-1">
+                  {registeredEvent.assigned_sales} vendas existentes atribuidas, totalizando {money.format(registeredEvent.assigned_revenue)}.
+                </p>
+              </div>
+            ) : null}
+
+            <button type="submit" className="mission-btn mission-btn-primary flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" disabled={eventSaving}>
+              <CalendarPlus size={18} />
+              {eventSaving ? 'Registrando...' : 'Registrar evento'}
+            </button>
+          </form>
+        </DashboardModal>
+      ) : null}
 
       {activeModal === 'suggestions' ? (
         <DashboardModal

@@ -2,6 +2,7 @@ const express = require('express');
 const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
 const { db } = require('../db');
+const { createEvent } = require('../services/eventsService');
 const { createSale, getSaleById } = require('../services/salesService');
 
 const router = express.Router();
@@ -9,6 +10,7 @@ const router = express.Router();
 const saleSchema = z.object({
   payment_method: z.string().optional(),
   notes: z.string().optional().nullable(),
+  event_id: z.coerce.number().int().positive().optional().nullable(),
   items: z.array(z.object({
     product_id: z.coerce.number().optional(),
     productId: z.coerce.number().optional(),
@@ -18,7 +20,33 @@ const saleSchema = z.object({
   })).min(1)
 });
 
+const eventSchema = z.object({
+  name: z.string().trim().min(2),
+  event_date: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
+  notes: z.string().trim().optional().nullable()
+});
+
 router.use(authenticate);
+
+router.get('/events', (req, res) => {
+  const events = db.prepare(`
+    SELECT id, name, event_date
+    FROM events
+    WHERE date(event_date) >= date('now', 'localtime', 'start of year')
+    ORDER BY date(event_date) DESC, name ASC
+  `).all();
+
+  return res.json(events);
+});
+
+router.post('/events', (req, res, next) => {
+  try {
+    const event = createEvent(eventSchema.parse(req.body));
+    return res.status(201).json(event);
+  } catch (error) {
+    return next(error);
+  }
+});
 
 router.get('/', (req, res) => {
   const { start = '', end = '', limit = 100 } = req.query;
@@ -37,9 +65,10 @@ router.get('/', (req, res) => {
 
   params.push(Number(limit));
   const sales = db.prepare(`
-    SELECT s.*, u.name AS sold_by_name
+    SELECT s.*, u.name AS sold_by_name, e.name AS event_name, e.event_date
     FROM sales s
     LEFT JOIN users u ON u.id = s.sold_by
+    LEFT JOIN events e ON e.id = s.event_id
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
     ORDER BY s.created_at DESC
     LIMIT ?

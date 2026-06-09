@@ -1,25 +1,36 @@
 const express = require('express');
-const { db } = require('../db');
+const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
+const { createCombo, listActiveCombos } = require('../services/comboService');
 
 const router = express.Router();
+
+const comboSchema = z.object({
+  name: z.string().trim().min(2),
+  sale_price: z.coerce.number().positive(),
+  is_promotion: z.coerce.boolean().default(false),
+  expires_at: z.preprocess(
+    (value) => value === '' || value === undefined ? null : value,
+    z.string().datetime().nullable()
+  ),
+  items: z.array(z.object({
+    product_id: z.coerce.number().int().positive(),
+    quantity: z.coerce.number().positive()
+  })).min(1)
+});
 
 router.use(authenticate);
 
 router.get('/', (req, res) => {
-  const combos = db.prepare('SELECT * FROM combos WHERE active = 1 ORDER BY name').all();
-  const getItems = db.prepare(`
-    SELECT ci.quantity, p.id, p.name, p.unit, p.stock_quantity, p.cost_price
-    FROM combo_items ci
-    JOIN products p ON p.id = ci.product_id
-    WHERE ci.combo_id = ?
-    ORDER BY p.name
-  `);
+  return res.json(listActiveCombos());
+});
 
-  return res.json(combos.map((combo) => ({
-    ...combo,
-    items: getItems.all(combo.id)
-  })));
+router.post('/', (req, res, next) => {
+  try {
+    return res.status(201).json(createCombo(comboSchema.parse(req.body), req.user.id));
+  } catch (error) {
+    return next(error);
+  }
 });
 
 module.exports = router;
