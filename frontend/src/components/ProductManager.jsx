@@ -87,6 +87,8 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
   const [message, setMessage] = useState('')
   const movementFormRef = useRef(null)
   const movementProductRef = useRef(null)
+  const productTableTopScrollRef = useRef(null)
+  const productTableScrollRef = useRef(null)
 
   const loadProducts = useCallback(async () => {
     const [rows, categoryRows] = await Promise.all([
@@ -284,6 +286,12 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
     })
   }
 
+  function syncProductTableScroll(sourceRef, targetRef) {
+    if (sourceRef.current && targetRef.current) {
+      targetRef.current.scrollLeft = sourceRef.current.scrollLeft
+    }
+  }
+
   function renderSortableHeader(sortKey, label) {
     const isActive = sortConfig.key === sortKey
     const SortIcon = isActive ? (sortConfig.direction === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
@@ -340,7 +348,20 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
             </div>
           </div>
 
-          <div className="mt-4 overflow-x-auto scrollbar-thin">
+          <div
+            ref={productTableTopScrollRef}
+            className="mt-4 overflow-x-auto scrollbar-thin"
+            onScroll={() => syncProductTableScroll(productTableTopScrollRef, productTableScrollRef)}
+            aria-label="Rolagem superior da tabela de produtos"
+          >
+            <div className="h-px min-w-[1080px]" />
+          </div>
+
+          <div
+            ref={productTableScrollRef}
+            className="mt-1 overflow-x-auto scrollbar-thin"
+            onScroll={() => syncProductTableScroll(productTableScrollRef, productTableTopScrollRef)}
+          >
             <table className="min-w-[1080px] w-full border-separate border-spacing-0 text-left text-sm">
               <thead>
                 <tr className="text-xs uppercase tracking-[0.12em] text-shalom-blue/70 dark:text-shalom-gold/80">

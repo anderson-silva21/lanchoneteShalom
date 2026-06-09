@@ -2,12 +2,13 @@ import { Save, Search } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../services/api'
 
-export function SpreadsheetView({ refreshKey, onChanged }) {
+export function SpreadsheetView({ refreshKey, onChanged, user }) {
   const [sheets, setSheets] = useState([])
   const [activeSheet, setActiveSheet] = useState('produtos')
   const [rows, setRows] = useState([])
   const [query, setQuery] = useState('')
   const [message, setMessage] = useState('')
+  const canEditProducts = user?.role === 'admin' || user?.role === 'manager'
 
   useEffect(() => {
     api.sheets().then(setSheets).catch((err) => setMessage(err.message))
@@ -80,14 +81,14 @@ export function SpreadsheetView({ refreshKey, onChanged }) {
               {columns.map((column) => (
                 <th key={column} className="whitespace-nowrap border-b border-line px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-shalom-blue/75 dark:border-shalom-gold/10 dark:text-shalom-gold/80">{column}</th>
               ))}
-              {activeSheet === 'produtos' ? <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10"></th> : null}
+              {activeSheet === 'produtos' && canEditProducts ? <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10"></th> : null}
             </tr>
           </thead>
           <tbody>
             {filteredRows.map((row, rowIndex) => (
               <tr key={row.id || rowIndex} className="odd:bg-white/60 even:bg-shalom-mist/40 dark:odd:bg-white/5 dark:even:bg-white/[0.025]">
                 {columns.map((column) => {
-                  const editable = activeSheet === 'produtos' && !['id', 'status_estoque', 'status_validade', 'atualizado_em'].includes(column)
+                  const editable = canEditProducts && activeSheet === 'produtos' && !['id', 'status_estoque', 'status_validade', 'atualizado_em'].includes(column)
                   return (
                     <td key={column} className="whitespace-nowrap border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">
                       {editable ? (
@@ -98,7 +99,7 @@ export function SpreadsheetView({ refreshKey, onChanged }) {
                     </td>
                   )
                 })}
-                {activeSheet === 'produtos' ? (
+                {activeSheet === 'produtos' && canEditProducts ? (
                   <td className="border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">
                     <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => saveRow(row)} title="Salvar linha">
                       <Save size={16} />

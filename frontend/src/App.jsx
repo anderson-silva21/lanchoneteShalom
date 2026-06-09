@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { canAccessView, defaultViewForRole } from './access'
 import { AppShell } from './components/AppShell'
 import { Dashboard } from './components/Dashboard'
 import { LoginScreen } from './components/LoginScreen'
@@ -44,6 +45,7 @@ function App() {
     const payload = await api.login(username, password)
     setToken(payload.token)
     setUser(payload.user)
+    setActiveView(defaultViewForRole(payload.user.role))
     localStorage.setItem('lanchonete_user', JSON.stringify(payload.user))
   }
 
@@ -106,26 +108,27 @@ function App() {
     return <LoginScreen onLogin={handleLogin} />
   }
 
+  const currentView = canAccessView(user.role, activeView) ? activeView : defaultViewForRole(user.role)
   const views = {
     dashboard: <Dashboard refreshKey={refreshKey} onNavigateToProducts={navigateToProducts} />,
     sales: <SalesTerminal onSaleComplete={refresh} />,
     products: <ProductManager refreshKey={refreshKey} onChanged={refresh} intent={productIntent} />,
     inventory: <PostEventInventory refreshKey={refreshKey} onChanged={refresh} />,
-    sheet: <SpreadsheetView refreshKey={refreshKey} onChanged={refresh} />,
+    sheet: <SpreadsheetView refreshKey={refreshKey} onChanged={refresh} user={user} />,
     reports: <ReportsView />,
     settings: <SettingsView user={user} darkMode={darkMode} setDarkMode={setDarkMode} />
   }
 
   return (
     <AppShell
-      activeView={activeView}
+      activeView={currentView}
       setActiveView={setActiveView}
       user={user}
       darkMode={darkMode}
       setDarkMode={setDarkMode}
       onLogout={logout}
     >
-      {views[activeView]}
+      {views[currentView]}
     </AppShell>
   )
 }

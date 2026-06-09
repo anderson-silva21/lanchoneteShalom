@@ -1,6 +1,7 @@
 const express = require('express');
 const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
+const { requireScreen } = require('../middleware/accessControl');
 const { db } = require('../db');
 const { createEvent } = require('../services/eventsService');
 const { createSale, getSaleById } = require('../services/salesService');
@@ -26,7 +27,7 @@ const eventSchema = z.object({
   notes: z.string().trim().optional().nullable()
 });
 
-router.use(authenticate);
+router.use(authenticate, requireScreen('sales'));
 
 router.get('/events', (req, res) => {
   const events = db.prepare(`
@@ -39,7 +40,7 @@ router.get('/events', (req, res) => {
   return res.json(events);
 });
 
-router.post('/events', (req, res, next) => {
+router.post('/events', requireScreen('dashboard'), (req, res, next) => {
   try {
     const event = createEvent(eventSchema.parse(req.body));
     return res.status(201).json(event);

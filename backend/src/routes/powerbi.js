@@ -1,16 +1,17 @@
 const express = require('express');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
+const { requireScreen } = require('../middleware/accessControl');
 const { getPowerBiDataset } = require('../services/analyticsService');
 
 const router = express.Router();
 
-router.use(authenticate);
+router.use(authenticate, requireScreen('settings'));
 
 router.get('/dataset', (req, res) => {
   return res.json(getPowerBiDataset());
 });
 
-router.post('/push', requireRole('admin', 'manager'), async (req, res, next) => {
+router.post('/push', async (req, res, next) => {
   try {
     const pushUrl = process.env.POWER_BI_PUSH_URL;
     if (!pushUrl) {

@@ -1,7 +1,8 @@
 const express = require('express');
 const { z } = require('zod');
 const { db } = require('../db');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
+const { requireScreen } = require('../middleware/accessControl');
 const { addStock, roundQuantity } = require('../services/stockService');
 
 const router = express.Router();
@@ -97,7 +98,7 @@ router.get('/categories', (req, res) => {
   return res.json(categories);
 });
 
-router.post('/', requireRole('admin', 'manager'), (req, res) => {
+router.post('/', requireScreen('products'), (req, res) => {
   const payload = productSchema.parse(req.body);
   const product = {
     ...payload,
@@ -134,7 +135,7 @@ router.post('/', requireRole('admin', 'manager'), (req, res) => {
   return res.status(201).json(db.prepare('SELECT * FROM products WHERE id = ?').get(productId));
 });
 
-router.patch('/:id', requireRole('admin', 'manager'), (req, res) => {
+router.patch('/:id', requireScreen('products'), (req, res) => {
   const current = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
   if (!current) return res.status(404).json({ message: 'Produto nao encontrado.' });
 
@@ -156,7 +157,7 @@ router.patch('/:id', requireRole('admin', 'manager'), (req, res) => {
   return res.json(db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id));
 });
 
-router.delete('/:id', requireRole('admin', 'manager'), (req, res) => {
+router.delete('/:id', requireScreen('products'), (req, res) => {
   db.prepare('UPDATE products SET active = 0 WHERE id = ?').run(req.params.id);
   return res.status(204).send();
 });

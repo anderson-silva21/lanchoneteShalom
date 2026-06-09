@@ -2,14 +2,15 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const { db, dbPath } = require('../db');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
+const { requireScreen } = require('../middleware/accessControl');
 
 const router = express.Router();
 const backupDir = path.join(path.dirname(dbPath), 'backups');
 
-router.use(authenticate);
+router.use(authenticate, requireScreen('settings'));
 
-router.get('/', requireRole('admin', 'manager'), (req, res) => {
+router.get('/', (req, res) => {
   fs.mkdirSync(backupDir, { recursive: true });
   const backups = fs.readdirSync(backupDir)
     .filter((file) => file.endsWith('.sqlite'))
@@ -27,7 +28,7 @@ router.get('/', requireRole('admin', 'manager'), (req, res) => {
   return res.json(backups);
 });
 
-router.post('/', requireRole('admin', 'manager'), async (req, res) => {
+router.post('/', async (req, res) => {
   fs.mkdirSync(backupDir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const file = `lanchonete-${stamp}.sqlite`;

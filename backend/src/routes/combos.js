@@ -1,6 +1,7 @@
 const express = require('express');
 const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
+const { requireScreen } = require('../middleware/accessControl');
 const { createCombo, listActiveCombos } = require('../services/comboService');
 
 const router = express.Router();
@@ -19,7 +20,7 @@ const comboSchema = z.object({
   })).min(1)
 });
 
-router.use(authenticate);
+router.use(authenticate, requireScreen('sales'));
 
 router.get('/', (req, res) => {
   return res.json(listActiveCombos());

@@ -1,6 +1,7 @@
 const express = require('express');
 const { db } = require('../db');
-const { authenticate, requireRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
+const { requireScreen } = require('../middleware/accessControl');
 const { roundQuantity, sameQuantity, setProductStock } = require('../services/stockService');
 
 const router = express.Router();
@@ -58,7 +59,7 @@ const sheets = {
   }
 };
 
-router.use(authenticate);
+router.use(authenticate, requireScreen('sheet'));
 
 router.get('/sheets', (req, res) => {
   return res.json(Object.entries(sheets).map(([key, sheet]) => ({
@@ -73,7 +74,7 @@ router.get('/:sheet', (req, res) => {
   return res.json(db.prepare(sheet.query).all());
 });
 
-router.patch('/produtos/:id', requireRole('admin', 'manager'), (req, res) => {
+router.patch('/produtos/:id', requireScreen('products'), (req, res) => {
   const allowed = {
     produto: 'name',
     categoria: 'category',

@@ -2,6 +2,7 @@ const express = require('express');
 const { z } = require('zod');
 const { db } = require('../db');
 const { authenticate, requireRole } = require('../middleware/auth');
+const { requireScreen } = require('../middleware/accessControl');
 const {
   addStock,
   getProductStock,
@@ -181,7 +182,7 @@ function createPostEventInventory(payload, userId) {
   return transaction();
 }
 
-router.use(authenticate);
+router.use(authenticate, requireScreen('inventory'));
 
 router.get('/batches', (req, res) => {
   const productId = req.query.product_id ? Number(req.query.product_id) : null;

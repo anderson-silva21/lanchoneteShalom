@@ -1,6 +1,7 @@
 const express = require('express');
 const { db } = require('../db');
 const { authenticate } = require('../middleware/auth');
+const { requireScreen } = require('../middleware/accessControl');
 const { toCsv, toXlsxBuffer, toPdfStream } = require('../services/exportService');
 const { formatQuantityWithUnit } = require('../utils/unitFormatter');
 
@@ -165,7 +166,7 @@ function formatReportRows(type, rows) {
   return rows;
 }
 
-router.use(authenticate);
+router.use(authenticate, requireScreen('reports'));
 
 router.get('/export', async (req, res, next) => {
   try {
