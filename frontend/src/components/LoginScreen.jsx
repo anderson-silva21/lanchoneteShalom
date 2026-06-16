@@ -29,7 +29,7 @@ export function LoginScreen({ onLogin }) {
         <div className="mb-7 flex items-center gap-3">
           <BrandMark size="lg" />
           <div>
-            <h1 className="font-display text-2xl font-semibold">Lanchonete Shalom</h1>
+            <h1 className="font-display text-2xl font-semibold">SH82</h1>
             <p className="mission-muted text-sm">Controle de estoque e vendas</p>
           </div>
         </div>

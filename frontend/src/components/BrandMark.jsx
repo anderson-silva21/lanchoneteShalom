@@ -7,7 +7,7 @@ export function BrandMark({ size = 'md', dark = false }) {
     <span className={`${dimensions} inline-flex shrink-0 items-center justify-center rounded-full ${dark ? 'bg-white/10' : 'bg-white/80'} p-1 shadow-glow ring-1 ring-shalom-gold/40`}>
       <img
         src={shalomLogo}
-        alt="Shalom"
+        alt="SH82"
         className="h-full w-full rounded-full object-contain"
       />
     </span>

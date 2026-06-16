@@ -1,0 +1,98 @@
+Arquitetura do projeto SH82
+
+Este projeto é um monorepo simples com duas partes principais:
+
+1. frontend/
+   - Aplicação React rodando com Vite.
+   - Interface de PDV, dashboard, relatórios e views administrativas.
+   - Comunicação com o backend via API REST em /api/*.
+
+2. backend/
+   - API Express em Node.js.
+   - Persistência em SQLite (database/lanchonete.sqlite) via better-sqlite3.
+   - Rotas organizadas por domínio:
+     - autenticação (/api/auth)
+     - produtos, estoque e vendas
+     - relatórios e exportação
+     - backup
+     - planilha central e Power BI
+
+O root package.json orquestra ambos:
+- npm run dev inicia backend e frontend em paralelo.
+- npm run build --prefix frontend gera a versão estática do frontend.
+- npm start --prefix backend inicia apenas a API.
+
+---
+
+Escolhas de tecnologia
+
+Frontend
+- React com Vite
+  - Desenvolvimento rápido, recarga instantânea e bundle leve.
+- TailwindCSS
+  - Estilização utilitária para layout responsivo e interface limpa.
+- Recharts
+  - Gráficos para dashboard de vendas e indicadores.
+- react-router-dom
+  - Navegação de tela única.
+- lucide-react
+  - Ícones simples e leves para botões e status.
+
+Backend
+- Node.js + Express
+  - Servidor REST leve e flexível para pequenas aplicações.
+- better-sqlite3
+  - SQLite embarcado, ideal para sistemas pequenos com instalação simples e alta performance em disco local.
+- dotenv
+  - Configurações externas como PORT, DB_PATH, JWT_SECRET e CORS_ORIGINS.
+- helmet
+  - Headers de segurança HTTP.
+- cors
+  - Controle de origens permitidas para o frontend.
+- bcryptjs + jsonwebtoken
+  - Autenticação segura com hash de senhas e tokens JWT.
+- zod
+  - Validação de dados no backend, garantindo contratos de API mais estáveis.
+- pdfkit, exceljs, json2csv
+  - Geração de exportações em PDF, XLSX e CSV.
+
+---
+
+Padrões e separação de responsabilidades
+
+- backend/src/routes/*
+  - Cada domínio tem sua própria rota, o que facilita manutenção.
+- backend/src/middleware/*
+  - Logging, tratamento de erros e controle de requisições ficam centralizados.
+- backend/src/db.js
+  - Inicialização do banco e configuração de caminho do arquivo SQLite.
+- frontend/src/components/*
+  - UI modularizada em componentes reutilizáveis.
+
+---
+
+Por que essa arquitetura faz sentido aqui
+
+- Projeto focado em uma lanchonete pequena, então:
+  - SQLite é suficiente e evita overhead de banco separado.
+  - Backend em Node/Express permite APIs rápidas sem infraestrutura complexa.
+  - Frontend em React/Vite oferece boa experiência de usuário com pouco setup.
+- Separação frontend/backend permite:
+  - servir frontend estático em qualquer host
+  - escalar backend independentemente
+  - usar CORS para desenvolvimento local com localhost:5173 + localhost:4000
+
+---
+
+Pontos importantes
+
+- É uma aplicação clássica SPA + API.
+- O backend é responsável por:
+  - autenticação
+  - regras de venda e inventário
+  - exportação
+  - geração de dados para Power BI
+- O frontend é responsável por:
+  - UI de PDV
+  - dashboard e relatórios
+  - fluxo de login e experiência do usuário

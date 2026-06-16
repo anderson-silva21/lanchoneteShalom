@@ -1,4 +1,4 @@
-# Lanchonete Shalom
+# SH82
 
 Aplicacao web para controle de estoque e vendas de uma pequena lanchonete, com operacao de PDV rapida e uma base central tratada como planilha inteligente.
 

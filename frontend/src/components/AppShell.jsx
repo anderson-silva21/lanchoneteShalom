@@ -64,12 +64,12 @@ export function AppShell({ activeView, setActiveView, user, darkMode, setDarkMod
           className={`relative flex flex-none items-center rounded-2xl border border-shalom-gold/35 bg-white/75 text-shalom-deep shadow-sm dark:border-white/20 dark:bg-white/10 dark:text-white ${
             sidebarCollapsed ? 'mb-5 justify-center p-2' : 'mb-8 gap-3 p-3'
           }`}
-          title={sidebarCollapsed ? 'Lanchonete Shalom' : undefined}
+          title={sidebarCollapsed ? 'SH82' : undefined}
         >
           <BrandMark size={sidebarCollapsed ? 'sm' : 'md'} dark={darkMode} />
           {!sidebarCollapsed && (
             <div>
-              <p className="font-display text-base font-semibold">Lanchonete Shalom</p>
+              <p className="font-display text-base font-semibold">SH82</p>
               <p className="text-xs font-semibold text-shalom-orange dark:text-shalom-gold">servir com paz e excelencia</p>
             </div>
           )}
