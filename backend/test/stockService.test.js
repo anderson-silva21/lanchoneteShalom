@@ -126,6 +126,44 @@ test('compra de estoque pode atualizar custo e valor de venda do produto', () =>
   assert.equal(updatedProduct.stock_quantity, 5);
 });
 
+test('entrada de estoque por doacao zera custo do produto', () => {
+  const product = createProduct({ name: 'Suco', cost_price: 4, sale_price: 8 });
+
+  addStock({
+    productId: product.id,
+    quantity: 3,
+    expirationDate: '2026-07-10',
+    movementType: 'purchase',
+    isDonation: true,
+    costPrice: 4,
+    salePrice: 8,
+    userId
+  });
+
+  const updatedProduct = db.prepare('SELECT cost_price, is_donation, sale_price, stock_quantity FROM products WHERE id = ?').get(product.id);
+  assert.equal(updatedProduct.cost_price, 0);
+  assert.equal(updatedProduct.is_donation, 1);
+  assert.equal(updatedProduct.sale_price, 8);
+  assert.equal(updatedProduct.stock_quantity, 3);
+
+  addStock({
+    productId: product.id,
+    quantity: 2,
+    expirationDate: '2026-08-10',
+    movementType: 'purchase',
+    isDonation: false,
+    costPrice: 5,
+    salePrice: 9,
+    userId
+  });
+
+  const paidProduct = db.prepare('SELECT cost_price, is_donation, sale_price, stock_quantity FROM products WHERE id = ?').get(product.id);
+  assert.equal(paidProduct.cost_price, 5);
+  assert.equal(paidProduct.is_donation, 0);
+  assert.equal(paidProduct.sale_price, 9);
+  assert.equal(paidProduct.stock_quantity, 5);
+});
+
 test('venda consome primeiro o lote com menor validade usando FEFO', () => {
   const product = createProduct({ name: 'Arroz' });
   addStock({ productId: product.id, quantity: 2, expirationDate: '2026-06-20', userId });

@@ -219,6 +219,7 @@ function runMigrations() {
   addColumnIfMissing('users', 'password_must_change', 'INTEGER NOT NULL DEFAULT 0');
   fillMissingUsernames();
   addColumnIfMissing('products', 'expiration_date', 'TEXT');
+  addColumnIfMissing('products', 'is_donation', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('combos', 'is_promotion', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('combos', 'expires_at', 'TEXT');
   addColumnIfMissing('combos', 'created_by', 'INTEGER REFERENCES users(id)');

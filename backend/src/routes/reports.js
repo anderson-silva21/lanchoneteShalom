@@ -78,6 +78,7 @@ function formatReportRows(type, rows) {
       estoque_minimo: row.estoque_minimo,
       estoque_minimo_formatado: formatQuantityWithUnit(row.estoque_minimo, row.unidade),
       custo: row.custo,
+      doacao: row.doacao,
       preco: row.preco,
       fornecedor: row.fornecedor,
       validade: row.validade,

@@ -13,7 +13,7 @@ Este projeto é um monorepo simples com duas partes principais:
    - Rotas organizadas por domínio:
      - autenticação (/api/auth)
      - usuarios administrativos (/api/users)
-     - produtos, estoque e vendas
+     - produtos, estoque e vendas, incluindo produtos recebidos por doacao sem custo
      - relatórios e exportação
      - backup
      - planilha central
@@ -93,7 +93,7 @@ Pontos importantes
   - autenticação
   - gestao de usuarios ativos, exclusao logica de acessos e troca obrigatoria de senha temporaria
   - configuracao administrativa para habilitar ou desabilitar a carga inicial
-  - regras de venda e inventário
+  - regras de venda e inventário, incluindo custo zero para produtos doados
   - limpeza administrativa de dados operacionais para primeira carga real
   - exportação
 - O frontend é responsável por:

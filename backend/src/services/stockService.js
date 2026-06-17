@@ -128,6 +128,7 @@ function addStock({
   referenceId = null,
   notes = null,
   userId = null,
+  isDonation = undefined,
   costPrice = null,
   salePrice = null,
   createNewBatch = true
@@ -136,6 +137,9 @@ function addStock({
 
   const quantityToAdd = roundQuantity(quantity);
   if (quantityToAdd <= 0) throw createHttpError('Quantidade invalida.', 400);
+  const hasDonationFlag = isDonation !== undefined && isDonation !== null && isDonation !== '';
+  const normalizedDonationFlag = String(isDonation).trim().toLowerCase();
+  const shouldMarkDonation = isDonation === true || isDonation === 1 || ['1', 'true', 'sim', 'yes'].includes(normalizedDonationFlag);
   const nextCostPrice = normalizePrice(costPrice, 'Custo invalido.');
   const nextSalePrice = normalizePrice(salePrice, 'Preco de venda invalido.');
 
@@ -154,9 +158,10 @@ function addStock({
     batch = db.prepare('SELECT * FROM stock_batches WHERE id = ?').get(result.lastInsertRowid);
   }
 
-  if (nextCostPrice !== null || nextSalePrice !== null) {
-    db.prepare('UPDATE products SET cost_price = ?, sale_price = ? WHERE id = ?')
-      .run(nextCostPrice ?? product.cost_price, nextSalePrice ?? product.sale_price, productId);
+  if (hasDonationFlag || nextCostPrice !== null || nextSalePrice !== null) {
+    const nextDonationFlag = shouldMarkDonation ? 1 : hasDonationFlag ? 0 : Number(product.is_donation || 0);
+    db.prepare('UPDATE products SET cost_price = ?, is_donation = ?, sale_price = ? WHERE id = ?')
+      .run(shouldMarkDonation ? 0 : (nextCostPrice ?? product.cost_price), nextDonationFlag, nextSalePrice ?? product.sale_price, productId);
   }
 
   const synced = syncProductStock(productId);

@@ -16,6 +16,7 @@ const productSchema = z.object({
   name: z.string().trim().min(2),
   category: z.string().trim().min(2),
   cost_price: z.coerce.number().nonnegative(),
+  is_donation: z.coerce.boolean().default(false),
   sale_price: z.coerce.number().nonnegative(),
   stock_quantity: z.coerce.number().nonnegative(),
   min_stock: z.coerce.number().nonnegative(),
@@ -109,6 +110,8 @@ router.post('/', requireScreen('products'), (req, res) => {
   const product = {
     ...payload,
     internal_code: generateProductCode(payload.category),
+    cost_price: payload.is_donation ? 0 : payload.cost_price,
+    is_donation: payload.is_donation ? 1 : 0,
     stock_quantity: 0,
     expiration_date: null
   };
@@ -117,9 +120,9 @@ router.post('/', requireScreen('products'), (req, res) => {
     ensureProductCategory(product.category);
     const result = db.prepare(`
       INSERT INTO products
-        (name, category, cost_price, sale_price, stock_quantity, min_stock, supplier, internal_code, unit, expiration_date, active)
+        (name, category, cost_price, is_donation, sale_price, stock_quantity, min_stock, supplier, internal_code, unit, expiration_date, active)
       VALUES
-        (@name, @category, @cost_price, @sale_price, @stock_quantity, @min_stock, @supplier, @internal_code, @unit, @expiration_date, @active)
+        (@name, @category, @cost_price, @is_donation, @sale_price, @stock_quantity, @min_stock, @supplier, @internal_code, @unit, @expiration_date, @active)
     `).run(product);
 
     if (roundQuantity(payload.stock_quantity) > 0) {
@@ -131,6 +134,7 @@ router.post('/', requireScreen('products'), (req, res) => {
         referenceType: 'product_creation',
         notes: 'Estoque inicial do produto',
         userId: req.user.id,
+        isDonation: payload.is_donation,
         createNewBatch: true
       });
     }
@@ -154,6 +158,7 @@ router.patch('/:id', requireScreen('products'), (req, res) => {
         name = @name,
         category = @category,
         cost_price = @cost_price,
+        is_donation = @is_donation,
         sale_price = @sale_price,
         min_stock = @min_stock,
         supplier = @supplier,
@@ -161,7 +166,12 @@ router.patch('/:id', requireScreen('products'), (req, res) => {
         unit = @unit,
         active = COALESCE(@active, 1)
       WHERE id = @id
-    `).run({ ...merged, id: Number(req.params.id) });
+    `).run({
+      ...merged,
+      cost_price: merged.is_donation ? 0 : merged.cost_price,
+      is_donation: merged.is_donation ? 1 : 0,
+      id: Number(req.params.id)
+    });
   });
   transaction();
 

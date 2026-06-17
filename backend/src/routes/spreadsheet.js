@@ -102,6 +102,7 @@ router.patch('/produtos/:id', requireScreen('products'), (req, res) => {
     categoria: 'category',
     unidade: 'unit',
     custo: 'cost_price',
+    doacao: 'is_donation',
     preco: 'sale_price',
     estoque_minimo: 'min_stock',
     fornecedor: 'supplier',
@@ -115,7 +116,7 @@ router.patch('/produtos/:id', requireScreen('products'), (req, res) => {
     const column = allowed[key];
     if (!column) return;
     assignments.push(`${column} = @${column}`);
-    params[column] = value;
+    params[column] = column === 'is_donation' ? (['sim', 'true', '1', 'yes'].includes(String(value).trim().toLowerCase()) ? 1 : 0) : value;
   });
 
   const requestedStock = req.body.estoque !== undefined && req.body.estoque !== ''
@@ -129,6 +130,12 @@ router.patch('/produtos/:id', requireScreen('products'), (req, res) => {
   const nonnegativeColumns = ['cost_price', 'sale_price', 'min_stock'];
   const invalidNumber = nonnegativeColumns.some((column) => params[column] !== undefined && Number(params[column]) < 0);
   if (invalidNumber || (requestedStock !== null && requestedStock < 0)) return res.status(400).json({ message: 'Valores numericos nao podem ser negativos.' });
+  if (params.is_donation === 1) {
+    params.cost_price = 0;
+    if (!assignments.includes('cost_price = @cost_price')) {
+      assignments.push('cost_price = @cost_price');
+    }
+  }
 
   if (req.body.validade && !/^\d{4}-\d{2}-\d{2}$/.test(String(req.body.validade))) {
     return res.status(400).json({ message: 'Validade invalida.' });

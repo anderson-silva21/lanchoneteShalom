@@ -26,6 +26,7 @@ const movementSchema = z.object({
   type: z.enum(['purchase', 'adjustment', 'waste']),
   operation: z.enum(['in', 'out']).optional(),
   quantity: z.coerce.number().finite().positive(),
+  is_donation: z.coerce.boolean().optional(),
   cost_price: z.preprocess((value) => value === '' || value === undefined || value === null ? undefined : value, z.coerce.number().finite().nonnegative().optional()),
   sale_price: z.preprocess((value) => value === '' || value === undefined || value === null ? undefined : value, z.coerce.number().finite().nonnegative().optional()),
   expiration_date: optionalDateSchema,
@@ -35,8 +36,7 @@ const movementSchema = z.object({
 const quantitySchema = z.coerce.number().finite().nonnegative();
 
 const postEventInventorySchema = z.object({
-  event_name: z.string().trim().min(2),
-  event_date: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
+  event_id: z.coerce.number().int().positive(),
   notes: z.preprocess((value) => value === '' ? null : value, z.string().trim().max(1000).optional().nullable()),
   items: z.array(z.object({
     product_id: z.coerce.number().int().positive(),
@@ -98,6 +98,11 @@ function getPostEventInventory(id) {
 
 function createPostEventInventory(payload, userId) {
   const transaction = db.transaction(() => {
+    const event = db.prepare('SELECT id, name, event_date FROM events WHERE id = ?').get(payload.event_id);
+    if (!event) {
+      throw createHttpError('Evento nao encontrado.', 400);
+    }
+
     const productIds = payload.items.map((item) => item.product_id);
     const placeholders = productIds.map(() => '?').join(', ');
     const products = db.prepare(`
@@ -134,7 +139,7 @@ function createPostEventInventory(payload, userId) {
     const inventoryId = db.prepare(`
       INSERT INTO post_event_inventories (event_name, event_date, notes, created_by)
       VALUES (?, ?, ?, ?)
-    `).run(payload.event_name, payload.event_date, payload.notes || null, userId).lastInsertRowid;
+    `).run(event.name, event.event_date, payload.notes || null, userId).lastInsertRowid;
 
     const insertItem = db.prepare(`
       INSERT INTO post_event_inventory_items
@@ -172,7 +177,7 @@ function createPostEventInventory(payload, userId) {
           expectedQuantity: quantityBefore,
           referenceType: 'post_event_inventory',
           referenceId: inventoryId,
-          notes: `Inventario pos-evento: ${payload.event_name}`,
+          notes: `Inventario pos-evento: ${event.name}`,
           userId
         });
       }
@@ -230,6 +235,7 @@ router.post('/movements', requireRole('admin', 'manager'), (req, res) => {
         referenceType: 'manual',
         notes: payload.notes || null,
         userId: req.user.id,
+        isDonation: payload.is_donation,
         costPrice: payload.cost_price,
         salePrice: payload.sale_price,
         createNewBatch: true

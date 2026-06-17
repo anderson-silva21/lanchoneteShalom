@@ -47,7 +47,7 @@ Login inicial:
 - Dashboard com faturamento do dia, vendas, lucro estimado, estoque baixo, produtos mais vendidos, produtos parados, horarios de pico e sugestoes de compra.
 - PDV com botoes grandes para venda simples, venda multipla e combos.
 - Baixa automatica de estoque com historico de movimentacoes.
-- Cadastro de produtos com custo, preco, quantidade, estoque minimo, fornecedor, codigo e unidade.
+- Cadastro de produtos com custo, preco, quantidade, estoque minimo, fornecedor, codigo, unidade e marcacao de doacao sem custo.
 - Planilha central com abas de produtos, vendas, itens vendidos, movimentacoes e indicadores.
 - Relatorios exportaveis em CSV, Excel e PDF.
 - Login com niveis `admin`, `manager` e `cashier`.
@@ -62,7 +62,7 @@ Login inicial:
 1. Entre com o usuario `admin`.
 2. Em `Sistema`, habilite `Carga inicial`.
 3. Abra `Carga inicial`.
-4. Cadastre cada produto selecionando a categoria padrao, unidade, custo, preco, estoque minimo, quantidade real e validade quando existir.
+4. Cadastre cada produto selecionando a categoria padrao, unidade, custo, preco, estoque minimo, quantidade real e validade quando existir. Se o item foi doado, marque a opcao de doacao para registrar custo zero.
 5. Use `Sistema > Base de dados > Zerar dados` se precisar apagar produtos, lotes, vendas, combos, eventos, movimentos e inventarios mantendo os usuarios.
 
 Tambem e possivel limpar a base pelo terminal:

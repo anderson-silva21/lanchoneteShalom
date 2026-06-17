@@ -9,6 +9,7 @@ function createEmptyProduct(category = '') {
     name: '',
     category,
     cost_price: 0,
+    is_donation: false,
     sale_price: 0,
     stock_quantity: 0,
     min_stock: 0,
@@ -19,7 +20,7 @@ function createEmptyProduct(category = '') {
 }
 
 const nonnegativeProductFields = ['cost_price', 'sale_price', 'stock_quantity', 'min_stock']
-const numericProductSortFields = new Set(['cost_price', 'sale_price', 'stock_quantity', 'min_stock'])
+const numericProductSortFields = new Set(['is_donation', 'cost_price', 'sale_price', 'stock_quantity', 'min_stock'])
 
 function createEmptyAdjustment(productId = '') {
   return {
@@ -28,6 +29,7 @@ function createEmptyAdjustment(productId = '') {
     operation: 'in',
     batch_id: '',
     quantity: 1,
+    is_donation: false,
     cost_price: '',
     sale_price: '',
     expiration_date: '',
@@ -207,12 +209,16 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       setMessage('Selecione uma categoria.')
       return
     }
-    if (nonnegativeProductFields.some((field) => Number(draft[field]) < 0)) {
+    const productDraft = {
+      ...draft,
+      cost_price: draft.is_donation ? 0 : draft.cost_price
+    }
+    if (nonnegativeProductFields.some((field) => Number(productDraft[field]) < 0)) {
       setMessage('Valores numericos nao podem ser negativos.')
       return
     }
     try {
-      await api.createProduct(draft)
+      await api.createProduct(productDraft)
       setDraft(createEmptyProduct(draft.category))
       await loadProducts()
       onChanged()
@@ -224,12 +230,16 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
 
   async function saveProduct(product) {
     setMessage('')
-    if (nonnegativeProductFields.some((field) => Number(product[field]) < 0)) {
+    const productPayload = {
+      ...product,
+      cost_price: product.is_donation ? 0 : product.cost_price
+    }
+    if (nonnegativeProductFields.some((field) => Number(productPayload[field]) < 0)) {
       setMessage('Valores numericos nao podem ser negativos.')
       return
     }
     try {
-      await api.updateProduct(product.id, product)
+      await api.updateProduct(product.id, productPayload)
       await loadProducts()
       onChanged()
       setMessage('Produto atualizado.')
@@ -259,12 +269,14 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       type: adjustment.type,
       operation: adjustment.operation,
       quantity: adjustment.quantity,
+      is_donation: adjustment.is_donation,
       expiration_date: adjustment.expiration_date,
       notes: adjustment.notes
     }
 
     if (adjustment.batch_id) payload.batch_id = adjustment.batch_id
-    if (mode === 'purchase' && adjustment.cost_price !== '') payload.cost_price = Number(adjustment.cost_price)
+    if (mode === 'purchase' && adjustment.is_donation) payload.cost_price = 0
+    else if (mode === 'purchase' && adjustment.cost_price !== '') payload.cost_price = Number(adjustment.cost_price)
     if (mode === 'purchase' && adjustment.sale_price !== '') payload.sale_price = Number(adjustment.sale_price)
     if ((mode === 'adjustment_out' || mode === 'waste') && !adjustment.batch_id) {
       setMessage('Informe o lote para saidas de estoque.')
@@ -293,6 +305,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   const getProductPriceValues = useCallback((productId) => {
     const product = products.find((item) => String(item.id) === String(productId))
     return {
+      is_donation: Boolean(product?.is_donation),
       cost_price: product?.cost_price ?? '',
       sale_price: product?.sale_price ?? ''
     }
@@ -346,7 +359,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
     if (movementMode !== 'purchase' || !adjustment.product_id) return
 
     const prices = getProductPriceValues(adjustment.product_id)
-    if (prices.cost_price === '' && prices.sale_price === '') return
+    if (prices.cost_price === '' && prices.sale_price === '' && !prices.is_donation) return
     if (adjustment.cost_price !== '' && adjustment.sale_price !== '') return
 
     setAdjustment((current) => {
@@ -358,6 +371,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
 
       return {
         ...current,
+        is_donation: prices.is_donation,
         cost_price: nextCostPrice,
         sale_price: nextSalePrice
       }
@@ -410,6 +424,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 <tr className="text-xs uppercase tracking-[0.12em] text-shalom-blue/70 dark:text-shalom-gold/80">
                   {renderSortableHeader('name', 'Produto')}
                   {renderSortableHeader('category', 'Categoria')}
+                  {renderSortableHeader('is_donation', 'Origem')}
                   {renderSortableHeader('cost_price', 'Custo')}
                   {renderSortableHeader('sale_price', 'Venda')}
                   {renderSortableHeader('stock_quantity', 'Estoque')}
@@ -431,7 +446,13 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                         {categories.map((categoryName) => <option key={categoryName} value={categoryName}>{categoryName}</option>)}
                       </select>
                     </td>
-                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{money.format(product.cost_price)}</td>
+                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
+                      <label className="flex items-center gap-2 text-xs font-semibold">
+                        <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={Boolean(product.is_donation)} onChange={(event) => updateRow(product.id, 'is_donation', event.target.checked)} />
+                        Doacao
+                      </label>
+                    </td>
+                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{product.is_donation ? 'Doacao' : money.format(product.cost_price)}</td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
                       <input type="number" min="0" step="0.01" className="mission-input w-24 px-2 py-1" value={product.sale_price} onChange={(event) => updateRow(product.id, 'sale_price', Number(event.target.value))} />
                     </td>
@@ -457,7 +478,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 ))}
                 {!sortedProducts.length ? (
                   <tr>
-                    <td className="border-b border-line/80 px-3 py-4 mission-muted dark:border-shalom-gold/10" colSpan={9}>
+                    <td className="border-b border-line/80 px-3 py-4 mission-muted dark:border-shalom-gold/10" colSpan={10}>
                       Nenhum produto cadastrado.
                     </td>
                   </tr>
@@ -493,6 +514,10 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 Fornecedor
                 <input className="mission-input mt-1 w-full px-3 py-2" value={draft.supplier} onChange={(event) => setDraft({ ...draft, supplier: event.target.value })} />
               </label>
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-line/80 px-3 py-2 text-sm font-medium dark:border-shalom-gold/10">
+                <span>Produto recebido por doacao</span>
+                <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={Boolean(draft.is_donation)} onChange={(event) => setDraft({ ...draft, is_donation: event.target.checked, cost_price: event.target.checked ? 0 : draft.cost_price })} />
+              </label>
               <label className="text-sm font-medium">
                 Validade
                 <input type="date" className="mission-input mt-1 w-full px-3 py-2" value={draft.expiration_date} onChange={(event) => setDraft({ ...draft, expiration_date: event.target.value })} />
@@ -506,7 +531,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 ].map(([field, label, step]) => (
                   <label key={field} className="text-sm font-medium">
                     {label}
-                    <input type="number" min="0" step={step} className="mission-input mt-1 w-full px-3 py-2" value={draft[field]} onChange={(event) => setDraft({ ...draft, [field]: Number(event.target.value) })} />
+                    <input type="number" min="0" step={step} className="mission-input mt-1 w-full px-3 py-2 disabled:opacity-60" value={field === 'cost_price' && draft.is_donation ? 0 : draft[field]} disabled={field === 'cost_price' && draft.is_donation} onChange={(event) => setDraft({ ...draft, [field]: Number(event.target.value) })} />
                   </label>
                 ))}
               </div>
@@ -535,6 +560,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                     ...adjustment,
                     product_id: productId,
                     batch_id: '',
+                    is_donation: movementMode === 'purchase' ? prices.is_donation : adjustment.is_donation,
                     cost_price: movementMode === 'purchase' ? prices.cost_price : adjustment.cost_price,
                     sale_price: movementMode === 'purchase' ? prices.sale_price : adjustment.sale_price
                   })
@@ -557,6 +583,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                       type: nextMode === 'purchase' ? 'purchase' : nextMode === 'waste' ? 'waste' : 'adjustment',
                       operation: nextMode === 'adjustment_out' || nextMode === 'waste' ? 'out' : 'in',
                       batch_id: nextMode === 'purchase' ? '' : current.batch_id,
+                      is_donation: nextMode === 'purchase' ? getProductPriceValues(current.product_id).is_donation : current.is_donation,
                       cost_price: nextMode === 'purchase' && current.cost_price === '' ? getProductPriceValues(current.product_id).cost_price : current.cost_price,
                       sale_price: nextMode === 'purchase' && current.sale_price === '' ? getProductPriceValues(current.product_id).sale_price : current.sale_price
                     }))
@@ -574,15 +601,21 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
               </label>
             </div>
             {movementMode === 'purchase' ? (
-              <div className="mt-3 grid grid-cols-2 gap-3">
+              <div className="mt-3 grid gap-3">
+                <label className="flex items-center justify-between gap-3 rounded-xl border border-line/80 px-3 py-2 text-sm font-medium dark:border-shalom-gold/10">
+                  <span>Entrada recebida por doacao</span>
+                  <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={Boolean(adjustment.is_donation)} onChange={(event) => setAdjustment({ ...adjustment, is_donation: event.target.checked, cost_price: event.target.checked ? 0 : adjustment.cost_price })} />
+                </label>
+                <div className="grid grid-cols-2 gap-3">
                 <label className="text-sm font-medium">
                   Custo do produto
-                  <input type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.cost_price ?? ''} onChange={(event) => setAdjustment({ ...adjustment, cost_price: event.target.value })} />
+                  <input type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2 disabled:opacity-60" value={adjustment.is_donation ? 0 : (adjustment.cost_price ?? '')} disabled={Boolean(adjustment.is_donation)} onChange={(event) => setAdjustment({ ...adjustment, cost_price: event.target.value })} />
                 </label>
                 <label className="text-sm font-medium">
                   Valor de venda
                   <input type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.sale_price ?? ''} onChange={(event) => setAdjustment({ ...adjustment, sale_price: event.target.value })} />
                 </label>
+                </div>
               </div>
             ) : null}
             {movementMode !== 'purchase' ? (

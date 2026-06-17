@@ -12,12 +12,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../services/api'
 import { decimal, formatDateTime, formatQuantityWithUnit } from '../utils/formatters'
 
-function todayInputValue() {
-  const date = new Date()
-  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
-  return localDate.toISOString().slice(0, 10)
-}
-
 function roundQuantity(value) {
   return Number(Number(value || 0).toFixed(3))
 }
@@ -28,8 +22,9 @@ function parseQuantity(value) {
 
 function createEmptyEvent() {
   return {
+    event_id: '',
     event_name: '',
-    event_date: todayInputValue(),
+    event_date: '',
     notes: ''
   }
 }
@@ -50,6 +45,7 @@ function formatSignedQuantity(value, unit) {
 
 export function PostEventInventory({ refreshKey, onChanged }) {
   const [products, setProducts] = useState([])
+  const [events, setEvents] = useState([])
   const [history, setHistory] = useState([])
   const [eventDraft, setEventDraft] = useState(createEmptyEvent)
   const [quantities, setQuantities] = useState({})
@@ -67,11 +63,13 @@ export function PostEventInventory({ refreshKey, onChanged }) {
     setLoading(true)
     setMessage('')
     try {
-      const [productRows, inventoryRows] = await Promise.all([
+      const [productRows, eventRows, inventoryRows] = await Promise.all([
         api.products(),
+        api.events().catch(() => []),
         api.postEventInventories().catch(() => [])
       ])
       setProducts(productRows)
+      setEvents(eventRows)
       setHistory(inventoryRows)
     } catch (err) {
       setMessage(err.message)
@@ -116,6 +114,17 @@ export function PostEventInventory({ refreshKey, onChanged }) {
     clearReportState()
   }
 
+  function selectEvent(eventId) {
+    const selectedEvent = events.find((item) => String(item.id) === String(eventId))
+    setEventDraft((current) => ({
+      ...current,
+      event_id: eventId,
+      event_name: selectedEvent?.name || '',
+      event_date: selectedEvent?.event_date || ''
+    }))
+    clearReportState()
+  }
+
   function updateQuantity(productId, value) {
     setQuantities((current) => ({ ...current, [productId]: value }))
     clearReportState()
@@ -146,14 +155,9 @@ export function PostEventInventory({ refreshKey, onChanged }) {
     setMessage('')
     setConflictDetails([])
 
-    const eventName = eventDraft.event_name.trim()
-    if (!eventName) {
-      setMessage('Informe o evento.')
-      return
-    }
-
-    if (!eventDraft.event_date) {
-      setMessage('Informe a data do evento.')
+    const selectedEvent = events.find((item) => String(item.id) === String(eventDraft.event_id))
+    if (!selectedEvent) {
+      setMessage('Selecione um evento registrado.')
       return
     }
 
@@ -188,8 +192,9 @@ export function PostEventInventory({ refreshKey, onChanged }) {
     })
 
     setReport({
-      event_name: eventName,
-      event_date: eventDraft.event_date,
+      event_id: selectedEvent.id,
+      event_name: selectedEvent.name,
+      event_date: selectedEvent.event_date,
       notes: eventDraft.notes.trim() || null,
       items,
       totals: buildReportTotals(items)
@@ -212,8 +217,7 @@ export function PostEventInventory({ refreshKey, onChanged }) {
 
     try {
       const saved = await api.createPostEventInventory({
-        event_name: report.event_name,
-        event_date: report.event_date,
+        event_id: report.event_id,
         notes: report.notes,
         items: report.items.map((item) => ({
           product_id: item.product_id,
@@ -284,12 +288,22 @@ export function PostEventInventory({ refreshKey, onChanged }) {
             <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
               <label className="text-sm font-medium">
                 Evento
-                <input className="mission-input mt-1 w-full px-3 py-2" value={eventDraft.event_name} onChange={(event) => updateEventDraft('event_name', event.target.value)} />
+                <select className="mission-input mt-1 w-full px-3 py-2" value={eventDraft.event_id} onChange={(event) => selectEvent(event.target.value)}>
+                  <option value="">Selecione</option>
+                  {events.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} - {item.event_date}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="text-sm font-medium">
                 Data
-                <input type="date" className="mission-input mt-1 w-full px-3 py-2" value={eventDraft.event_date} onChange={(event) => updateEventDraft('event_date', event.target.value)} />
+                <input type="date" className="mission-input mt-1 w-full px-3 py-2" value={eventDraft.event_date} readOnly />
               </label>
+              {!events.length ? (
+                <p className="mission-muted text-sm lg:col-span-2">Nenhum evento registrado no Dashboard.</p>
+              ) : null}
               <label className="text-sm font-medium lg:col-span-2">
                 Observacoes
                 <textarea className="mission-input mt-1 min-h-20 w-full resize-y px-3 py-2" value={eventDraft.notes} onChange={(event) => updateEventDraft('notes', event.target.value)} />
