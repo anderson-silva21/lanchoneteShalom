@@ -11,7 +11,7 @@ const {
   roundQuantity,
   sameQuantity,
   setProductStock,
-  updateBatchExpiration
+  updateBatch
 } = require('../services/stockService');
 
 const router = express.Router();
@@ -34,8 +34,16 @@ const movementSchema = z.object({
   notes: z.string().optional().nullable()
 });
 
-const batchExpirationSchema = z.object({
-  expiration_date: optionalDateSchema
+const batchDateSchema = z.preprocess(
+  (value) => value === '' ? null : value,
+  z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).nullable()
+);
+
+const batchSchema = z.object({
+  expiration_date: batchDateSchema.optional(),
+  quantity_available: z.preprocess((value) => value === '' || value === undefined || value === null ? undefined : value, z.coerce.number().finite().nonnegative().optional())
+}).refine((payload) => payload.expiration_date !== undefined || payload.quantity_available !== undefined, {
+  message: 'Nenhum campo editavel enviado.'
 });
 
 const quantitySchema = z.coerce.number().finite().nonnegative();
@@ -203,10 +211,12 @@ router.get('/batches', (req, res) => {
 });
 
 router.patch('/batches/:id', requireRole('admin', 'manager'), (req, res) => {
-  const payload = batchExpirationSchema.parse(req.body);
-  return res.json(updateBatchExpiration({
+  const payload = batchSchema.parse(req.body);
+  return res.json(updateBatch({
     batchId: req.params.id,
-    expirationDate: payload.expiration_date
+    expirationDate: payload.expiration_date,
+    quantityAvailable: payload.quantity_available,
+    userId: req.user.id
   }));
 });
 

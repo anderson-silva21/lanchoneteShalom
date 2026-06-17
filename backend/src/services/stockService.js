@@ -435,14 +435,40 @@ function getProductStock(productId, options = {}) {
   };
 }
 
-function updateBatchExpiration({ batchId, expirationDate }) {
+function updateBatch({ batchId, expirationDate, quantityAvailable, userId = null }) {
   const batch = getBatch(Number(batchId));
   getProduct(batch.product_id);
+  const hasExpirationDate = expirationDate !== undefined;
+  const hasQuantityAvailable = quantityAvailable !== undefined;
+  const nextExpirationDate = hasExpirationDate ? normalizeExpirationDate(expirationDate) : batch.expiration_date;
+  const nextQuantityAvailable = hasQuantityAvailable ? roundQuantity(quantityAvailable) : roundQuantity(batch.quantity_available);
 
-  db.prepare('UPDATE stock_batches SET expiration_date = ? WHERE id = ?')
-    .run(normalizeExpirationDate(expirationDate), batch.id);
+  if (!Number.isFinite(nextQuantityAvailable) || nextQuantityAvailable < 0) {
+    throw createHttpError('Quantidade invalida.', 400);
+  }
 
-  syncProductStock(batch.product_id);
+  const quantityBefore = getProductTotal(batch.product_id);
+
+  db.prepare('UPDATE stock_batches SET expiration_date = ?, quantity_available = ? WHERE id = ?')
+    .run(nextExpirationDate, nextQuantityAvailable, batch.id);
+
+  const synced = syncProductStock(batch.product_id);
+
+  if (hasQuantityAvailable && !sameQuantity(batch.quantity_available, nextQuantityAvailable)) {
+    insertMovement({
+      productId: batch.product_id,
+      batchId: batch.id,
+      movementType: 'adjustment',
+      quantityChange: roundQuantity(nextQuantityAvailable - batch.quantity_available),
+      quantityBefore,
+      quantityAfter: synced.stock_quantity,
+      referenceType: 'manual',
+      notes: 'Ajuste manual do lote',
+      expirationDate: nextExpirationDate,
+      userId
+    });
+  }
+
   return getProductStock(batch.product_id, { includeEmpty: true });
 }
 
@@ -456,5 +482,5 @@ module.exports = {
   sameQuantity,
   setProductStock,
   syncProductStock,
-  updateBatchExpiration
+  updateBatch
 };

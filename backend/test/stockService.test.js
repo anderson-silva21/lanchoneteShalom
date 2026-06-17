@@ -12,7 +12,7 @@ const { getDashboardAnalytics } = require('../src/services/analyticsService');
 const { createCombo, listActiveCombos } = require('../src/services/comboService');
 const { createEvent } = require('../src/services/eventsService');
 const { confirmSalePayment, createSale } = require('../src/services/salesService');
-const { addStock, getProductStock, updateBatchExpiration } = require('../src/services/stockService');
+const { addStock, getProductStock, updateBatch } = require('../src/services/stockService');
 
 initDatabase();
 
@@ -112,11 +112,43 @@ test('edicao de validade do lote atualiza a proxima validade do produto', () => 
   addStock({ productId: product.id, quantity: 2, expirationDate: '2026-06-20', userId });
 
   const [batch] = getBatches(product.id);
-  const stock = updateBatchExpiration({ batchId: batch.id, expirationDate: '2026-07-05' });
+  const stock = updateBatch({ batchId: batch.id, expirationDate: '2026-07-05' });
 
   assert.equal(stock.batches[0].expiration_date, '2026-07-05');
   const updatedProduct = db.prepare('SELECT expiration_date FROM products WHERE id = ?').get(product.id);
   assert.equal(updatedProduct.expiration_date, '2026-07-05');
+});
+
+test('edicao de quantidade do lote atualiza estoque e registra movimento', () => {
+  const product = createProduct({ name: 'Torta' });
+  addStock({ productId: product.id, quantity: 2, expirationDate: '2026-06-20', userId });
+
+  const [batch] = getBatches(product.id);
+  const stock = updateBatch({
+    batchId: batch.id,
+    quantityAvailable: 5,
+    userId
+  });
+
+  assert.equal(stock.totalQuantity, 5);
+  assert.equal(stock.batches[0].quantity_available, 5);
+  const updatedProduct = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(product.id);
+  assert.equal(updatedProduct.stock_quantity, 5);
+
+  const movement = db.prepare(`
+    SELECT batch_id, type, quantity_change, quantity_before, quantity_after, notes, created_by
+    FROM inventory_movements
+    WHERE batch_id = ?
+    ORDER BY id DESC
+    LIMIT 1
+  `).get(batch.id);
+  assert.equal(movement.batch_id, batch.id);
+  assert.equal(movement.type, 'adjustment');
+  assert.equal(movement.quantity_change, 3);
+  assert.equal(movement.quantity_before, 2);
+  assert.equal(movement.quantity_after, 5);
+  assert.equal(movement.notes, 'Ajuste manual do lote');
+  assert.equal(movement.created_by, userId);
 });
 
 test('compra de estoque pode atualizar custo e valor de venda do produto', () => {

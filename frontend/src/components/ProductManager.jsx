@@ -312,16 +312,22 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
     })
   }
 
-  async function saveBatchExpiration(batch) {
+  async function saveBatch(batch) {
     setMessage('')
+    const quantityAvailable = Number(batch.quantity_available)
+    if (!Number.isFinite(quantityAvailable) || quantityAvailable < 0) {
+      setMessage('A quantidade do lote deve ser um numero maior ou igual a zero.')
+      return
+    }
     try {
-      const stock = await api.updateBatchExpiration(batch.id, {
-        expiration_date: batch.expiration_date || null
+      const stock = await api.updateBatch(batch.id, {
+        expiration_date: batch.expiration_date || null,
+        quantity_available: quantityAvailable
       })
       setSelectedStock(stock)
       await loadProducts()
       onChanged()
-      setMessage('Validade do lote atualizada.')
+      setMessage('Lote atualizado.')
     } catch (err) {
       setMessage(err.message)
     }
@@ -719,7 +725,19 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                       onChange={(event) => updateSelectedBatch(batch.id, 'expiration_date', event.target.value)}
                     />
                   </td>
-                  <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{formatQuantityWithUnit(batch.quantity_available, batch.unit)}</td>
+                  <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.001"
+                        className="mission-input w-28 px-2 py-1"
+                        value={batch.quantity_available ?? ''}
+                        onChange={(event) => updateSelectedBatch(batch.id, 'quantity_available', event.target.value)}
+                      />
+                      <span className="mission-muted text-xs">{batch.unit}</span>
+                    </div>
+                  </td>
                   <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
                     {batch.days_to_expire === null || batch.days_to_expire === undefined ? '-' : decimal.format(batch.days_to_expire)}
                   </td>
@@ -729,7 +747,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                     </span>
                   </td>
                   <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                    <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => saveBatchExpiration(batch)} title="Salvar validade">
+                    <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => saveBatch(batch)} title="Salvar lote">
                       <Save size={16} />
                     </button>
                   </td>
