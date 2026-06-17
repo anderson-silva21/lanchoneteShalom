@@ -435,6 +435,17 @@ function getProductStock(productId, options = {}) {
   };
 }
 
+function updateBatchExpiration({ batchId, expirationDate }) {
+  const batch = getBatch(Number(batchId));
+  getProduct(batch.product_id);
+
+  db.prepare('UPDATE stock_batches SET expiration_date = ? WHERE id = ?')
+    .run(normalizeExpirationDate(expirationDate), batch.id);
+
+  syncProductStock(batch.product_id);
+  return getProductStock(batch.product_id, { includeEmpty: true });
+}
+
 module.exports = {
   addStock,
   consumeStockFefo,
@@ -444,5 +455,6 @@ module.exports = {
   roundQuantity,
   sameQuantity,
   setProductStock,
-  syncProductStock
+  syncProductStock,
+  updateBatchExpiration
 };

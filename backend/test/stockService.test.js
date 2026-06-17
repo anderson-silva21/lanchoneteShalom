@@ -12,7 +12,7 @@ const { getDashboardAnalytics } = require('../src/services/analyticsService');
 const { createCombo, listActiveCombos } = require('../src/services/comboService');
 const { createEvent } = require('../src/services/eventsService');
 const { confirmSalePayment, createSale } = require('../src/services/salesService');
-const { addStock, getProductStock } = require('../src/services/stockService');
+const { addStock, getProductStock, updateBatchExpiration } = require('../src/services/stockService');
 
 initDatabase();
 
@@ -105,6 +105,18 @@ test('entrada de estoque cria um lote com validade e atualiza o total', () => {
   const updatedProduct = db.prepare('SELECT stock_quantity, expiration_date FROM products WHERE id = ?').get(product.id);
   assert.equal(updatedProduct.stock_quantity, 2);
   assert.equal(updatedProduct.expiration_date, '2026-06-20');
+});
+
+test('edicao de validade do lote atualiza a proxima validade do produto', () => {
+  const product = createProduct({ name: 'Bolo' });
+  addStock({ productId: product.id, quantity: 2, expirationDate: '2026-06-20', userId });
+
+  const [batch] = getBatches(product.id);
+  const stock = updateBatchExpiration({ batchId: batch.id, expirationDate: '2026-07-05' });
+
+  assert.equal(stock.batches[0].expiration_date, '2026-07-05');
+  const updatedProduct = db.prepare('SELECT expiration_date FROM products WHERE id = ?').get(product.id);
+  assert.equal(updatedProduct.expiration_date, '2026-07-05');
 });
 
 test('compra de estoque pode atualizar custo e valor de venda do produto', () => {

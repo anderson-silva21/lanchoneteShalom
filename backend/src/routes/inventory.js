@@ -10,7 +10,8 @@ const {
   removeStockFromBatch,
   roundQuantity,
   sameQuantity,
-  setProductStock
+  setProductStock,
+  updateBatchExpiration
 } = require('../services/stockService');
 
 const router = express.Router();
@@ -31,6 +32,10 @@ const movementSchema = z.object({
   sale_price: z.preprocess((value) => value === '' || value === undefined || value === null ? undefined : value, z.coerce.number().finite().nonnegative().optional()),
   expiration_date: optionalDateSchema,
   notes: z.string().optional().nullable()
+});
+
+const batchExpirationSchema = z.object({
+  expiration_date: optionalDateSchema
 });
 
 const quantitySchema = z.coerce.number().finite().nonnegative();
@@ -195,6 +200,14 @@ router.get('/batches', (req, res) => {
   const productId = req.query.product_id ? Number(req.query.product_id) : null;
   const includeEmpty = req.query.include_empty === '1' || req.query.include_empty === 'true';
   return res.json(listStockBatches({ productId, includeEmpty }));
+});
+
+router.patch('/batches/:id', requireRole('admin', 'manager'), (req, res) => {
+  const payload = batchExpirationSchema.parse(req.body);
+  return res.json(updateBatchExpiration({
+    batchId: req.params.id,
+    expirationDate: payload.expiration_date
+  }));
 });
 
 router.get('/products/:id/stock', (req, res) => {

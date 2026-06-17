@@ -302,6 +302,31 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
     setProducts((current) => current.map((product) => product.id === id ? { ...product, [field]: value } : product))
   }
 
+  function updateSelectedBatch(id, field, value) {
+    setSelectedStock((current) => {
+      if (!current) return current
+      return {
+        ...current,
+        batches: current.batches.map((batch) => batch.id === id ? { ...batch, [field]: value } : batch)
+      }
+    })
+  }
+
+  async function saveBatchExpiration(batch) {
+    setMessage('')
+    try {
+      const stock = await api.updateBatchExpiration(batch.id, {
+        expiration_date: batch.expiration_date || null
+      })
+      setSelectedStock(stock)
+      await loadProducts()
+      onChanged()
+      setMessage('Validade do lote atualizada.')
+    } catch (err) {
+      setMessage(err.message)
+    }
+  }
+
   const getProductPriceValues = useCallback((productId) => {
     const product = products.find((item) => String(item.id) === String(productId))
     return {
@@ -667,7 +692,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
         </div>
 
         <div className="mt-4 overflow-x-auto scrollbar-thin">
-          <table className="min-w-[760px] w-full border-separate border-spacing-0 text-left text-sm">
+          <table className="min-w-[860px] w-full border-separate border-spacing-0 text-left text-sm">
             <thead>
               <tr className="text-xs uppercase tracking-[0.12em] text-shalom-blue/70 dark:text-shalom-gold/80">
                 <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Lote</th>
@@ -675,17 +700,25 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Quantidade</th>
                 <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Dias</th>
                 <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Alerta</th>
+                <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10"></th>
               </tr>
             </thead>
             <tbody>
               {selectedProductId && selectedStock === null ? (
                 <tr>
-                  <td className="border-b border-line/80 px-3 py-3 dark:border-shalom-gold/10" colSpan={5}>Carregando lotes...</td>
+                  <td className="border-b border-line/80 px-3 py-3 dark:border-shalom-gold/10" colSpan={6}>Carregando lotes...</td>
                 </tr>
               ) : selectedBatches.length ? selectedBatches.map((batch) => (
                 <tr key={batch.id} className="border-b border-line/80 dark:border-shalom-gold/10">
                   <td className="border-b border-line/80 px-3 py-2 font-mono text-xs dark:border-shalom-gold/10">#{batch.id}</td>
-                  <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{formatDate(batch.expiration_date)}</td>
+                  <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
+                    <input
+                      type="date"
+                      className="mission-input w-40 px-2 py-1"
+                      value={batch.expiration_date || ''}
+                      onChange={(event) => updateSelectedBatch(batch.id, 'expiration_date', event.target.value)}
+                    />
+                  </td>
                   <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{formatQuantityWithUnit(batch.quantity_available, batch.unit)}</td>
                   <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
                     {batch.days_to_expire === null || batch.days_to_expire === undefined ? '-' : decimal.format(batch.days_to_expire)}
@@ -695,10 +728,15 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                       {getBatchStatusLabel(batch)}
                     </span>
                   </td>
+                  <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
+                    <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => saveBatchExpiration(batch)} title="Salvar validade">
+                      <Save size={16} />
+                    </button>
+                  </td>
                 </tr>
               )) : (
                 <tr>
-                  <td className="border-b border-line/80 px-3 py-3 mission-muted dark:border-shalom-gold/10" colSpan={5}>
+                  <td className="border-b border-line/80 px-3 py-3 mission-muted dark:border-shalom-gold/10" colSpan={6}>
                     Nenhum lote para este produto.
                   </td>
                 </tr>

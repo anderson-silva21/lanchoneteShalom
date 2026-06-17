@@ -77,6 +77,7 @@ export const api = {
   sales: () => request('/sales?limit=80'),
   movements: () => request('/inventory/movements'),
   batches: (params = {}) => request(`/inventory/batches?${new URLSearchParams(params)}`),
+  updateBatchExpiration: (id, payload) => request(`/inventory/batches/${id}`, { method: 'PATCH', body: payload }),
   productStock: (id, params = {}) => request(`/inventory/products/${id}/stock?${new URLSearchParams(params)}`),
   createMovement: (movement) => request('/inventory/movements', { method: 'POST', body: movement }),
   postEventInventories: () => request('/inventory/post-event'),
