@@ -6,11 +6,10 @@ const paymentLabels = {
   pix: 'Pix',
   cartao: 'Cartao',
   dinheiro: 'Dinheiro',
-  delivery: 'Delivery',
   pagamento_pendente: 'Pagamento pendente'
 }
 
-const confirmedPaymentMethods = ['pix', 'cartao', 'dinheiro', 'delivery']
+const confirmedPaymentMethods = ['pix', 'cartao', 'dinheiro']
 
 const paymentStatusLabels = {
   pendente: 'Pendente',

@@ -321,6 +321,16 @@ test('pagamento pendente exige cliente', () => {
   }, { id: userId }), /Informe a pessoa ou cliente/);
 });
 
+test('delivery nao e aceito como metodo de pagamento', () => {
+  const product = createProduct({ name: 'Cafe' });
+  addStock({ productId: product.id, quantity: 2, expirationDate: '2026-12-20', userId });
+
+  assert.throws(() => createSale({
+    payment_method: 'delivery',
+    items: [{ product_id: product.id, quantity: 1 }]
+  }, { id: userId }), /Metodo de pagamento invalido/);
+});
+
 test('pagamento pendente aparece na dashboard e pode ser confirmado', () => {
   const product = createProduct({ name: 'Cafe', sale_price: 8 });
   addStock({ productId: product.id, quantity: 2, expirationDate: '2026-12-20', userId });

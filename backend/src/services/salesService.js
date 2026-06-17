@@ -3,7 +3,7 @@ const { findEventForToday } = require('./eventsService');
 const { consumeStockFefo } = require('./stockService');
 
 const pendingPaymentMethod = 'pagamento_pendente';
-const paidPaymentMethods = new Set(['pix', 'cartao', 'dinheiro', 'delivery']);
+const paidPaymentMethods = new Set(['pix', 'cartao', 'dinheiro']);
 const paymentMethods = new Set([...paidPaymentMethods, pendingPaymentMethod]);
 
 function createHttpError(message, status) {
