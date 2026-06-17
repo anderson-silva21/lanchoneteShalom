@@ -28,6 +28,8 @@ function createEmptyAdjustment(productId = '') {
     operation: 'in',
     batch_id: '',
     quantity: 1,
+    cost_price: '',
+    sale_price: '',
     expiration_date: '',
     notes: ''
   }
@@ -243,6 +245,18 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
     event.preventDefault()
     setMessage('')
     const mode = getMovementMode(adjustment)
+    if (mode === 'purchase') {
+      const invalidPriceField = [
+        ['cost_price', 'custo do produto'],
+        ['sale_price', 'valor de venda']
+      ].find(([field]) => adjustment[field] !== '' && (!Number.isFinite(Number(adjustment[field])) || Number(adjustment[field]) < 0))
+
+      if (invalidPriceField) {
+        setMessage(`O ${invalidPriceField[1]} deve ser um numero maior ou igual a zero.`)
+        return
+      }
+    }
+
     const payload = {
       product_id: adjustment.product_id,
       type: adjustment.type,
@@ -253,6 +267,8 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
     }
 
     if (adjustment.batch_id) payload.batch_id = adjustment.batch_id
+    if (mode === 'purchase' && adjustment.cost_price !== '') payload.cost_price = Number(adjustment.cost_price)
+    if (mode === 'purchase' && adjustment.sale_price !== '') payload.sale_price = Number(adjustment.sale_price)
     if ((mode === 'adjustment_out' || mode === 'waste') && !adjustment.batch_id) {
       setMessage('Informe o lote para saidas de estoque.')
       return
@@ -276,6 +292,14 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
   function updateRow(id, field, value) {
     setProducts((current) => current.map((product) => product.id === id ? { ...product, [field]: value } : product))
   }
+
+  const getProductPriceValues = useCallback((productId) => {
+    const product = products.find((item) => String(item.id) === String(productId))
+    return {
+      cost_price: product?.cost_price ?? '',
+      sale_price: product?.sale_price ?? ''
+    }
+  }, [products])
 
   function toggleSort(sortKey) {
     setSortConfig((current) => {
@@ -320,6 +344,28 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
   const selectedProduct = products.find((product) => String(product.id) === String(selectedProductId)) || selectedStock?.product
   const needsMovementBatch = movementMode === 'adjustment_out' || movementMode === 'waste'
   const showsMovementExpiration = movementMode === 'purchase' || (movementMode === 'adjustment_in' && !adjustment.batch_id)
+
+  useEffect(() => {
+    if (movementMode !== 'purchase' || !adjustment.product_id) return
+
+    const prices = getProductPriceValues(adjustment.product_id)
+    if (prices.cost_price === '' && prices.sale_price === '') return
+    if (adjustment.cost_price !== '' && adjustment.sale_price !== '') return
+
+    setAdjustment((current) => {
+      if (getMovementMode(current) !== 'purchase' || String(current.product_id) !== String(adjustment.product_id)) return current
+
+      const nextCostPrice = current.cost_price === '' ? prices.cost_price : current.cost_price
+      const nextSalePrice = current.sale_price === '' ? prices.sale_price : current.sale_price
+      if (nextCostPrice === current.cost_price && nextSalePrice === current.sale_price) return current
+
+      return {
+        ...current,
+        cost_price: nextCostPrice,
+        sale_price: nextSalePrice
+      }
+    })
+  }, [adjustment.cost_price, adjustment.product_id, adjustment.sale_price, getProductPriceValues, movementMode])
 
   return (
     <div className="space-y-5">
@@ -478,7 +524,17 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
                 ref={movementProductRef}
                 className="mission-input mt-1 w-full px-3 py-2"
                 value={adjustment.product_id}
-                onChange={(event) => setAdjustment({ ...adjustment, product_id: event.target.value, batch_id: '' })}
+                onChange={(event) => {
+                  const productId = event.target.value
+                  const prices = getProductPriceValues(productId)
+                  setAdjustment({
+                    ...adjustment,
+                    product_id: productId,
+                    batch_id: '',
+                    cost_price: movementMode === 'purchase' ? prices.cost_price : adjustment.cost_price,
+                    sale_price: movementMode === 'purchase' ? prices.sale_price : adjustment.sale_price
+                  })
+                }}
               >
                 <option value="">Selecione</option>
                 {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
@@ -496,7 +552,9 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
                       ...current,
                       type: nextMode === 'purchase' ? 'purchase' : nextMode === 'waste' ? 'waste' : 'adjustment',
                       operation: nextMode === 'adjustment_out' || nextMode === 'waste' ? 'out' : 'in',
-                      batch_id: nextMode === 'purchase' ? '' : current.batch_id
+                      batch_id: nextMode === 'purchase' ? '' : current.batch_id,
+                      cost_price: nextMode === 'purchase' && current.cost_price === '' ? getProductPriceValues(current.product_id).cost_price : current.cost_price,
+                      sale_price: nextMode === 'purchase' && current.sale_price === '' ? getProductPriceValues(current.product_id).sale_price : current.sale_price
                     }))
                   }}
                 >
@@ -511,6 +569,18 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
                 <input type="number" min="1" step="1" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.quantity} onChange={(event) => setAdjustment({ ...adjustment, quantity: Number(event.target.value) })} />
               </label>
             </div>
+            {movementMode === 'purchase' ? (
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <label className="text-sm font-medium">
+                  Custo do produto
+                  <input type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.cost_price ?? ''} onChange={(event) => setAdjustment({ ...adjustment, cost_price: event.target.value })} />
+                </label>
+                <label className="text-sm font-medium">
+                  Valor de venda
+                  <input type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.sale_price ?? ''} onChange={(event) => setAdjustment({ ...adjustment, sale_price: event.target.value })} />
+                </label>
+              </div>
+            ) : null}
             {movementMode !== 'purchase' ? (
               <label className="mt-3 block text-sm font-medium">
                 Lote {needsMovementBatch ? '' : '(opcional)'}

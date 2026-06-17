@@ -11,7 +11,7 @@ const { db, initDatabase } = require('../src/db');
 const { getDashboardAnalytics } = require('../src/services/analyticsService');
 const { createCombo, listActiveCombos } = require('../src/services/comboService');
 const { createEvent } = require('../src/services/eventsService');
-const { createSale } = require('../src/services/salesService');
+const { confirmSalePayment, createSale } = require('../src/services/salesService');
 const { addStock, getProductStock } = require('../src/services/stockService');
 
 initDatabase();
@@ -105,6 +105,25 @@ test('entrada de estoque cria um lote com validade e atualiza o total', () => {
   const updatedProduct = db.prepare('SELECT stock_quantity, expiration_date FROM products WHERE id = ?').get(product.id);
   assert.equal(updatedProduct.stock_quantity, 2);
   assert.equal(updatedProduct.expiration_date, '2026-06-20');
+});
+
+test('compra de estoque pode atualizar custo e valor de venda do produto', () => {
+  const product = createProduct({ name: 'Arroz', cost_price: 2, sale_price: 10 });
+
+  addStock({
+    productId: product.id,
+    quantity: 5,
+    expirationDate: '2026-06-20',
+    movementType: 'purchase',
+    costPrice: 3.75,
+    salePrice: 12.5,
+    userId
+  });
+
+  const updatedProduct = db.prepare('SELECT cost_price, sale_price, stock_quantity FROM products WHERE id = ?').get(product.id);
+  assert.equal(updatedProduct.cost_price, 3.75);
+  assert.equal(updatedProduct.sale_price, 12.5);
+  assert.equal(updatedProduct.stock_quantity, 5);
 });
 
 test('venda consome primeiro o lote com menor validade usando FEFO', () => {
@@ -208,6 +227,48 @@ test('venda pode ser vinculada a um evento', () => {
 
   assert.equal(sale.event_id, eventId);
   assert.equal(sale.event_name, 'Corujao Shalom');
+});
+
+test('pagamento pendente exige cliente', () => {
+  const product = createProduct({ name: 'Cafe' });
+  addStock({ productId: product.id, quantity: 2, expirationDate: '2026-12-20', userId });
+
+  assert.throws(() => createSale({
+    payment_method: 'pagamento_pendente',
+    items: [{ product_id: product.id, quantity: 1 }]
+  }, { id: userId }), /Informe a pessoa ou cliente/);
+});
+
+test('pagamento pendente aparece na dashboard e pode ser confirmado', () => {
+  const product = createProduct({ name: 'Cafe', sale_price: 8 });
+  addStock({ productId: product.id, quantity: 2, expirationDate: '2026-12-20', userId });
+
+  const sale = createSale({
+    payment_method: 'pagamento_pendente',
+    customer_name: 'Maria',
+    notes: 'Paga no proximo encontro',
+    items: [{ product_id: product.id, quantity: 1 }]
+  }, { id: userId });
+
+  assert.equal(sale.payment_method, 'pagamento_pendente');
+  assert.equal(sale.payment_status, 'pending');
+  assert.equal(sale.customer_name, 'Maria');
+
+  const dashboard = getDashboardAnalytics();
+  assert.equal(dashboard.kpis.pending_payment_count, 1);
+  assert.equal(dashboard.kpis.pending_payment_total, 8);
+  assert.equal(dashboard.pending_payments[0].notes, 'Paga no proximo encontro');
+
+  const confirmed = confirmSalePayment(sale.id, 'pix', userId);
+  assert.equal(confirmed.payment_method, 'pix');
+  assert.equal(confirmed.payment_status, 'paid');
+
+  const row = db.prepare('SELECT pagamento, status_pagamento, cliente FROM v_sales_sheet WHERE venda_id = ?').get(sale.id);
+  assert.deepEqual(row, {
+    pagamento: 'pix',
+    status_pagamento: 'pago',
+    cliente: 'Maria'
+  });
 });
 
 test('registro de evento atribui vendas existentes realizadas na mesma data', () => {

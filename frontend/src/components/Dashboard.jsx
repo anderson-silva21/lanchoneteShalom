@@ -26,7 +26,7 @@ import {
   YAxis
 } from 'recharts'
 import { api } from '../services/api'
-import { decimal, formatDate, formatQuantityWithUnit, money } from '../utils/formatters'
+import { decimal, formatDate, formatDateTime, formatQuantityWithUnit, money } from '../utils/formatters'
 import { MetricCard } from './MetricCard'
 import { StatusPill } from './StatusPill'
 
@@ -48,6 +48,19 @@ function createEmptyEventDraft() {
     event_date: todayInputValue(),
     notes: ''
   }
+}
+
+const confirmedPaymentMethods = ['pix', 'cartao', 'dinheiro', 'delivery']
+
+const paymentLabels = {
+  pix: 'Pix',
+  cartao: 'Cartao',
+  dinheiro: 'Dinheiro',
+  delivery: 'Delivery'
+}
+
+function getPaymentLabel(value) {
+  return paymentLabels[value] || value
 }
 
 function validityLabel(item) {
@@ -115,6 +128,9 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
   const [eventSaving, setEventSaving] = useState(false)
   const [eventMessage, setEventMessage] = useState('')
   const [registeredEvent, setRegisteredEvent] = useState(null)
+  const [pendingPaymentMethods, setPendingPaymentMethods] = useState({})
+  const [pendingPaymentConfirming, setPendingPaymentConfirming] = useState('')
+  const [pendingPaymentMessage, setPendingPaymentMessage] = useState('')
   const retriedEventRevenueRef = useRef(false)
 
   useEffect(() => {
@@ -182,6 +198,35 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
     }
   }
 
+  async function confirmPendingPayment(saleId) {
+    const paymentMethod = pendingPaymentMethods[saleId]
+    if (!paymentMethod) {
+      setPendingPaymentMessage('Escolha o metodo de pagamento.')
+      return
+    }
+
+    setPendingPaymentConfirming(String(saleId))
+    setPendingPaymentMessage('')
+
+    try {
+      await api.confirmSheetSalePayment(saleId, {
+        pagamento: paymentMethod,
+        status_pagamento: 'pago'
+      })
+      setPendingPaymentMethods((current) => {
+        const next = { ...current }
+        delete next[saleId]
+        return next
+      })
+      setReloadKey((key) => key + 1)
+      setPendingPaymentMessage('Pagamento confirmado.')
+    } catch (err) {
+      setPendingPaymentMessage(err.message)
+    } finally {
+      setPendingPaymentConfirming('')
+    }
+  }
+
   if (error) {
     return (
       <div className="mission-panel p-4 text-shalom-wine dark:text-rose-100">
@@ -203,6 +248,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
   const expirationAlerts = data.expiration_alerts || []
   const missingExpirationProducts = data.missing_expiration_products || []
   const eventRevenue = data.event_revenue || []
+  const pendingPayments = data.pending_payments || []
 
   return (
     <div className="space-y-5">
@@ -213,7 +259,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
         <MetricCard icon={LineChart} label="Produtos top" value={data.top_products[0]?.name || '-'} detail={data.top_products[0] ? `${decimal.format(data.top_products[0].quantity)} vendidos` : 'Sem vendas'} />
       </section>
 
-      <section className="grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <section className="grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard
           icon={AlertTriangle}
           label="Estoque baixo"
@@ -239,6 +285,15 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
           tone={data.kpis.expired_count ? 'red' : 'amber'}
           onClick={() => setActiveModal('expiration')}
           ariaLabel="Abrir alertas de validade"
+        />
+        <MetricCard
+          icon={Banknote}
+          label="Pagamentos pendentes"
+          value={data.kpis.pending_payment_count || 0}
+          detail={money.format(data.kpis.pending_payment_total || 0)}
+          tone={data.kpis.pending_payment_count ? 'red' : 'green'}
+          onClick={() => setActiveModal('pendingPayments')}
+          ariaLabel="Abrir pagamentos pendentes"
         />
       </section>
 
@@ -520,6 +575,75 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
               </div>
             )}
           </div>
+        </DashboardModal>
+      ) : null}
+
+      {activeModal === 'pendingPayments' ? (
+        <DashboardModal
+          title="Pagamentos pendentes"
+          description="Vendas registradas como pendentes, com cliente e observacoes para acompanhamento."
+          onClose={() => setActiveModal('')}
+        >
+          {pendingPaymentMessage ? <p className="mb-3 rounded-xl bg-shalom-cream/70 px-3 py-2 text-sm text-shalom-deep dark:bg-white/10 dark:text-shalom-gold">{pendingPaymentMessage}</p> : null}
+          {pendingPayments.length ? (
+            <div className="space-y-3">
+              {pendingPayments.map((item) => (
+                <article key={item.id} className="mission-card p-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="font-semibold">{item.customer_name}</p>
+                      <p className="mission-muted text-sm">
+                        Venda #{item.id} - {formatDateTime(item.created_at)}
+                      </p>
+                    </div>
+                    <strong className="text-shalom-wine dark:text-rose-100">{money.format(item.total)}</strong>
+                  </div>
+                  <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                      <dt className="mission-muted">Operador</dt>
+                      <dd className="mt-1 font-semibold">{item.sold_by_name || '-'}</dd>
+                    </div>
+                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                      <dt className="mission-muted">Evento</dt>
+                      <dd className="mt-1 font-semibold">{item.event_name || '-'}</dd>
+                    </div>
+                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                      <dt className="mission-muted">Observacoes</dt>
+                      <dd className="mt-1 font-semibold whitespace-pre-wrap">{item.notes || '-'}</dd>
+                    </div>
+                  </dl>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                    <label className="text-sm font-medium">
+                      Metodo de pagamento
+                      <select
+                        className="mission-input mt-1 w-full px-3 py-2"
+                        value={pendingPaymentMethods[item.id] || ''}
+                        onChange={(event) => setPendingPaymentMethods((current) => ({ ...current, [item.id]: event.target.value }))}
+                      >
+                        <option value="">Selecione</option>
+                        {confirmedPaymentMethods.map((method) => (
+                          <option key={method} value={method}>{getPaymentLabel(method)}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      className="mission-btn mission-btn-primary flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => confirmPendingPayment(item.id)}
+                      disabled={!pendingPaymentMethods[item.id] || pendingPaymentConfirming === String(item.id)}
+                    >
+                      <Banknote size={16} />
+                      {pendingPaymentConfirming === String(item.id) ? 'Confirmando...' : 'Marcar como pago'}
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
+              Nenhum pagamento pendente.
+            </div>
+          )}
         </DashboardModal>
       ) : null}
 

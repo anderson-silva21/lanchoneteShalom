@@ -156,6 +156,7 @@ export function SalesTerminal({ onSaleComplete }) {
   const [cart, setCart] = useState([])
   const [notes, setNotes] = useState('')
   const [payment, setPayment] = useState('pix')
+  const [customerName, setCustomerName] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [showComboCreator, setShowComboCreator] = useState(false)
@@ -203,9 +204,16 @@ export function SalesTerminal({ onSaleComplete }) {
   async function finishSale() {
     setLoading(true)
     setMessage('')
+    if (payment === 'pagamento_pendente' && !customerName.trim()) {
+      setMessage('Informe a pessoa ou cliente do pagamento pendente.')
+      setLoading(false)
+      return
+    }
+
     try {
       const payload = {
         payment_method: payment,
+        customer_name: customerName.trim() || null,
         notes,
         items: cart.map((item) => item.type === 'combo'
           ? { combo_id: item.id, quantity: item.quantity }
@@ -214,6 +222,7 @@ export function SalesTerminal({ onSaleComplete }) {
       const sale = await api.createSale(payload)
       setCart([])
       setNotes('')
+      setCustomerName('')
       setMessage(`Venda #${sale.id} registrada: ${money.format(sale.total)}`)
       await loadData()
       onSaleComplete()
@@ -333,8 +342,21 @@ export function SalesTerminal({ onSaleComplete }) {
             <option value="cartao">Cartao</option>
             <option value="dinheiro">Dinheiro</option>
             <option value="delivery">Delivery</option>
+            <option value="pagamento_pendente">Pagamento pendente</option>
           </select>
         </label>
+
+        {payment === 'pagamento_pendente' ? (
+          <label className="mt-4 block text-sm font-medium">
+            Pessoa/cliente
+            <input
+              className="mission-input mt-2 w-full px-3 py-2.5"
+              value={customerName}
+              onChange={(event) => setCustomerName(event.target.value)}
+              placeholder="Nome de quem ficou pendente"
+            />
+          </label>
+        ) : null}
 
         <label className="mt-4 block text-sm font-medium">
           Observacoes

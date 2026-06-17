@@ -180,6 +180,10 @@ function runMigrations() {
   addColumnIfMissing('combos', 'expires_at', 'TEXT');
   addColumnIfMissing('combos', 'created_by', 'INTEGER REFERENCES users(id)');
   addColumnIfMissing('sales', 'event_id', 'INTEGER REFERENCES events(id)');
+  addColumnIfMissing('sales', 'payment_status', "TEXT NOT NULL DEFAULT 'paid'");
+  addColumnIfMissing('sales', 'customer_name', 'TEXT');
+  addColumnIfMissing('sales', 'payment_confirmed_at', 'TEXT');
+  addColumnIfMissing('sales', 'payment_confirmed_by', 'INTEGER REFERENCES users(id)');
   addColumnIfMissing('inventory_movements', 'expiration_date', 'TEXT');
   addColumnIfMissing('inventory_movements', 'batch_id', 'INTEGER REFERENCES stock_batches(id)');
   migrateLegacyStockBatches();

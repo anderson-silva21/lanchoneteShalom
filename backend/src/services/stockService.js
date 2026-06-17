@@ -20,6 +20,15 @@ function normalizeExpirationDate(value) {
   return String(value).slice(0, 10);
 }
 
+function normalizePrice(value, message) {
+  if (value === undefined || value === null || value === '') return null;
+  const price = Number(value);
+  if (!Number.isFinite(price) || price < 0) {
+    throw createHttpError(message, 400);
+  }
+  return price;
+}
+
 function getProduct(productId) {
   const product = db.prepare('SELECT * FROM products WHERE id = ? AND active = 1').get(productId);
   if (!product) throw createHttpError('Produto nao encontrado.', 404);
@@ -119,12 +128,16 @@ function addStock({
   referenceId = null,
   notes = null,
   userId = null,
+  costPrice = null,
+  salePrice = null,
   createNewBatch = true
 }) {
-  getProduct(productId);
+  const product = getProduct(productId);
 
   const quantityToAdd = roundQuantity(quantity);
   if (quantityToAdd <= 0) throw createHttpError('Quantidade invalida.', 400);
+  const nextCostPrice = normalizePrice(costPrice, 'Custo invalido.');
+  const nextSalePrice = normalizePrice(salePrice, 'Preco de venda invalido.');
 
   const quantityBefore = getProductTotal(productId);
   let batch;
@@ -139,6 +152,11 @@ function addStock({
       VALUES (?, ?, ?)
     `).run(productId, normalizeExpirationDate(expirationDate), quantityToAdd);
     batch = db.prepare('SELECT * FROM stock_batches WHERE id = ?').get(result.lastInsertRowid);
+  }
+
+  if (nextCostPrice !== null || nextSalePrice !== null) {
+    db.prepare('UPDATE products SET cost_price = ?, sale_price = ? WHERE id = ?')
+      .run(nextCostPrice ?? product.cost_price, nextSalePrice ?? product.sale_price, productId);
   }
 
   const synced = syncProductStock(productId);

@@ -2,26 +2,57 @@ const { db } = require('../db');
 const { findEventForToday } = require('./eventsService');
 const { consumeStockFefo } = require('./stockService');
 
+const pendingPaymentMethod = 'pagamento_pendente';
+const paidPaymentMethods = new Set(['pix', 'cartao', 'dinheiro', 'delivery']);
+const paymentMethods = new Set([...paidPaymentMethods, pendingPaymentMethod]);
+
+function createHttpError(message, status) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+function normalizePaymentMethod(value = 'pix') {
+  const method = String(value || 'pix').trim();
+  if (!paymentMethods.has(method)) {
+    throw createHttpError('Metodo de pagamento invalido.', 400);
+  }
+  return method;
+}
+
+function normalizeCustomerName(value) {
+  const customerName = String(value || '').trim();
+  return customerName || null;
+}
+
 const createSaleTransaction = db.transaction((payload, user) => {
   const items = payload.items || [];
   if (!items.length) {
-    const error = new Error('Inclua ao menos um item na venda.');
-    error.status = 400;
-    throw error;
+    throw createHttpError('Inclua ao menos um item na venda.', 400);
+  }
+
+  const paymentMethod = normalizePaymentMethod(payload.payment_method || 'pix');
+  const paymentStatus = paymentMethod === pendingPaymentMethod ? 'pending' : 'paid';
+  const customerName = normalizeCustomerName(payload.customer_name || payload.customerName);
+
+  if (paymentStatus === 'pending' && !customerName) {
+    throw createHttpError('Informe a pessoa ou cliente do pagamento pendente.', 400);
   }
 
   const eventId = findEventForToday()?.id || payload.event_id || payload.eventId || null;
   if (eventId && !db.prepare('SELECT id FROM events WHERE id = ?').get(eventId)) {
-    const error = new Error('Evento nao encontrado.');
-    error.status = 404;
-    throw error;
+    throw createHttpError('Evento nao encontrado.', 404);
   }
 
+  const paymentConfirmedAt = paymentStatus === 'paid' ? new Date().toISOString() : null;
+  const paymentConfirmedBy = paymentStatus === 'paid' ? user.id : null;
   const insertSale = db.prepare(`
-    INSERT INTO sales (total, estimated_profit, payment_method, notes, event_id, sold_by)
-    VALUES (0, 0, ?, ?, ?, ?)
+    INSERT INTO sales
+      (total, estimated_profit, payment_method, payment_status, customer_name, payment_confirmed_at, payment_confirmed_by, notes, event_id, sold_by)
+    VALUES
+      (0, 0, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const saleId = insertSale.run(payload.payment_method || 'pix', payload.notes || null, eventId, user.id).lastInsertRowid;
+  const saleId = insertSale.run(paymentMethod, paymentStatus, customerName, paymentConfirmedAt, paymentConfirmedBy, payload.notes || null, eventId, user.id).lastInsertRowid;
 
   const insertItem = db.prepare(`
     INSERT INTO sale_items
@@ -55,17 +86,13 @@ const createSaleTransaction = db.transaction((payload, user) => {
   items.forEach((item) => {
     const quantity = Number(item.quantity || 1);
     if (quantity <= 0) {
-      const error = new Error('Quantidade invalida.');
-      error.status = 400;
-      throw error;
+      throw createHttpError('Quantidade invalida.', 400);
     }
 
     if (item.product_id || item.productId) {
       const product = getProduct.get(item.product_id || item.productId);
       if (!product) {
-        const error = new Error('Produto nao encontrado.');
-        error.status = 404;
-        throw error;
+        throw createHttpError('Produto nao encontrado.', 404);
       }
 
       reduceProduct(product, quantity, `Venda de ${product.name}`);
@@ -80,9 +107,7 @@ const createSaleTransaction = db.transaction((payload, user) => {
     if (item.combo_id || item.comboId) {
       const combo = getCombo.get(item.combo_id || item.comboId);
       if (!combo) {
-        const error = new Error('Combo nao encontrado.');
-        error.status = 404;
-        throw error;
+        throw createHttpError('Combo nao encontrado.', 404);
       }
 
       const comboItems = getComboItems.all(combo.id);
@@ -100,9 +125,7 @@ const createSaleTransaction = db.transaction((payload, user) => {
       return;
     }
 
-    const error = new Error('Item de venda sem produto ou combo.');
-    error.status = 400;
-    throw error;
+    throw createHttpError('Item de venda sem produto ou combo.', 400);
   });
 
   db.prepare('UPDATE sales SET total = ?, estimated_profit = ? WHERE id = ?').run(total, profit, saleId);
@@ -134,7 +157,32 @@ function createSale(payload, user) {
   return getSaleById(saleId);
 }
 
+function confirmSalePayment(id, paymentMethod, userId) {
+  const method = normalizePaymentMethod(paymentMethod);
+  if (method === pendingPaymentMethod) {
+    throw createHttpError('Escolha um metodo de pagamento confirmado.', 400);
+  }
+
+  const sale = db.prepare('SELECT id, payment_method, payment_status FROM sales WHERE id = ?').get(id);
+  if (!sale) throw createHttpError('Venda nao encontrada.', 404);
+  if (sale.payment_status !== 'pending' && sale.payment_method !== pendingPaymentMethod) {
+    throw createHttpError('Pagamento ja confirmado.', 400);
+  }
+
+  db.prepare(`
+    UPDATE sales
+    SET payment_method = ?,
+        payment_status = 'paid',
+        payment_confirmed_at = CURRENT_TIMESTAMP,
+        payment_confirmed_by = ?
+    WHERE id = ?
+  `).run(method, userId || null, id);
+
+  return getSaleById(id);
+}
+
 module.exports = {
+  confirmSalePayment,
   createSale,
   getSaleById
 };

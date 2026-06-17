@@ -3,7 +3,7 @@
     {
       "name": "kpis",
       "source": "GET /api/powerbi/dataset",
-      "columns": ["revenue_today", "estimated_profit_today", "sales_today", "average_ticket_today", "low_stock_count", "critical_stock_count"]
+      "columns": ["revenue_today", "estimated_profit_today", "sales_today", "average_ticket_today", "low_stock_count", "critical_stock_count", "pending_payment_count", "pending_payment_total"]
     },
     {
       "name": "products",
@@ -13,7 +13,7 @@
     {
       "name": "sales",
       "source": "GET /api/powerbi/dataset",
-      "columns": ["venda_id", "data_hora", "operador", "pagamento", "faturamento", "lucro_estimado", "observacoes"]
+      "columns": ["venda_id", "data_hora", "operador", "cliente", "pagamento", "status_pagamento", "pago_em", "faturamento", "lucro_estimado", "observacoes"]
     },
     {
       "name": "movements",

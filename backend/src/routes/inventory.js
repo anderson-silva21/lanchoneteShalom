@@ -26,6 +26,8 @@ const movementSchema = z.object({
   type: z.enum(['purchase', 'adjustment', 'waste']),
   operation: z.enum(['in', 'out']).optional(),
   quantity: z.coerce.number().finite().positive(),
+  cost_price: z.preprocess((value) => value === '' || value === undefined || value === null ? undefined : value, z.coerce.number().finite().nonnegative().optional()),
+  sale_price: z.preprocess((value) => value === '' || value === undefined || value === null ? undefined : value, z.coerce.number().finite().nonnegative().optional()),
   expiration_date: optionalDateSchema,
   notes: z.string().optional().nullable()
 });
@@ -228,6 +230,8 @@ router.post('/movements', requireRole('admin', 'manager'), (req, res) => {
         referenceType: 'manual',
         notes: payload.notes || null,
         userId: req.user.id,
+        costPrice: payload.cost_price,
+        salePrice: payload.sale_price,
         createNewBatch: true
       });
       return result.movement_id;

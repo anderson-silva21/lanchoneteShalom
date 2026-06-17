@@ -2,6 +2,7 @@ const express = require('express');
 const { db } = require('../db');
 const { authenticate } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
+const { confirmSalePayment } = require('../services/salesService');
 const { roundQuantity, sameQuantity, setProductStock } = require('../services/stockService');
 
 const router = express.Router();
@@ -58,6 +59,27 @@ const sheets = {
     `
   }
 };
+
+function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+
+function getRequestedNotes(body) {
+  if (hasOwn(body, 'observacoes')) return body.observacoes;
+  if (hasOwn(body, 'notes')) return body.notes;
+  return undefined;
+}
+
+function normalizeNotes(value) {
+  if (value === null || value === undefined || value === '') return null;
+  return String(value).trim() || null;
+}
+
+function requireAdminForNotes(req, res) {
+  if (req.user.role === 'admin') return true;
+  res.status(403).json({ message: 'Somente administradores podem alterar observacoes.' });
+  return false;
+}
 
 router.use(authenticate, requireScreen('sheet'));
 
@@ -136,6 +158,47 @@ router.patch('/produtos/:id', requireScreen('products'), (req, res) => {
 
   transaction();
   return res.json(db.prepare('SELECT * FROM v_products_sheet WHERE id = ?').get(req.params.id));
+});
+
+router.patch('/vendas/:id', requireScreen('sales'), (req, res) => {
+  const requestedNotes = getRequestedNotes(req.body);
+  const hasNotesUpdate = requestedNotes !== undefined;
+  const hasPaymentUpdate = hasOwn(req.body, 'pagamento') || hasOwn(req.body, 'payment_method') || hasOwn(req.body, 'status_pagamento') || hasOwn(req.body, 'payment_status');
+
+  if (!hasNotesUpdate && !hasPaymentUpdate) {
+    return res.status(400).json({ message: 'Nenhum campo editavel enviado.' });
+  }
+
+  if (hasNotesUpdate) {
+    if (!requireAdminForNotes(req, res)) return undefined;
+    const result = db.prepare('UPDATE sales SET notes = ? WHERE id = ?').run(normalizeNotes(requestedNotes), req.params.id);
+    if (!result.changes) return res.status(404).json({ message: 'Venda nao encontrada.' });
+  }
+
+  if (!hasPaymentUpdate) {
+    return res.json(db.prepare('SELECT * FROM v_sales_sheet WHERE venda_id = ?').get(req.params.id));
+  }
+
+  const paymentMethod = String(req.body.pagamento || req.body.payment_method || '').trim();
+  const paymentStatus = String(req.body.status_pagamento || req.body.payment_status || '').trim();
+
+  if (paymentStatus && !['pago', 'paid'].includes(paymentStatus)) {
+    return res.status(400).json({ message: 'Altere o status da venda para pago antes de confirmar.' });
+  }
+
+  confirmSalePayment(Number(req.params.id), paymentMethod, req.user.id);
+  return res.json(db.prepare('SELECT * FROM v_sales_sheet WHERE venda_id = ?').get(req.params.id));
+});
+
+router.patch('/movimentacoes/:id', (req, res) => {
+  const requestedNotes = getRequestedNotes(req.body);
+  if (requestedNotes === undefined) return res.status(400).json({ message: 'Nenhum campo editavel enviado.' });
+  if (!requireAdminForNotes(req, res)) return undefined;
+
+  const result = db.prepare('UPDATE inventory_movements SET notes = ? WHERE id = ?').run(normalizeNotes(requestedNotes), req.params.id);
+  if (!result.changes) return res.status(404).json({ message: 'Movimentacao nao encontrada.' });
+
+  return res.json(db.prepare('SELECT * FROM v_movements_sheet WHERE id = ?').get(req.params.id));
 });
 
 module.exports = router;

@@ -295,9 +295,27 @@ function getDashboardAnalytics() {
     LIMIT 6
   `).all(thirtyDaysAgo);
 
+  const pendingPayments = db.prepare(`
+    SELECT
+      s.id,
+      s.created_at,
+      s.customer_name,
+      s.total,
+      s.notes,
+      u.name AS sold_by_name,
+      e.name AS event_name
+    FROM sales s
+    LEFT JOIN users u ON u.id = s.sold_by
+    LEFT JOIN events e ON e.id = s.event_id
+    WHERE s.payment_status = 'pending'
+       OR s.payment_method = 'pagamento_pendente'
+    ORDER BY s.created_at DESC
+  `).all();
+
   const criticalStockCount = lowStockProducts.filter((item) => item.status === 'critical').length;
   const purchaseSuggestions = alerts.filter((item) => item.suggested_purchase > 0);
   const expiredCount = expirationAlerts.filter((item) => item.expiration_status === 'expired').length;
+  const pendingPaymentTotal = pendingPayments.reduce((sum, item) => sum + Number(item.total || 0), 0);
 
   return {
     kpis: {
@@ -310,7 +328,9 @@ function getDashboardAnalytics() {
       expiration_alert_count: expirationAlerts.length,
       expired_count: expiredCount,
       missing_expiration_count: Number(missingExpirationCount || 0),
-      validity_attention_count: expirationAlerts.length + Number(missingExpirationCount || 0)
+      validity_attention_count: expirationAlerts.length + Number(missingExpirationCount || 0),
+      pending_payment_count: pendingPayments.length,
+      pending_payment_total: money(pendingPaymentTotal)
     },
     top_products: topProducts,
     slow_products: slowProducts,
@@ -322,6 +342,7 @@ function getDashboardAnalytics() {
     expiration_alerts: expirationAlerts,
     missing_expiration_products: missingExpirationProducts,
     purchase_suggestions: purchaseSuggestions,
+    pending_payments: pendingPayments,
     event_revenue: eventRevenue,
     profitable_products: profitableProducts
   };

@@ -10,6 +10,7 @@ const router = express.Router();
 
 const saleSchema = z.object({
   payment_method: z.string().optional(),
+  customer_name: z.string().trim().optional().nullable(),
   notes: z.string().optional().nullable(),
   event_id: z.coerce.number().int().positive().optional().nullable(),
   items: z.array(z.object({
