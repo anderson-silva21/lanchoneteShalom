@@ -38,6 +38,8 @@ const defaultDevOrigins = [
   'http://192.168.15.9:4173',
   'http://100.82.234.51:4173',
   'http://intranet.lanchoneteshalom',
+  'http://intranet.lanchoneteshalom.local',
+  'https://intranet.lanchoneteshalom.local',
   'https://containing-hydrogen-involves-quilt.trycloudflare.com'
 ];
 
