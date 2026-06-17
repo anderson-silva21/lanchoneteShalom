@@ -1,4 +1,4 @@
-import { Bell, Clipboard, DatabaseZap, KeyRound, Moon, PackagePlus, RotateCcw, Send, ShieldCheck, Smartphone, Trash2, UserPlus, Users } from 'lucide-react'
+import { Bell, Clipboard, DatabaseZap, ExternalLink, KeyRound, Moon, PackagePlus, RotateCcw, Send, ShieldCheck, Smartphone, Trash2, UserPlus, Users } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../services/api'
 import { decimal, formatDateTime } from '../utils/formatters'
@@ -8,6 +8,8 @@ const roleOptions = [
   { value: 'manager', label: 'Gerente' },
   { value: 'admin', label: 'Admin' }
 ]
+
+const telegramInviteUrl = 'https://t.me/+FhW7DOd1pLdjYWIx'
 
 function roleLabel(role) {
   return roleOptions.find((item) => item.value === role)?.label || role
@@ -263,6 +265,15 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
               <dd className="font-semibold">{telegramStatus?.chat_id_preview || '-'}</dd>
             </div>
           </dl>
+          <a
+            className="mission-btn mt-3 flex w-full items-center justify-center gap-2 border border-line/80 px-3 py-2 text-sm font-semibold hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10"
+            href={telegramInviteUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <ExternalLink size={16} />
+            Entrar no grupo do Telegram
+          </a>
         </div>
       </aside>
 
