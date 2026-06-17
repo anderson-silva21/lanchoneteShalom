@@ -1,4 +1,4 @@
-import { Clipboard, DatabaseZap, KeyRound, Moon, RotateCcw, ShieldCheck, Smartphone, Trash2, UserPlus, Users } from 'lucide-react'
+import { Clipboard, DatabaseZap, KeyRound, Moon, PackagePlus, RotateCcw, ShieldCheck, Smartphone, Trash2, UserPlus, Users } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../services/api'
 import { decimal } from '../utils/formatters'
@@ -13,7 +13,7 @@ function roleLabel(role) {
   return roleOptions.find((item) => item.value === role)?.label || role
 }
 
-export function SettingsView({ user, darkMode, setDarkMode, onChanged = () => {} }) {
+export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false, onSetupEnabledChange = () => {}, onChanged = () => {} }) {
   const [status, setStatus] = useState(null)
   const [users, setUsers] = useState([])
   const [userDraft, setUserDraft] = useState({ name: '', username: '', role: 'cashier' })
@@ -24,14 +24,17 @@ export function SettingsView({ user, darkMode, setDarkMode, onChanged = () => {}
   const [savingUser, setSavingUser] = useState(false)
   const [resettingUserId, setResettingUserId] = useState(null)
   const [deletingUserId, setDeletingUserId] = useState(null)
+  const [savingInitialLoad, setSavingInitialLoad] = useState(false)
 
   const loadStatus = useCallback(async () => {
     try {
-      setStatus(await api.setupStatus())
+      const nextStatus = await api.setupStatus()
+      setStatus(nextStatus)
+      onSetupEnabledChange(Boolean(nextStatus.setup_enabled))
     } catch (err) {
       setMessage(err.message)
     }
-  }, [])
+  }, [onSetupEnabledChange])
 
   const loadUsers = useCallback(async () => {
     try {
@@ -131,7 +134,23 @@ export function SettingsView({ user, darkMode, setDarkMode, onChanged = () => {}
     }
   }
 
+  async function toggleInitialLoad() {
+    setMessage('')
+    setSavingInitialLoad(true)
+    try {
+      const result = await api.updateInitialLoad({ enabled: !initialLoadEnabled })
+      setStatus(result)
+      onSetupEnabledChange(Boolean(result.setup_enabled))
+      setMessage(result.setup_enabled ? 'Carga inicial habilitada.' : 'Carga inicial desabilitada.')
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setSavingInitialLoad(false)
+    }
+  }
+
   const counts = status?.counts || {}
+  const initialLoadEnabled = status?.setup_enabled ?? setupEnabled
   const items = [
     { icon: ShieldCheck, label: 'Perfil', value: user?.role || '-' },
     { icon: KeyRound, label: 'Sessao', value: user?.username || '-' },
@@ -169,6 +188,19 @@ export function SettingsView({ user, darkMode, setDarkMode, onChanged = () => {}
           </span>
           <span className={`h-6 w-11 rounded-full p-1 transition ${darkMode ? 'bg-shalom-gold' : 'bg-shalom-blue/25'}`}>
             <span className={`block h-4 w-4 rounded-full bg-white transition ${darkMode ? 'translate-x-5' : ''}`} />
+          </span>
+        </button>
+        <button
+          className="mission-btn mt-3 flex w-full items-center justify-between border border-shalom-gold/30 px-4 py-3 font-medium dark:border-shalom-gold/10"
+          onClick={toggleInitialLoad}
+          disabled={savingInitialLoad}
+        >
+          <span className="flex items-center gap-2">
+            <PackagePlus size={18} />
+            Carga inicial
+          </span>
+          <span className={`h-6 w-11 rounded-full p-1 transition ${initialLoadEnabled ? 'bg-shalom-gold' : 'bg-shalom-blue/25'}`}>
+            <span className={`block h-4 w-4 rounded-full bg-white transition ${initialLoadEnabled ? 'translate-x-5' : ''}`} />
           </span>
         </button>
       </aside>

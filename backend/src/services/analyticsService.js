@@ -348,24 +348,6 @@ function getDashboardAnalytics() {
   };
 }
 
-function getPowerBiDataset() {
-  const analytics = getDashboardAnalytics();
-
-  return {
-    generated_at: new Date().toISOString(),
-    kpis: [analytics.kpis],
-    products: db.prepare('SELECT * FROM v_products_sheet ORDER BY produto').all(),
-    batches: db.prepare('SELECT * FROM v_stock_batches_sheet ORDER BY produto, date(validade), lote_id').all(),
-    sales: db.prepare('SELECT * FROM v_sales_sheet ORDER BY data_hora DESC LIMIT 5000').all(),
-    movements: db.prepare('SELECT * FROM v_movements_sheet ORDER BY data_hora DESC LIMIT 5000').all(),
-    post_event_inventories: db.prepare('SELECT * FROM v_post_event_inventory_sheet ORDER BY registrado_em DESC LIMIT 5000').all(),
-    sales_by_day: analytics.sales_by_day,
-    stock_alerts: analytics.alerts,
-    top_products: analytics.top_products
-  };
-}
-
 module.exports = {
-  getDashboardAnalytics,
-  getPowerBiDataset
+  getDashboardAnalytics
 };

@@ -28,8 +28,8 @@ const navItems = [
   { key: 'settings', label: 'Sistema', icon: Settings }
 ]
 
-export function AppShell({ activeView, setActiveView, user, darkMode, setDarkMode, onLogout, children }) {
-  const allowedNavItems = navItems.filter((item) => canAccessView(user?.role, item.key))
+export function AppShell({ activeView, setActiveView, user, darkMode, setDarkMode, setupEnabled = false, onLogout, children }) {
+  const allowedNavItems = navItems.filter((item) => canAccessView(user?.role, item.key, { setupEnabled }))
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => typeof window !== 'undefined' && window.localStorage.getItem('lanchonete_sidebar_collapsed') === 'true'
   )

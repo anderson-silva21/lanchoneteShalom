@@ -24,6 +24,7 @@ function App() {
   const [activeView, setActiveView] = useState('dashboard')
   const [productIntent, setProductIntent] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [setupEnabled, setSetupEnabled] = useState(false)
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('lanchonete_theme') === 'dark')
   const inactivityTimerRef = useRef(null)
   const lastActivityRef = useRef(0)
@@ -54,6 +55,26 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!user || user.password_must_change || !['admin', 'manager'].includes(user.role)) {
+      setSetupEnabled(false)
+      return undefined
+    }
+
+    let mounted = true
+    api.setupStatus()
+      .then((status) => {
+        if (mounted) setSetupEnabled(Boolean(status.setup_enabled))
+      })
+      .catch(() => {
+        if (mounted) setSetupEnabled(false)
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [refreshKey, user])
+
   async function handleLogin(username, password) {
     const payload = await api.login(username, password)
     setToken(payload.token)
@@ -69,7 +90,7 @@ function App() {
     })
     setToken(payload.token)
     setUser(payload.user)
-    setActiveView(defaultViewForRole(payload.user.role))
+    setActiveView(defaultViewForRole(payload.user.role, { setupEnabled }))
     localStorage.setItem('lanchonete_user', JSON.stringify(payload.user))
   }
 
@@ -136,7 +157,7 @@ function App() {
     return <ChangePasswordScreen user={user} onChangePassword={handleChangePassword} onLogout={logout} />
   }
 
-  const currentView = canAccessView(user.role, activeView) ? activeView : defaultViewForRole(user.role)
+  const currentView = canAccessView(user.role, activeView, { setupEnabled }) ? activeView : defaultViewForRole(user.role, { setupEnabled })
   const views = {
     dashboard: <Dashboard refreshKey={refreshKey} onNavigateToProducts={navigateToProducts} />,
     setup: <InitialLoadView refreshKey={refreshKey} onChanged={refresh} />,
@@ -145,7 +166,7 @@ function App() {
     inventory: <PostEventInventory refreshKey={refreshKey} onChanged={refresh} />,
     sheet: <SpreadsheetView refreshKey={refreshKey} onChanged={refresh} user={user} />,
     reports: <ReportsView />,
-    settings: <SettingsView user={user} darkMode={darkMode} setDarkMode={setDarkMode} onChanged={refresh} />
+    settings: <SettingsView user={user} darkMode={darkMode} setDarkMode={setDarkMode} setupEnabled={setupEnabled} onSetupEnabledChange={setSetupEnabled} onChanged={refresh} />
   }
 
   return (
@@ -155,6 +176,7 @@ function App() {
       user={user}
       darkMode={darkMode}
       setDarkMode={setDarkMode}
+      setupEnabled={setupEnabled}
       onLogout={logout}
     >
       {views[currentView]}

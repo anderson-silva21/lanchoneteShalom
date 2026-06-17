@@ -73,6 +73,42 @@ function addColumnIfMissing(table, column, definition) {
   }
 }
 
+function ensureAppSettingsSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+}
+
+function getAppSetting(key, fallback = '') {
+  ensureAppSettingsSchema();
+  const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key);
+  return row?.value ?? fallback;
+}
+
+function setAppSetting(key, value) {
+  ensureAppSettingsSchema();
+  db.prepare(`
+    INSERT INTO app_settings (key, value, updated_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(key) DO UPDATE SET
+      value = excluded.value,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(key, String(value));
+}
+
+function isInitialLoadEnabled() {
+  return getAppSetting('initial_load_enabled', '0') === '1';
+}
+
+function setInitialLoadEnabled(enabled) {
+  setAppSetting('initial_load_enabled', enabled ? '1' : '0');
+  return isInitialLoadEnabled();
+}
+
 function roundQuantity(value) {
   return Number(Number(value || 0).toFixed(3));
 }
@@ -177,6 +213,7 @@ function fillMissingUsernames() {
 }
 
 function runMigrations() {
+  ensureAppSettingsSchema();
   addColumnIfMissing('users', 'username', 'TEXT');
   addColumnIfMissing('users', 'active', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing('users', 'password_must_change', 'INTEGER NOT NULL DEFAULT 0');
@@ -329,5 +366,7 @@ module.exports = {
   db,
   dbPath,
   getOperationalCounts,
+  isInitialLoadEnabled,
+  setInitialLoadEnabled,
   initDatabase
 };

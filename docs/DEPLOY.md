@@ -30,26 +30,6 @@ Recomendado:
 - Configurar `JWT_SECRET` forte.
 - Configurar backup agendado copiando `database/lanchonete.sqlite`.
 
-## Power BI
-
-A API expoe o dataset em:
-
-```text
-GET /api/powerbi/dataset
-```
-
-Para push automatico:
-
-```env
-POWER_BI_PUSH_URL=https://api.powerbi.com/...
-```
-
-Depois use:
-
-```text
-POST /api/powerbi/push
-```
-
 ## Backup
 
 Pelo painel em Relatorios ou pela API:

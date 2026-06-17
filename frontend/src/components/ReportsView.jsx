@@ -1,4 +1,4 @@
-import { ClipboardCheck, Database, Download, FileBarChart, FileSpreadsheet, FileText, Send } from 'lucide-react'
+import { ClipboardCheck, Database, Download, FileBarChart, FileSpreadsheet, FileText } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api } from '../services/api'
 import { formatDateTime } from '../utils/formatters'
@@ -15,11 +15,9 @@ const reports = [
 export function ReportsView() {
   const [message, setMessage] = useState('')
   const [backups, setBackups] = useState([])
-  const [dataset, setDataset] = useState(null)
 
   useEffect(() => {
     api.backups().then(setBackups).catch(() => null)
-    api.powerBiDataset().then(setDataset).catch(() => null)
   }, [])
 
   async function downloadReport(type, format) {
@@ -38,16 +36,6 @@ export function ReportsView() {
       const backup = await api.backup()
       setMessage(`Backup criado: ${backup.file}`)
       setBackups(await api.backups())
-    } catch (err) {
-      setMessage(err.message)
-    }
-  }
-
-  async function pushPowerBi() {
-    setMessage('')
-    try {
-      await api.pushPowerBi()
-      setMessage('Dataset enviado ao Power BI.')
     } catch (err) {
       setMessage(err.message)
     }
@@ -76,23 +64,7 @@ export function ReportsView() {
         })}
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-2">
-        <div className="mission-panel p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="font-display text-lg font-semibold">Power BI</h2>
-              <p className="mission-muted text-sm">{dataset ? `${dataset.products.length} produtos, ${dataset.sales.length} vendas` : 'Dataset local'}</p>
-            </div>
-            <button className="mission-btn mission-btn-primary flex items-center gap-2 px-4 py-2 font-semibold" onClick={pushPowerBi}>
-              <Send size={16} />
-              Enviar
-            </button>
-          </div>
-          <div className="mt-4 rounded-2xl bg-shalom-cream/70 p-3 text-sm text-shalom-deep dark:bg-white/10 dark:text-shalom-gold">
-            Endpoint: <span className="font-mono">GET /api/powerbi/dataset</span>
-          </div>
-        </div>
-
+      <section>
         <div className="mission-panel p-4">
           <div className="flex items-center justify-between gap-3">
             <div>

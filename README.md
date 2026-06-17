@@ -8,7 +8,6 @@ Aplicacao web para controle de estoque e vendas de uma pequena lanchonete, com o
 - Backend: Node.js, Express, SQLite
 - Banco: `database/lanchonete.sqlite`
 - Exportacao: CSV, XLSX e PDF
-- Power BI: endpoint JSON e push opcional via `POWER_BI_PUSH_URL`
 - PWA: manifest e service worker
 
 ## Estrutura
@@ -17,7 +16,6 @@ Aplicacao web para controle de estoque e vendas de uma pequena lanchonete, com o
 frontend/          Interface React
 backend/           API, regras de venda, relatorios e autenticacao
 database/          Schema SQL, seed vazio de referencia e arquivo SQLite
-dashboard/         Contrato do dataset para Power BI
 services/          Notas de integracao e automacoes
 components/        Catalogo resumido de componentes do produto
 docs/              Deploy e operacao
@@ -45,7 +43,7 @@ Login inicial:
 ## Funcionalidades
 
 - Base inicia sem produtos, vendas, combos, eventos ou estoque ficticio.
-- Menu Carga inicial para cadastrar os itens reais do inventario e seus lotes.
+- Menu Carga inicial desabilitado por padrao; o admin pode habilitar em Sistema para cadastrar os itens reais do inventario e seus lotes.
 - Dashboard com faturamento do dia, vendas, lucro estimado, estoque baixo, produtos mais vendidos, produtos parados, horarios de pico e sugestoes de compra.
 - PDV com botoes grandes para venda simples, venda multipla e combos.
 - Baixa automatica de estoque com historico de movimentacoes.
@@ -62,9 +60,10 @@ Login inicial:
 ## Primeira carga real
 
 1. Entre com o usuario `admin`.
-2. Abra `Carga inicial`.
-3. Cadastre cada produto selecionando a categoria padrao, unidade, custo, preco, estoque minimo, quantidade real e validade quando existir.
-4. Use `Sistema > Base de dados > Zerar dados` se precisar apagar produtos, lotes, vendas, combos, eventos, movimentos e inventarios mantendo os usuarios.
+2. Em `Sistema`, habilite `Carga inicial`.
+3. Abra `Carga inicial`.
+4. Cadastre cada produto selecionando a categoria padrao, unidade, custo, preco, estoque minimo, quantidade real e validade quando existir.
+5. Use `Sistema > Base de dados > Zerar dados` se precisar apagar produtos, lotes, vendas, combos, eventos, movimentos e inventarios mantendo os usuarios.
 
 Tambem e possivel limpar a base pelo terminal:
 
@@ -81,7 +80,6 @@ PORT=4000
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 JWT_SECRET=troque-este-segredo
 DB_PATH=../database/lanchonete.sqlite
-POWER_BI_PUSH_URL=
 ```
 
 No frontend, crie `frontend/.env` apenas se quiser forcar outro endereco de API:

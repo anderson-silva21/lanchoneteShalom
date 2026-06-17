@@ -2,7 +2,7 @@ const express = require('express');
 const { z } = require('zod');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
-const { clearOperationalData, compactDatabase, getOperationalCounts } = require('../db');
+const { clearOperationalData, compactDatabase, getOperationalCounts, isInitialLoadEnabled, setInitialLoadEnabled } = require('../db');
 
 const router = express.Router();
 
@@ -10,10 +10,15 @@ const resetSchema = z.object({
   confirmation: z.string().trim()
 });
 
+const initialLoadSchema = z.object({
+  enabled: z.coerce.boolean()
+});
+
 function getSetupStatus() {
   const counts = getOperationalCounts();
   return {
     counts,
+    setup_enabled: isInitialLoadEnabled(),
     is_empty: counts.products === 0
       && counts.stock_batches === 0
       && counts.sales === 0
@@ -26,6 +31,12 @@ function getSetupStatus() {
 router.use(authenticate);
 
 router.get('/setup-status', requireRole('admin', 'manager'), (req, res) => {
+  return res.json(getSetupStatus());
+});
+
+router.patch('/initial-load', requireScreen('settings'), (req, res) => {
+  const payload = initialLoadSchema.parse(req.body);
+  setInitialLoadEnabled(payload.enabled);
   return res.json(getSetupStatus());
 });
 

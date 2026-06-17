@@ -4,14 +4,14 @@ export const viewAccess = {
   admin: ['dashboard', 'setup', 'sales', 'products', 'inventory', 'sheet', 'reports', 'settings']
 }
 
-export function allowedViewsForRole(role) {
-  return viewAccess[role] || []
+export function allowedViewsForRole(role, options = {}) {
+  return (viewAccess[role] || []).filter((view) => view !== 'setup' || options.setupEnabled)
 }
 
-export function canAccessView(role, view) {
-  return allowedViewsForRole(role).includes(view)
+export function canAccessView(role, view, options = {}) {
+  return allowedViewsForRole(role, options).includes(view)
 }
 
-export function defaultViewForRole(role) {
-  return allowedViewsForRole(role)[0] || 'sales'
+export function defaultViewForRole(role, options = {}) {
+  return allowedViewsForRole(role, options)[0] || 'sales'
 }

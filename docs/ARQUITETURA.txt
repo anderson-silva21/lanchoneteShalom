@@ -16,7 +16,7 @@ Este projeto é um monorepo simples com duas partes principais:
      - produtos, estoque e vendas
      - relatórios e exportação
      - backup
-     - planilha central e Power BI
+     - planilha central
 
 O root package.json orquestra ambos:
 - npm run dev inicia backend e frontend em paralelo.
@@ -92,13 +92,13 @@ Pontos importantes
 - O backend é responsável por:
   - autenticação
   - gestao de usuarios ativos, exclusao logica de acessos e troca obrigatoria de senha temporaria
+  - configuracao administrativa para habilitar ou desabilitar a carga inicial
   - regras de venda e inventário
   - limpeza administrativa de dados operacionais para primeira carga real
   - exportação
-  - geração de dados para Power BI
 - O frontend é responsável por:
   - UI de PDV
-  - menu de carga inicial do inventário real
+  - menu de carga inicial do inventário real quando habilitado pelo admin
   - dashboard e relatórios
   - fluxo de login e experiência do usuário
   - tela de troca obrigatoria de senha no primeiro acesso ou apos reset

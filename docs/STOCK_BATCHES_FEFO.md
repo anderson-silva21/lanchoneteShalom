@@ -12,7 +12,7 @@ Cada lote pertence a um produto, possui quantidade propria e pode ter uma data d
 
 - `stock_batches`: lotes de estoque por produto.
 - `inventory_movements.batch_id`: vincula cada movimentacao ao lote afetado quando aplicavel.
-- `v_stock_batches_sheet`: visao para planilha, relatorios e Power BI.
+- `v_stock_batches_sheet`: visao para planilha e relatorios.
 
 Ao iniciar o backend, bancos antigos sao migrados automaticamente:
 

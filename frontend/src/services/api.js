@@ -89,10 +89,9 @@ export const api = {
   confirmSheetSalePayment: (id, payload) => request(`/spreadsheet/vendas/${id}`, { method: 'PATCH', body: payload }),
   updateSheetMovement: (id, payload) => request(`/spreadsheet/movimentacoes/${id}`, { method: 'PATCH', body: payload }),
   setupStatus: () => request('/system/setup-status', { cache: 'no-store' }),
+  updateInitialLoad: (payload) => request('/system/initial-load', { method: 'PATCH', body: payload }),
   resetOperationalData: (payload) => request('/system/reset-operational-data', { method: 'POST', body: payload }),
   backup: () => request('/backup', { method: 'POST' }),
   backups: () => request('/backup'),
-  powerBiDataset: () => request('/powerbi/dataset'),
-  pushPowerBi: () => request('/powerbi/push', { method: 'POST' }),
   downloadReport: (type, format) => download(`/reports/export?type=${type}&format=${format}`, `${type}.${format}`)
 }
