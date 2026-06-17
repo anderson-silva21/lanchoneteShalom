@@ -3,6 +3,7 @@ const { z } = require('zod');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
 const { clearOperationalData, compactDatabase, getOperationalCounts, isInitialLoadEnabled, setInitialLoadEnabled } = require('../db');
+const { getTelegramAlertStatus, sendTelegramAlertDigest } = require('../services/telegramAlertService');
 
 const router = express.Router();
 
@@ -38,6 +39,22 @@ router.patch('/initial-load', requireScreen('settings'), (req, res) => {
   const payload = initialLoadSchema.parse(req.body);
   setInitialLoadEnabled(payload.enabled);
   return res.json(getSetupStatus());
+});
+
+router.get('/telegram-alerts', requireScreen('settings'), (req, res) => {
+  return res.json(getTelegramAlertStatus());
+});
+
+router.post('/telegram-alerts/test', requireScreen('settings'), async (req, res, next) => {
+  try {
+    const result = await sendTelegramAlertDigest({ force: true });
+    return res.json({
+      ...result,
+      status: getTelegramAlertStatus()
+    });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 router.post('/reset-operational-data', requireScreen('settings'), (req, res) => {

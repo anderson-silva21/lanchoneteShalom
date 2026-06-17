@@ -13,6 +13,7 @@ const { createCombo, listActiveCombos } = require('../src/services/comboService'
 const { createEvent } = require('../src/services/eventsService');
 const { confirmSalePayment, createSale } = require('../src/services/salesService');
 const { addStock, getProductStock, updateBatch } = require('../src/services/stockService');
+const { buildTelegramAlertMessage } = require('../src/services/telegramAlertService');
 
 initDatabase();
 
@@ -84,6 +85,43 @@ test.beforeEach(() => {
 test.after(() => {
   db.close();
   fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('mensagem do Telegram resume alertas operacionais', () => {
+  const message = buildTelegramAlertMessage({
+    kpis: {
+      pending_payment_total: 12.5
+    },
+    low_stock_products: [{
+      name: 'Cafe',
+      stock_quantity: 1,
+      min_stock: 3,
+      unit: 'unidade'
+    }],
+    expiration_alerts: [{
+      name: 'Bolo',
+      batch_id: 7,
+      expiration_status: 'expired',
+      days_to_expire: -2,
+      stock_quantity: 4,
+      unit: 'fatias'
+    }],
+    missing_expiration_products: [{
+      name: 'Suco',
+      stock_quantity: 2,
+      unit: 'garrafas'
+    }],
+    pending_payments: [{
+      id: 10,
+      customer_name: 'Maria',
+      total: 12.5
+    }]
+  }, { force: true, maxItems: 3 });
+
+  assert.match(message, /ALERTA SH82/);
+  assert.match(message, /Estoque baixo: 1/);
+  assert.match(message, /Bolo lote #7/);
+  assert.match(message, /Venda #10/);
 });
 
 test('entrada de estoque cria um lote com validade e atualiza o total', () => {

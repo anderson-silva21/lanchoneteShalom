@@ -1,7 +1,7 @@
-import { Clipboard, DatabaseZap, KeyRound, Moon, PackagePlus, RotateCcw, ShieldCheck, Smartphone, Trash2, UserPlus, Users } from 'lucide-react'
+import { Bell, Clipboard, DatabaseZap, KeyRound, Moon, PackagePlus, RotateCcw, Send, ShieldCheck, Smartphone, Trash2, UserPlus, Users } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../services/api'
-import { decimal } from '../utils/formatters'
+import { decimal, formatDateTime } from '../utils/formatters'
 
 const roleOptions = [
   { value: 'cashier', label: 'Caixa' },
@@ -25,6 +25,8 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
   const [resettingUserId, setResettingUserId] = useState(null)
   const [deletingUserId, setDeletingUserId] = useState(null)
   const [savingInitialLoad, setSavingInitialLoad] = useState(false)
+  const [telegramStatus, setTelegramStatus] = useState(null)
+  const [testingTelegram, setTestingTelegram] = useState(false)
 
   const loadStatus = useCallback(async () => {
     try {
@@ -44,10 +46,19 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
     }
   }, [])
 
+  const loadTelegramStatus = useCallback(async () => {
+    try {
+      setTelegramStatus(await api.telegramAlertsStatus())
+    } catch (err) {
+      setMessage(err.message)
+    }
+  }, [])
+
   useEffect(() => {
     loadStatus()
     loadUsers()
-  }, [loadStatus, loadUsers])
+    loadTelegramStatus()
+  }, [loadStatus, loadTelegramStatus, loadUsers])
 
   async function createUser(event) {
     event.preventDefault()
@@ -149,12 +160,28 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
     }
   }
 
+  async function testTelegramAlerts() {
+    setMessage('')
+    setTestingTelegram(true)
+    try {
+      const result = await api.testTelegramAlerts()
+      setTelegramStatus(result.status)
+      setMessage(result.sent ? 'Alerta Telegram enviado.' : 'Nenhum alerta enviado.')
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setTestingTelegram(false)
+    }
+  }
+
   const counts = status?.counts || {}
   const initialLoadEnabled = status?.setup_enabled ?? setupEnabled
+  const telegramLabel = telegramStatus?.enabled ? 'Ativo' : telegramStatus?.configured ? 'Desativado' : 'Nao configurado'
   const items = [
     { icon: ShieldCheck, label: 'Perfil', value: user?.role || '-' },
     { icon: KeyRound, label: 'Sessao', value: user?.username || '-' },
     { icon: DatabaseZap, label: 'Produtos', value: decimal.format(counts.products || 0) },
+    { icon: Bell, label: 'Telegram', value: telegramLabel },
     { icon: Smartphone, label: 'PWA', value: 'Instalavel' }
   ]
 
@@ -203,6 +230,36 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
             <span className={`block h-4 w-4 rounded-full bg-white transition ${initialLoadEnabled ? 'translate-x-5' : ''}`} />
           </span>
         </button>
+        <div className="mt-3 rounded-xl border border-shalom-gold/30 p-3 dark:border-shalom-gold/10">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="flex items-center gap-2 font-medium">
+                <Bell size={18} />
+                Alertas Telegram
+              </p>
+              <p className="mission-muted mt-1 text-sm">{telegramLabel}</p>
+            </div>
+            <button
+              type="button"
+              className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 disabled:cursor-not-allowed disabled:opacity-55 dark:border-shalom-gold/10 dark:hover:bg-white/10"
+              onClick={testTelegramAlerts}
+              disabled={!telegramStatus?.configured || testingTelegram}
+              title="Enviar teste"
+            >
+              <Send size={16} />
+            </button>
+          </div>
+          <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <dt className="mission-muted">Intervalo</dt>
+              <dd className="font-semibold">{telegramStatus?.interval_minutes ? `${decimal.format(telegramStatus.interval_minutes)} min` : '-'}</dd>
+            </div>
+            <div>
+              <dt className="mission-muted">Ultimo envio</dt>
+              <dd className="font-semibold">{formatDateTime(telegramStatus?.last_sent_at)}</dd>
+            </div>
+          </dl>
+        </div>
       </aside>
 
       <section className="mission-panel p-4 xl:col-span-2">

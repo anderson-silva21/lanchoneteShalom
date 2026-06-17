@@ -54,6 +54,7 @@ Login inicial:
 - Administrador cria usuarios ativos, gera senha inicial aleatoria, reseta senhas e exclui acessos ativos.
 - Primeiro acesso com senha temporaria exige troca de senha antes de abrir o sistema.
 - Backup manual do banco SQLite.
+- Alertas via Telegram para estoque baixo, validades, lotes sem validade e pagamentos pendentes.
 - Limpeza administrativa de dados operacionais em Sistema.
 - Modo escuro e PWA instalavel.
 
@@ -80,7 +81,14 @@ PORT=4000
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 JWT_SECRET=troque-este-segredo
 DB_PATH=../database/lanchonete.sqlite
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+TELEGRAM_ALERTS_ENABLED=true
+TELEGRAM_ALERT_INTERVAL_MINUTES=360
+TELEGRAM_ALERT_MAX_ITEMS=8
 ```
+
+Para ativar o robo do Telegram, crie um bot com o BotFather, envie uma mensagem para o bot ou adicione-o ao grupo desejado, preencha `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`, reinicie o backend e use `Sistema > Alertas Telegram > Enviar teste`.
 
 No frontend, crie `frontend/.env` apenas se quiser forcar outro endereco de API:
 

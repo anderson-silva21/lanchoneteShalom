@@ -6,6 +6,7 @@ const helmet = require('helmet');
 const { initDatabase, dbPath } = require('./db');
 const errorHandler = require('./middleware/errorHandler');
 const { assignRequestId, httpLogger } = require('./middleware/requestLogger');
+const { startTelegramAlertScheduler } = require('./services/telegramAlertService');
 
 const authRoutes = require('./routes/auth');
 const analyticsRoutes = require('./routes/analytics');
@@ -106,5 +107,6 @@ app.use(errorHandler);
 
 app.listen(port, '0.0.0.0', () => {
   console.log(`API pronta em http://localhost:${port}`);
+  startTelegramAlertScheduler();
 });
 //192.168.15.10/24

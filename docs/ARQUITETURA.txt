@@ -94,11 +94,13 @@ Pontos importantes
   - gestao de usuarios ativos, exclusao logica de acessos e troca obrigatoria de senha temporaria
   - configuracao administrativa para habilitar ou desabilitar a carga inicial
   - regras de venda e inventário, incluindo custo zero para produtos doados
+  - alertas agendados via Telegram para estoque, validades e pagamentos pendentes
   - limpeza administrativa de dados operacionais para primeira carga real
   - exportação
 - O frontend é responsável por:
   - UI de PDV
   - menu de carga inicial do inventário real quando habilitado pelo admin
+  - tela administrativa para verificar e testar alertas do Telegram
   - dashboard e relatórios
   - fluxo de login e experiência do usuário
   - tela de troca obrigatoria de senha no primeiro acesso ou apos reset
