@@ -106,6 +106,13 @@ function getLastSentAt() {
   return row?.value || null;
 }
 
+function maskChatId(chatId) {
+  const value = String(chatId || '').trim();
+  if (!value) return '';
+  if (value.length <= 6) return value;
+  return `${value.slice(0, 4)}...${value.slice(-4)}`;
+}
+
 function setLastSentAt(value) {
   db.prepare(`
     INSERT INTO app_settings (key, value, updated_at)
@@ -326,8 +333,13 @@ function postJson(url, payload) {
           resolve(data);
           return;
         }
-        const error = new Error(data.description || 'Falha ao enviar alerta para o Telegram.');
+        const migrationChatId = data.parameters?.migrate_to_chat_id;
+        const message = migrationChatId
+          ? `O grupo do Telegram virou supergrupo. Atualize TELEGRAM_CHAT_ID para ${migrationChatId} e reinicie o backend.`
+          : data.description || 'Falha ao enviar alerta para o Telegram.';
+        const error = new Error(message);
         error.status = 502;
+        error.payload = data;
         reject(error);
       });
     });
@@ -394,6 +406,7 @@ function getTelegramAlertStatus() {
   return {
     configured: config.configured,
     enabled: config.enabled,
+    chat_id_preview: maskChatId(config.chatId),
     interval_minutes: config.intervalMinutes,
     max_items: config.maxItems,
     ignored_missing_expiration_categories: config.ignoredMissingExpirationCategories,

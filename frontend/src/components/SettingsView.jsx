@@ -258,6 +258,10 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
               <dt className="mission-muted">Ultimo envio</dt>
               <dd className="font-semibold">{formatDateTime(telegramStatus?.last_sent_at)}</dd>
             </div>
+            <div className="col-span-2">
+              <dt className="mission-muted">Chat ID carregado</dt>
+              <dd className="font-semibold">{telegramStatus?.chat_id_preview || '-'}</dd>
+            </div>
           </dl>
         </div>
       </aside>
