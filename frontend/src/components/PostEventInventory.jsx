@@ -329,7 +329,40 @@ export function PostEventInventory({ refreshKey, onChanged }) {
               </div>
             </div>
 
-            <div className="mt-4 max-h-[58vh] overflow-auto rounded-2xl border border-line/80 scrollbar-thin dark:border-shalom-gold/10">
+            <div className="mt-4 space-y-3 md:hidden">
+              {loading ? (
+                <div className="rounded-xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">Carregando produtos...</div>
+              ) : filteredProducts.length ? filteredProducts.map((product) => (
+                <article key={product.id} className="mission-card p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="break-words font-semibold">{product.name}</p>
+                      <p className="mission-muted text-xs">{product.category} - {product.internal_code}</p>
+                      <p className="mission-muted mt-1 text-xs">{product.supplier || '-'}</p>
+                    </div>
+                    <span className="shrink-0 rounded-xl bg-shalom-mist/70 px-2.5 py-1 text-xs font-semibold dark:bg-white/10">
+                      {formatQuantityWithUnit(product.stock_quantity, product.unit)}
+                    </span>
+                  </div>
+                  <label className="mt-3 block text-sm font-medium">
+                    Quantidade no inventario
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      className="mission-input mt-1 w-full px-3 py-2"
+                      value={quantities[product.id] ?? ''}
+                      onChange={(event) => updateQuantity(product.id, event.target.value)}
+                      aria-label={`Quantidade fisica de ${product.name}`}
+                    />
+                  </label>
+                </article>
+              )) : (
+                <div className="rounded-xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">Nenhum produto encontrado.</div>
+              )}
+            </div>
+
+            <div className="mt-4 hidden max-h-[58vh] overflow-auto rounded-2xl border border-line/80 scrollbar-thin dark:border-shalom-gold/10 md:block">
               <table className="min-w-[860px] w-full border-separate border-spacing-0 text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-shalom-cream/95 backdrop-blur dark:bg-shalom-deep/95">
                   <tr>
@@ -372,7 +405,7 @@ export function PostEventInventory({ refreshKey, onChanged }) {
             </div>
 
             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="grid grid-cols-3 gap-2 text-sm">
+              <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
                 <div className="rounded-xl bg-shalom-mist/70 px-3 py-2 dark:bg-white/10">
                   <span className="mission-muted block text-xs">Produtos</span>
                   <strong>{decimal.format(products.length)}</strong>
@@ -399,7 +432,7 @@ export function PostEventInventory({ refreshKey, onChanged }) {
             <History size={20} />
             <h2 className="font-display text-lg font-semibold">Ultimos inventarios</h2>
           </div>
-          <div className="max-h-[36rem] divide-y divide-line/70 overflow-y-auto scrollbar-thin dark:divide-shalom-gold/10">
+          <div className="max-h-80 divide-y divide-line/70 overflow-y-auto scrollbar-thin dark:divide-shalom-gold/10 xl:max-h-[36rem]">
             {history.length ? history.map((inventory) => (
               <button
                 key={inventory.id}
@@ -435,7 +468,7 @@ export function PostEventInventory({ refreshKey, onChanged }) {
                 {savedInventory?.id ? ` - #${savedInventory.id}` : ''}
               </p>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-sm">
+            <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
               <div className="rounded-xl bg-shalom-mist/70 px-3 py-2 dark:bg-white/10">
                 <span className="mission-muted block text-xs">Inventariados</span>
                 <strong>{decimal.format(activeReport.totals?.inventoried_items || reportItems.length)}</strong>
@@ -451,7 +484,38 @@ export function PostEventInventory({ refreshKey, onChanged }) {
             </div>
           </div>
 
-          <div className="mt-4 overflow-x-auto rounded-2xl border border-line/80 scrollbar-thin dark:border-shalom-gold/10">
+          <div className="mt-4 space-y-3 md:hidden">
+            {reportItems.map((item) => (
+              <article key={`${item.product_id}-${item.internal_code}`} className="mission-card p-3">
+                <div>
+                  <p className="break-words font-semibold">{item.product_name}</p>
+                  <p className="mission-muted text-xs">{item.category} - {item.internal_code}</p>
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                  <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                    <dt className="mission-muted text-xs">Sistema</dt>
+                    <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.quantity_before, item.unit)}</dd>
+                  </div>
+                  <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                    <dt className="mission-muted text-xs">Inventario</dt>
+                    <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.physical_quantity, item.unit)}</dd>
+                  </div>
+                  <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                    <dt className="mission-muted text-xs">Diferenca</dt>
+                    <dd className={`mt-1 font-semibold ${item.difference > 0 ? 'text-shalom-wine dark:text-rose-100' : item.difference < 0 ? 'text-shalom-blue dark:text-shalom-gold' : ''}`}>
+                      {formatSignedQuantity(item.difference, item.unit)}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                    <dt className="mission-muted text-xs">Consumido</dt>
+                    <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.consumed_quantity, item.unit)}</dd>
+                  </div>
+                </dl>
+              </article>
+            ))}
+          </div>
+
+          <div className="mt-4 hidden overflow-x-auto rounded-2xl border border-line/80 scrollbar-thin dark:border-shalom-gold/10 md:block">
             <table className="min-w-[980px] w-full border-separate border-spacing-0 text-left text-sm">
               <thead className="bg-shalom-cream/95 dark:bg-shalom-deep/95">
                 <tr>
