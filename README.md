@@ -16,7 +16,7 @@ Aplicacao web para controle de estoque e vendas de uma pequena lanchonete, com o
 ```text
 frontend/          Interface React
 backend/           API, regras de venda, relatorios e autenticacao
-database/          Schema SQL, seed de referencia e arquivo SQLite
+database/          Schema SQL, seed vazio de referencia e arquivo SQLite
 dashboard/         Contrato do dataset para Power BI
 services/          Notas de integracao e automacoes
 components/        Catalogo resumido de componentes do produto
@@ -37,13 +37,15 @@ URLs:
 - Backend: `http://localhost:4000`
 - Healthcheck: `http://localhost:4000/health`
 
-Login demo:
+Login inicial:
 
-- Admin: `admin@lanchonete.local` / `admin123`
-- Caixa: `caixa@lanchonete.local` / `caixa123`
+- Admin: `admin` / `admin123`
+- Caixa: `caixa` / `caixa123`
 
 ## Funcionalidades
 
+- Base inicia sem produtos, vendas, combos, eventos ou estoque ficticio.
+- Menu Carga inicial para cadastrar os itens reais do inventario e seus lotes.
 - Dashboard com faturamento do dia, vendas, lucro estimado, estoque baixo, produtos mais vendidos, produtos parados, horarios de pico e sugestoes de compra.
 - PDV com botoes grandes para venda simples, venda multipla e combos.
 - Baixa automatica de estoque com historico de movimentacoes.
@@ -52,7 +54,21 @@ Login demo:
 - Relatorios exportaveis em CSV, Excel e PDF.
 - Login com niveis `admin`, `manager` e `cashier`.
 - Backup manual do banco SQLite.
+- Limpeza administrativa de dados operacionais em Sistema.
 - Modo escuro e PWA instalavel.
+
+## Primeira carga real
+
+1. Entre com o usuario `admin`.
+2. Abra `Carga inicial`.
+3. Cadastre cada produto com categoria, unidade, custo, preco, estoque minimo, quantidade real e validade quando existir.
+4. Use `Sistema > Base de dados > Zerar dados` se precisar apagar produtos, lotes, vendas, combos, eventos, movimentos e inventarios mantendo os usuarios.
+
+Tambem e possivel limpar a base pelo terminal:
+
+```bash
+npm run db:reset -- --yes
+```
 
 ## Variaveis de ambiente
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { canAccessView, defaultViewForRole } from './access'
 import { AppShell } from './components/AppShell'
 import { Dashboard } from './components/Dashboard'
+import { InitialLoadView } from './components/InitialLoadView'
 import { LoginScreen } from './components/LoginScreen'
 import { PostEventInventory } from './components/PostEventInventory'
 import { ProductManager } from './components/ProductManager'
@@ -111,12 +112,13 @@ function App() {
   const currentView = canAccessView(user.role, activeView) ? activeView : defaultViewForRole(user.role)
   const views = {
     dashboard: <Dashboard refreshKey={refreshKey} onNavigateToProducts={navigateToProducts} />,
+    setup: <InitialLoadView refreshKey={refreshKey} onChanged={refresh} />,
     sales: <SalesTerminal onSaleComplete={refresh} />,
     products: <ProductManager refreshKey={refreshKey} onChanged={refresh} intent={productIntent} />,
     inventory: <PostEventInventory refreshKey={refreshKey} onChanged={refresh} />,
     sheet: <SpreadsheetView refreshKey={refreshKey} onChanged={refresh} user={user} />,
     reports: <ReportsView />,
-    settings: <SettingsView user={user} darkMode={darkMode} setDarkMode={setDarkMode} />
+    settings: <SettingsView user={user} darkMode={darkMode} setDarkMode={setDarkMode} onChanged={refresh} />
   }
 
   return (

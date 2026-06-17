@@ -7,6 +7,7 @@ import {
   FileSpreadsheet,
   LogOut,
   Moon,
+  PackagePlus,
   PanelLeftClose,
   PanelLeftOpen,
   ReceiptText,
@@ -18,6 +19,7 @@ import { BrandMark } from './BrandMark'
 
 const navItems = [
   { key: 'dashboard', label: 'Dashboard', icon: BarChart3 },
+  { key: 'setup', label: 'Carga inicial', icon: PackagePlus },
   { key: 'sales', label: 'PDV', icon: ReceiptText },
   { key: 'products', label: 'Produtos', icon: Boxes },
   { key: 'inventory', label: 'Inventario', icon: ClipboardCheck },

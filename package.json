@@ -9,6 +9,7 @@
     "build": "npm run build --prefix frontend",
     "start": "npm start --prefix backend",
     "seed": "npm run seed --prefix backend",
+    "db:reset": "npm --prefix backend run db:reset --",
     "user:create": "npm run user:create --prefix backend --"
   },
   "devDependencies": {

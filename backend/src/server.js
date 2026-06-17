@@ -17,6 +17,7 @@ const productRoutes = require('./routes/products');
 const reportRoutes = require('./routes/reports');
 const salesRoutes = require('./routes/sales');
 const spreadsheetRoutes = require('./routes/spreadsheet');
+const systemRoutes = require('./routes/system');
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -99,6 +100,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api/spreadsheet', spreadsheetRoutes);
+app.use('/api/system', systemRoutes);
 
 app.use(errorHandler);
 

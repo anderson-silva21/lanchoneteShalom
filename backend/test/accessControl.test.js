@@ -4,8 +4,8 @@ const { requireScreen, screenRoles } = require('../src/middleware/accessControl'
 
 const expectedAccess = {
   cashier: ['sales', 'sheet'],
-  manager: ['sales', 'products', 'inventory', 'sheet'],
-  admin: ['dashboard', 'sales', 'products', 'inventory', 'sheet', 'reports', 'settings']
+  manager: ['setup', 'sales', 'products', 'inventory', 'sheet'],
+  admin: ['dashboard', 'setup', 'sales', 'products', 'inventory', 'sheet', 'reports', 'settings']
 };
 
 function checkAccess(screen, role) {

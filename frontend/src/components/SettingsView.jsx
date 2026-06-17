@@ -1,10 +1,48 @@
-import { DatabaseZap, KeyRound, Moon, ShieldCheck, Smartphone } from 'lucide-react'
+import { DatabaseZap, KeyRound, Moon, ShieldCheck, Smartphone, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { api } from '../services/api'
+import { decimal } from '../utils/formatters'
 
-export function SettingsView({ user, darkMode, setDarkMode }) {
+export function SettingsView({ user, darkMode, setDarkMode, onChanged = () => {} }) {
+  const [status, setStatus] = useState(null)
+  const [confirmation, setConfirmation] = useState('')
+  const [message, setMessage] = useState('')
+  const [resetting, setResetting] = useState(false)
+
+  const loadStatus = useCallback(async () => {
+    try {
+      setStatus(await api.setupStatus())
+    } catch (err) {
+      setMessage(err.message)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadStatus()
+  }, [loadStatus])
+
+  async function resetOperationalData(event) {
+    event.preventDefault()
+    setMessage('')
+    setResetting(true)
+    try {
+      const result = await api.resetOperationalData({ confirmation })
+      setStatus(result.status)
+      setConfirmation('')
+      onChanged()
+      setMessage(result.message)
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setResetting(false)
+    }
+  }
+
+  const counts = status?.counts || {}
   const items = [
     { icon: ShieldCheck, label: 'Perfil', value: user?.role || '-' },
     { icon: KeyRound, label: 'Sessao', value: user?.username || '-' },
-    { icon: DatabaseZap, label: 'Base', value: 'SQLite central' },
+    { icon: DatabaseZap, label: 'Produtos', value: decimal.format(counts.products || 0) },
     { icon: Smartphone, label: 'PWA', value: 'Instalavel' }
   ]
 
@@ -41,6 +79,50 @@ export function SettingsView({ user, darkMode, setDarkMode }) {
           </span>
         </button>
       </aside>
+
+      <section className="mission-panel p-4 xl:col-span-2">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="font-display text-lg font-semibold">Base de dados</h2>
+            <p className="mission-muted text-sm">Remove dados operacionais e mantem os usuarios de acesso.</p>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center text-sm">
+            <div className="mission-card px-3 py-2">
+              <span className="mission-muted block text-xs">Lotes</span>
+              <strong>{decimal.format(counts.stock_batches || 0)}</strong>
+            </div>
+            <div className="mission-card px-3 py-2">
+              <span className="mission-muted block text-xs">Vendas</span>
+              <strong>{decimal.format(counts.sales || 0)}</strong>
+            </div>
+            <div className="mission-card px-3 py-2">
+              <span className="mission-muted block text-xs">Movimentos</span>
+              <strong>{decimal.format(counts.inventory_movements || 0)}</strong>
+            </div>
+          </div>
+        </div>
+
+        <form className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto]" onSubmit={resetOperationalData}>
+          <label className="text-sm font-medium">
+            Confirmacao
+            <input
+              className="mission-input mt-1 w-full px-3 py-2"
+              value={confirmation}
+              onChange={(event) => setConfirmation(event.target.value)}
+              placeholder="APAGAR"
+            />
+          </label>
+          <button
+            type="submit"
+            className="mission-btn flex items-center justify-center gap-2 border border-shalom-wine/35 px-4 py-3 font-semibold text-shalom-wine hover:bg-shalom-wine/10 disabled:cursor-not-allowed disabled:opacity-55 dark:border-rose-200/20 dark:text-rose-100 dark:hover:bg-rose-400/10 lg:self-end"
+            disabled={confirmation !== 'APAGAR' || resetting}
+          >
+            <Trash2 size={17} />
+            {resetting ? 'Limpando...' : 'Zerar dados'}
+          </button>
+        </form>
+        {message ? <p className="mt-4 rounded-2xl bg-shalom-cream/70 px-4 py-3 text-sm text-shalom-deep shadow-sm dark:bg-white/10 dark:text-shalom-gold">{message}</p> : null}
+      </section>
     </div>
   )
 }

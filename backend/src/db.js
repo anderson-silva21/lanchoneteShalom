@@ -2,7 +2,6 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
-const dayjs = require('dayjs');
 
 const dataDir = path.resolve(__dirname, '../../database');
 const dbPath = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(dataDir, 'lanchonete.sqlite');
@@ -219,18 +218,6 @@ function seedUsers() {
 }
 
 function seedProductCategories() {
-  const insert = db.prepare('INSERT OR IGNORE INTO product_categories (name) VALUES (?)');
-  const categories = [
-    'Bebidas',
-    'Descartáveis',
-    'Doces e snacks',
-    'Insumos',
-    'Lanches',
-    'Porcoes'
-  ];
-
-  categories.forEach((category) => insert.run(category));
-
   db.prepare(`
     INSERT OR IGNORE INTO product_categories (name)
     SELECT DISTINCT category
@@ -239,207 +226,67 @@ function seedProductCategories() {
   `).run();
 }
 
-function seedProducts() {
-  if (countRows('products') > 0) return false;
-
-  const products = [
-    ['X-Burger', 'Lanches', 8.5, 18.9, 32, 10, 'Cozinha interna', 'LAN-001', 'unidade'],
-    ['X-Salada', 'Lanches', 9.4, 21.9, 26, 10, 'Cozinha interna', 'LAN-002', 'unidade'],
-    ['Coca-Cola 350ml', 'Bebidas', 3.8, 7.5, 72, 24, 'Distribuidora Nova', 'BEB-001', 'lata'],
-    ['Suco de Laranja', 'Bebidas', 4.1, 9.9, 18, 12, 'Hortifruti Bom Dia', 'BEB-002', 'copo'],
-    ['Agua sem gas', 'Bebidas', 1.9, 4.5, 44, 20, 'Distribuidora Nova', 'BEB-003', 'garrafa'],
-    ['Batata frita', 'Porcoes', 4.2, 12.0, 28, 12, 'Cozinha interna', 'POR-001', 'porcao'],
-    ['Molho cheddar', 'Insumos', 18.0, 0, 6, 4, 'Laticinios Sul', 'INS-001', 'kg'],
-    ['Hamburguer 120g', 'Insumos', 5.7, 0, 54, 25, 'Frigorifico Central', 'INS-002', 'unidade'],
-    ['Pao brioche', 'Insumos', 1.35, 0, 58, 30, 'Padaria Primavera', 'INS-003', 'unidade'],
-    ['Queijo cheddar', 'Insumos', 1.85, 0, 47, 25, 'Laticinios Sul', 'INS-004', 'fatia'],
-    ['Bacon', 'Insumos', 2.4, 0, 14, 10, 'Frigorifico Central', 'INS-005', 'porcao']
+function getOperationalCounts() {
+  const tables = [
+    'products',
+    'stock_batches',
+    'inventory_movements',
+    'sales',
+    'sale_items',
+    'combos',
+    'combo_items',
+    'events',
+    'post_event_inventories',
+    'post_event_inventory_items',
+    'product_categories'
   ];
 
-  const insert = db.prepare(`
-    INSERT INTO products
-      (name, category, cost_price, sale_price, stock_quantity, min_stock, supplier, internal_code, unit)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  products.forEach((product) => insert.run(product));
-  return true;
+  return tables.reduce((counts, table) => ({
+    ...counts,
+    [table]: tableExists(table) ? countRows(table) : 0
+  }), {});
 }
 
-function seedCombos() {
-  if (countRows('combos') > 0) return;
-
-  const getProduct = db.prepare('SELECT id FROM products WHERE internal_code = ?');
-  const insertCombo = db.prepare('INSERT INTO combos (name, sale_price) VALUES (?, ?)');
-  const insertItem = db.prepare('INSERT INTO combo_items (combo_id, product_id, quantity) VALUES (?, ?, ?)');
-
-  const comboId = insertCombo.run('Combo Classico', 34.9).lastInsertRowid;
-  [
-    ['LAN-001', 1],
-    ['BEB-001', 1],
-    ['POR-001', 1]
-  ].forEach(([code, quantity]) => {
-    const product = getProduct.get(code);
-    if (product) insertItem.run(comboId, product.id, quantity);
+function clearOperationalData({ resetCategories = true } = {}) {
+  const reset = db.transaction(() => {
+    db.exec(`
+      DELETE FROM post_event_inventory_items;
+      DELETE FROM post_event_inventories;
+      DELETE FROM inventory_movements;
+      DELETE FROM sale_items;
+      DELETE FROM sales;
+      DELETE FROM combo_items;
+      DELETE FROM combos;
+      DELETE FROM stock_batches;
+      DELETE FROM events;
+      DELETE FROM products;
+      ${resetCategories ? 'DELETE FROM product_categories;' : ''}
+      DELETE FROM sqlite_sequence
+      WHERE name IN (
+        'products',
+        'stock_batches',
+        'inventory_movements',
+        'sales',
+        'sale_items',
+        'combos',
+        'combo_items',
+        'events',
+        'post_event_inventories',
+        'post_event_inventory_items',
+        'product_categories'
+      );
+    `);
+    seedProductCategories();
   });
+
+  reset();
+  return getOperationalCounts();
 }
 
-function firstSaturday(year, month) {
-  let date = dayjs(`${year}-${String(month + 1).padStart(2, '0')}-01`);
-  while (date.day() !== 6) date = date.add(1, 'day');
-  return date;
-}
-
-function lastSaturday(year, month) {
-  let date = dayjs(`${year}-${String(month + 1).padStart(2, '0')}-01`).endOf('month');
-  while (date.day() !== 6) date = date.subtract(1, 'day');
-  return date;
-}
-
-function seedPrototypeEvents() {
-  if (countRows('events') > 0) return;
-
-  const today = dayjs();
-  const year = today.year();
-  const insert = db.prepare(`
-    INSERT OR IGNORE INTO events (name, event_date, notes)
-    VALUES (?, ?, ?)
-  `);
-
-  for (let month = 0; month <= today.month(); month += 1) {
-    const eventDate = firstSaturday(year, month);
-    if (!eventDate.isAfter(today, 'day')) {
-      insert.run('Servos Apostolicos', eventDate.format('YYYY-MM-DD'), 'Ocorrencia mensal - seed do prototipo');
-    }
-  }
-
-  [0, 3].forEach((month) => {
-    const eventDate = lastSaturday(year, month);
-    if (!eventDate.isAfter(today, 'day')) {
-      insert.run('Corujao Shalom', eventDate.format('YYYY-MM-DD'), 'Ocorrencia - seed do prototipo');
-    }
-  });
-}
-
-function seedPrototypeEventSales() {
-  if (!columnExists('sales', 'event_id') || countRows('events') === 0) return;
-
-  const events = db.prepare('SELECT id FROM events ORDER BY event_date, id').all();
-  const linkedSalesCount = db.prepare('SELECT COUNT(*) AS total FROM sales WHERE event_id IS NOT NULL').get().total;
-  const sales = db.prepare(`
-    SELECT id
-    FROM sales
-    WHERE event_id IS NULL
-      ${linkedSalesCount > 0 ? "AND notes = 'Venda seed'" : ''}
-    ORDER BY created_at, id
-  `).all();
-  const updateSale = db.prepare('UPDATE sales SET event_id = ? WHERE id = ?');
-
-  sales.forEach((sale, index) => {
-    updateSale.run(events[index % events.length].id, sale.id);
-  });
-}
-
-function consumeSeedProductStock(productId, quantity) {
-  if (!tableExists('stock_batches')) return [];
-
-  let remaining = roundQuantity(quantity);
-  const allocations = [];
-  const batches = db.prepare(`
-    SELECT *
-    FROM stock_batches
-    WHERE product_id = ? AND quantity_available > 0
-    ORDER BY
-      CASE WHEN expiration_date IS NULL OR expiration_date = '' THEN 1 ELSE 0 END,
-      date(expiration_date) ASC,
-      id ASC
-  `).all(productId);
-
-  const updateBatch = db.prepare('UPDATE stock_batches SET quantity_available = ? WHERE id = ?');
-
-  for (const batch of batches) {
-    if (remaining <= 0) break;
-
-    const quantityToConsume = Math.min(remaining, Number(batch.quantity_available || 0));
-    const nextQuantity = roundQuantity(Number(batch.quantity_available || 0) - quantityToConsume);
-    updateBatch.run(nextQuantity, batch.id);
-    allocations.push({
-      batch_id: batch.id,
-      expiration_date: batch.expiration_date || null,
-      quantity: roundQuantity(quantityToConsume)
-    });
-    remaining = roundQuantity(remaining - quantityToConsume);
-  }
-
-  return allocations;
-}
-
-function seedSalesHistory() {
-  if (countRows('sales') > 0) return;
-
-  const admin = db.prepare("SELECT id FROM users WHERE role = 'admin' LIMIT 1").get();
-  const products = db.prepare('SELECT id, name, cost_price, sale_price, stock_quantity FROM products WHERE sale_price > 0').all();
-  const insertSale = db.prepare(`
-    INSERT INTO sales (total, estimated_profit, payment_method, notes, sold_by, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `);
-  const insertItem = db.prepare(`
-    INSERT INTO sale_items
-      (sale_id, product_id, item_name, quantity, unit_price, unit_cost, line_total, line_profit)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const insertMovement = db.prepare(`
-    INSERT INTO inventory_movements
-      (product_id, batch_id, type, quantity_change, quantity_before, quantity_after, reference_type, reference_id, notes, expiration_date, created_by, created_at)
-    VALUES (?, ?, 'sale', ?, ?, ?, 'sale', ?, ?, ?, ?, ?)
-  `);
-  const updateStock = db.prepare('UPDATE products SET stock_quantity = ? WHERE id = ?');
-
-  for (let dayOffset = 13; dayOffset >= 1; dayOffset -= 1) {
-    const date = new Date();
-    date.setDate(date.getDate() - dayOffset);
-    const salesInDay = 3 + (dayOffset % 5);
-
-    for (let i = 0; i < salesInDay; i += 1) {
-      const product = products[(dayOffset + i) % products.length];
-      const quantity = 1 + ((dayOffset + i) % 2);
-      const total = product.sale_price * quantity;
-      const profit = (product.sale_price - product.cost_price) * quantity;
-      const createdAt = new Date(date);
-      createdAt.setHours(11 + ((i * 2) % 10), (i * 13) % 60, 0, 0);
-      const iso = createdAt.toISOString();
-      const saleId = insertSale.run(total, profit, i % 2 ? 'cartao' : 'pix', 'Venda seed', admin.id, iso).lastInsertRowid;
-      insertItem.run(saleId, product.id, product.name, quantity, product.sale_price, product.cost_price, total, profit);
-
-      const current = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(product.id).stock_quantity;
-      const after = Math.max(current - quantity, 0);
-      updateStock.run(after, product.id);
-      const allocations = consumeSeedProductStock(product.id, quantity);
-      let movementBefore = current;
-      if (allocations.length) {
-        allocations.forEach((allocation) => {
-          const movementAfter = roundQuantity(movementBefore - allocation.quantity);
-          insertMovement.run(
-            product.id,
-            allocation.batch_id,
-            -allocation.quantity,
-            movementBefore,
-            movementAfter,
-            saleId,
-            'Baixa automatica por venda seed',
-            allocation.expiration_date,
-            admin.id,
-            iso
-          );
-          movementBefore = movementAfter;
-        });
-      } else {
-        insertMovement.run(product.id, null, -quantity, current, after, saleId, 'Baixa automatica por venda seed', null, admin.id, iso);
-      }
-    }
-  }
-
-  syncAllProductStockFromBatches();
+function compactDatabase() {
+  db.pragma('wal_checkpoint(TRUNCATE)');
+  db.exec('VACUUM');
+  db.pragma('wal_checkpoint(TRUNCATE)');
 }
 
 function initDatabase() {
@@ -451,19 +298,17 @@ function initDatabase() {
   const seed = db.transaction(() => {
     seedUsers();
     seedProductCategories();
-    const insertedDemoProducts = seedProducts();
-    if (insertedDemoProducts) seedCombos();
-    seedPrototypeEvents();
     migrateLegacyStockBatches();
-    if (insertedDemoProducts) seedSalesHistory();
-    seedPrototypeEventSales();
   });
   seed();
   runMigrations();
 }
 
 module.exports = {
+  clearOperationalData,
+  compactDatabase,
   db,
   dbPath,
+  getOperationalCounts,
   initDatabase
 };

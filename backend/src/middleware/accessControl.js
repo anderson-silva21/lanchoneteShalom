@@ -2,6 +2,7 @@ const { requireRole } = require('./auth');
 
 const screenRoles = {
   dashboard: ['admin'],
+  setup: ['admin', 'manager'],
   sales: ['admin', 'manager', 'cashier'],
   products: ['admin', 'manager'],
   inventory: ['admin', 'manager'],

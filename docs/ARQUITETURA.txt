@@ -66,6 +66,7 @@ Padrões e separação de responsabilidades
   - Logging, tratamento de erros e controle de requisições ficam centralizados.
 - backend/src/db.js
   - Inicialização do banco e configuração de caminho do arquivo SQLite.
+  - Cria schema e usuarios iniciais, mas nao popula produtos, estoque, vendas, combos ou eventos ficticios.
 - frontend/src/components/*
   - UI modularizada em componentes reutilizáveis.
 
@@ -90,9 +91,11 @@ Pontos importantes
 - O backend é responsável por:
   - autenticação
   - regras de venda e inventário
+  - limpeza administrativa de dados operacionais para primeira carga real
   - exportação
   - geração de dados para Power BI
 - O frontend é responsável por:
   - UI de PDV
+  - menu de carga inicial do inventário real
   - dashboard e relatórios
   - fluxo de login e experiência do usuário

@@ -75,13 +75,13 @@ function compareProductValues(leftProduct, rightProduct, sortKey) {
   })
 }
 
-export function ProductManager({ refreshKey, onChanged, intent }) {
+export function ProductManager({ refreshKey, onChanged = () => {}, intent, setupMode = false }) {
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('')
   const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' })
-  const [draft, setDraft] = useState(() => createEmptyProduct('Lanches'))
+  const [draft, setDraft] = useState(() => createEmptyProduct())
   const [adjustment, setAdjustment] = useState(() => createEmptyAdjustment())
   const [selectedProductId, setSelectedProductId] = useState('')
   const [selectedStock, setSelectedStock] = useState(null)
@@ -98,13 +98,10 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
       api.productCategories()
     ])
     setProducts(rows)
-    setSelectedProductId((current) => current || (rows[0]?.id ? String(rows[0].id) : ''))
+    setSelectedProductId((current) => rows.some((product) => String(product.id) === String(current)) ? current : (rows[0]?.id ? String(rows[0].id) : ''))
     const categoryNames = categoryRows.map((item) => item.category)
     setCategories(categoryNames)
-    setDraft((current) => {
-      if (categoryNames.includes(current.category)) return current
-      return { ...current, category: categoryNames[0] || '' }
-    })
+    setDraft((current) => current.category?.trim() ? current : { ...current, category: categoryNames[0] || '' })
   }, [status])
 
   useEffect(() => {
@@ -344,6 +341,7 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
   const selectedProduct = products.find((product) => String(product.id) === String(selectedProductId)) || selectedStock?.product
   const needsMovementBatch = movementMode === 'adjustment_out' || movementMode === 'waste'
   const showsMovementExpiration = movementMode === 'purchase' || (movementMode === 'adjustment_in' && !adjustment.batch_id)
+  const categoryListId = setupMode ? 'setup-product-categories' : 'product-categories'
 
   useEffect(() => {
     if (movementMode !== 'purchase' || !adjustment.product_id) return
@@ -369,11 +367,14 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
 
   return (
     <div className="space-y-5">
+      <datalist id={categoryListId}>
+        {categories.map((categoryName) => <option key={categoryName} value={categoryName} />)}
+      </datalist>
       <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
         <div className="mission-panel p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="font-display text-lg font-semibold">Cadastro de produtos</h2>
+              <h2 className="font-display text-lg font-semibold">{setupMode ? 'Itens do inventario' : 'Cadastro de produtos'}</h2>
               <p className="mission-muted text-sm">{filtered.length} itens ativos</p>
             </div>
             <div className="flex gap-2">
@@ -430,9 +431,7 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
                       <p className="mission-muted px-2 text-xs">{product.internal_code}</p>
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                      <select className="mission-input w-32 px-2 py-1" value={product.category} onChange={(event) => updateRow(product.id, 'category', event.target.value)}>
-                        {categories.map((categoryName) => <option key={categoryName} value={categoryName}>{categoryName}</option>)}
-                      </select>
+                      <input className="mission-input w-32 px-2 py-1" list={categoryListId} value={product.category} onChange={(event) => updateRow(product.id, 'category', event.target.value)} />
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{money.format(product.cost_price)}</td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
@@ -458,6 +457,13 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
                     </td>
                   </tr>
                 ))}
+                {!sortedProducts.length ? (
+                  <tr>
+                    <td className="border-b border-line/80 px-3 py-4 mission-muted dark:border-shalom-gold/10" colSpan={9}>
+                      Nenhum produto cadastrado.
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -467,7 +473,7 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
           <form className="mission-panel p-4" onSubmit={createProduct}>
             <div className="mb-4 flex items-center gap-2">
               <PackagePlus size={20} />
-              <h2 className="font-display text-lg font-semibold">Novo produto</h2>
+              <h2 className="font-display text-lg font-semibold">{setupMode ? 'Adicionar item real' : 'Novo produto'}</h2>
             </div>
             <div className="grid gap-3">
               <label className="text-sm font-medium">
@@ -476,10 +482,7 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
               </label>
               <label className="text-sm font-medium">
                 Categoria
-                <select className="mission-input mt-1 w-full px-3 py-2" value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>
-                  <option value="" disabled>Selecione</option>
-                  {categories.map((categoryName) => <option key={categoryName} value={categoryName}>{categoryName}</option>)}
-                </select>
+                <input className="mission-input mt-1 w-full px-3 py-2" list={categoryListId} value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })} />
               </label>
               <label className="text-sm font-medium">
                 Unidade
@@ -497,8 +500,8 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
                 {[
                   ['cost_price', 'Custo', '0.01'],
                   ['sale_price', 'Venda', '0.01'],
-                  ['stock_quantity', 'Estoque', '1'],
-                  ['min_stock', 'Minimo', '1']
+                  ['stock_quantity', 'Estoque', '0.001'],
+                  ['min_stock', 'Minimo', '0.001']
                 ].map(([field, label, step]) => (
                   <label key={field} className="text-sm font-medium">
                     {label}
@@ -566,7 +569,7 @@ export function ProductManager({ refreshKey, onChanged, intent }) {
               </label>
               <label className="text-sm font-medium">
                 Quantidade
-                <input type="number" min="1" step="1" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.quantity} onChange={(event) => setAdjustment({ ...adjustment, quantity: Number(event.target.value) })} />
+                <input type="number" min="0.001" step="0.001" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.quantity} onChange={(event) => setAdjustment({ ...adjustment, quantity: Number(event.target.value) })} />
               </label>
             </div>
             {movementMode === 'purchase' ? (
