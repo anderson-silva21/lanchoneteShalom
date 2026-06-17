@@ -119,9 +119,9 @@ test('mensagem do Telegram resume alertas operacionais', () => {
   }, { force: true, maxItems: 3 });
 
   assert.match(message, /ALERTA SH82/);
-  assert.match(message, /Estoque baixo: 1/);
-  assert.match(message, /Bolo lote #7/);
-  assert.match(message, /Venda #10/);
+  assert.match(message, /Estoque baixo: <b>1<\/b>/);
+  assert.match(message, /Bolo<\/b> lote <code>#7<\/code>/);
+  assert.match(message, /Venda <code>#10<\/code>/);
 });
 
 test('entrada de estoque cria um lote com validade e atualiza o total', () => {

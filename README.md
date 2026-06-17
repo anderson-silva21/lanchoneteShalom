@@ -86,9 +86,11 @@ TELEGRAM_CHAT_ID=
 TELEGRAM_ALERTS_ENABLED=true
 TELEGRAM_ALERT_INTERVAL_MINUTES=360
 TELEGRAM_ALERT_MAX_ITEMS=8
+TELEGRAM_IGNORE_MISSING_EXPIRATION_CATEGORIES=Descartaveis
 ```
 
 Para ativar o robo do Telegram, crie um bot com o BotFather, envie uma mensagem para o bot ou adicione-o ao grupo desejado, preencha `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`, reinicie o backend e use `Sistema > Alertas Telegram > Enviar teste`.
+O `TELEGRAM_ALERT_MAX_ITEMS` controla quantos itens entram em cada mensagem de detalhe; quando houver mais itens, o sistema envia mensagens adicionais em vez de cortar o alerta. A lista `TELEGRAM_IGNORE_MISSING_EXPIRATION_CATEGORIES` evita alertas de validade para categorias sem vencimento real, como descartaveis.
 
 No frontend, crie `frontend/.env` apenas se quiser forcar outro endereco de API:
 
