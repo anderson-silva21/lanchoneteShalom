@@ -307,6 +307,25 @@ function buildTelegramAlertMessage(analytics, options = {}) {
   return buildTelegramAlertMessages(analytics, options).join('\n\n');
 }
 
+function parseResponseBody(responseBody) {
+  try {
+    return responseBody ? JSON.parse(responseBody) : {};
+  } catch (error) {
+    return { description: responseBody };
+  }
+}
+
+function createTelegramError(data) {
+  const migrationChatId = data.parameters?.migrate_to_chat_id;
+  const message = migrationChatId
+    ? `O grupo do Telegram virou supergrupo. Atualize TELEGRAM_CHAT_ID para ${migrationChatId} e reinicie o backend.`
+    : data.description || 'Falha ao enviar alerta para o Telegram.';
+  const error = new Error(message);
+  error.status = 502;
+  error.payload = data;
+  return error;
+}
+
 function postJson(url, payload) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify(payload);
@@ -323,24 +342,12 @@ function postJson(url, payload) {
         responseBody += chunk;
       });
       response.on('end', () => {
-        let data = {};
-        try {
-          data = responseBody ? JSON.parse(responseBody) : {};
-        } catch (error) {
-          data = { description: responseBody };
-        }
+        const data = parseResponseBody(responseBody);
         if (response.statusCode >= 200 && response.statusCode < 300 && data.ok !== false) {
           resolve(data);
           return;
         }
-        const migrationChatId = data.parameters?.migrate_to_chat_id;
-        const message = migrationChatId
-          ? `O grupo do Telegram virou supergrupo. Atualize TELEGRAM_CHAT_ID para ${migrationChatId} e reinicie o backend.`
-          : data.description || 'Falha ao enviar alerta para o Telegram.';
-        const error = new Error(message);
-        error.status = 502;
-        error.payload = data;
-        reject(error);
+        reject(createTelegramError(data));
       });
     });
 
@@ -348,6 +355,62 @@ function postJson(url, payload) {
     request.write(body);
     request.end();
   });
+}
+
+function getJson(url) {
+  return new Promise((resolve, reject) => {
+    const request = https.request(url, { method: 'GET' }, (response) => {
+      let responseBody = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => {
+        responseBody += chunk;
+      });
+      response.on('end', () => {
+        const data = parseResponseBody(responseBody);
+        if (response.statusCode >= 200 && response.statusCode < 300 && data.ok !== false) {
+          resolve(data);
+          return;
+        }
+        reject(createTelegramError(data));
+      });
+    });
+
+    request.on('error', reject);
+    request.end();
+  });
+}
+
+function getChatFromUpdate(update) {
+  return update.message?.chat
+    || update.edited_message?.chat
+    || update.channel_post?.chat
+    || update.my_chat_member?.chat
+    || update.chat_member?.chat
+    || null;
+}
+
+async function getVisibleTelegramChats(config) {
+  const url = new URL(`https://api.telegram.org/bot${config.token}/getUpdates`);
+  url.searchParams.set('limit', '30');
+  url.searchParams.set('allowed_updates', JSON.stringify(['message', 'edited_message', 'channel_post', 'my_chat_member', 'chat_member']));
+  const data = await getJson(url);
+  const chats = new Map();
+
+  (data.result || []).forEach((update) => {
+    const chat = getChatFromUpdate(update);
+    if (!chat?.id) return;
+    chats.set(String(chat.id), {
+      id: chat.id,
+      type: chat.type,
+      title: chat.title || chat.username || [chat.first_name, chat.last_name].filter(Boolean).join(' ') || ''
+    });
+  });
+
+  return [...chats.values()];
+}
+
+function formatChatSuggestion(chat) {
+  return `${chat.id}${chat.title ? ` (${chat.title})` : ''}${chat.type ? ` [${chat.type}]` : ''}`;
 }
 
 async function sendTelegramMessage(text, config = getTelegramConfig()) {
@@ -358,12 +421,29 @@ async function sendTelegramMessage(text, config = getTelegramConfig()) {
   }
 
   const url = new URL(`https://api.telegram.org/bot${config.token}/sendMessage`);
-  return postJson(url, {
-    chat_id: config.chatId,
-    text,
-    parse_mode: 'HTML',
-    disable_web_page_preview: true
-  });
+  try {
+    return await postJson(url, {
+      chat_id: config.chatId,
+      text,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true
+    });
+  } catch (error) {
+    if (!/chat not found/i.test(error.message)) throw error;
+
+    try {
+      const chats = await getVisibleTelegramChats(config);
+      if (chats.length) {
+        error.message = `Telegram nao encontrou o TELEGRAM_CHAT_ID configurado (${maskChatId(config.chatId)}). Chats que o bot enxerga nos updates recentes: ${chats.map(formatChatSuggestion).join('; ')}. Use o id correto em TELEGRAM_CHAT_ID e reinicie com pm2 restart lanchonete-backend --update-env.`;
+      } else {
+        error.message = `Telegram nao encontrou o TELEGRAM_CHAT_ID configurado (${maskChatId(config.chatId)}). O bot nao tem updates recentes: adicione o bot ao grupo, envie uma mensagem ou comando mencionando o bot no grupo e tente novamente.`;
+      }
+    } catch (diagnosticError) {
+      error.message = `Telegram nao encontrou o TELEGRAM_CHAT_ID configurado (${maskChatId(config.chatId)}). Tambem nao foi possivel consultar getUpdates: ${diagnosticError.message}`;
+    }
+
+    throw error;
+  }
 }
 
 async function sendTelegramAlertDigest({ force = false } = {}) {
