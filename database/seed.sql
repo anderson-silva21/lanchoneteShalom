@@ -1,3 +1,4 @@
--- Seed de referencia sem dados ficticios.
+-- Seed de referencia sem produtos, estoque ou vendas ficticias.
 -- O backend cria apenas usuarios iniciais quando a tabela de usuarios esta vazia.
+-- Categorias padrao disponiveis no seletor: Bebidas, Descartaveis, Doces e snacks, Insumos, Lanches e Porcoes.
 -- Produtos, lotes, vendas, combos, eventos e inventarios devem ser cadastrados com dados reais pela aplicacao.

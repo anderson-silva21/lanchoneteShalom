@@ -18,6 +18,7 @@ const reportRoutes = require('./routes/reports');
 const salesRoutes = require('./routes/sales');
 const spreadsheetRoutes = require('./routes/spreadsheet');
 const systemRoutes = require('./routes/system');
+const userRoutes = require('./routes/users');
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -101,6 +102,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/sales', salesRoutes);
 app.use('/api/spreadsheet', spreadsheetRoutes);
 app.use('/api/system', systemRoutes);
+app.use('/api/users', userRoutes);
 
 app.use(errorHandler);
 

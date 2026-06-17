@@ -341,7 +341,6 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   const selectedProduct = products.find((product) => String(product.id) === String(selectedProductId)) || selectedStock?.product
   const needsMovementBatch = movementMode === 'adjustment_out' || movementMode === 'waste'
   const showsMovementExpiration = movementMode === 'purchase' || (movementMode === 'adjustment_in' && !adjustment.batch_id)
-  const categoryListId = setupMode ? 'setup-product-categories' : 'product-categories'
 
   useEffect(() => {
     if (movementMode !== 'purchase' || !adjustment.product_id) return
@@ -367,9 +366,6 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
 
   return (
     <div className="space-y-5">
-      <datalist id={categoryListId}>
-        {categories.map((categoryName) => <option key={categoryName} value={categoryName} />)}
-      </datalist>
       <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
         <div className="mission-panel p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -431,7 +427,9 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                       <p className="mission-muted px-2 text-xs">{product.internal_code}</p>
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                      <input className="mission-input w-32 px-2 py-1" list={categoryListId} value={product.category} onChange={(event) => updateRow(product.id, 'category', event.target.value)} />
+                      <select className="mission-input w-32 px-2 py-1" value={product.category} onChange={(event) => updateRow(product.id, 'category', event.target.value)}>
+                        {categories.map((categoryName) => <option key={categoryName} value={categoryName}>{categoryName}</option>)}
+                      </select>
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{money.format(product.cost_price)}</td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
@@ -482,7 +480,10 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
               </label>
               <label className="text-sm font-medium">
                 Categoria
-                <input className="mission-input mt-1 w-full px-3 py-2" list={categoryListId} value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })} />
+                <select className="mission-input mt-1 w-full px-3 py-2" value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>
+                  <option value="" disabled>Selecione</option>
+                  {categories.map((categoryName) => <option key={categoryName} value={categoryName}>{categoryName}</option>)}
+                </select>
               </label>
               <label className="text-sm font-medium">
                 Unidade

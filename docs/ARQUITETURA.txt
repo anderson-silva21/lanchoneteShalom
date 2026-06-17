@@ -12,6 +12,7 @@ Este projeto é um monorepo simples com duas partes principais:
    - Persistência em SQLite (database/lanchonete.sqlite) via better-sqlite3.
    - Rotas organizadas por domínio:
      - autenticação (/api/auth)
+     - usuarios administrativos (/api/users)
      - produtos, estoque e vendas
      - relatórios e exportação
      - backup
@@ -90,6 +91,7 @@ Pontos importantes
 - É uma aplicação clássica SPA + API.
 - O backend é responsável por:
   - autenticação
+  - gestao de usuarios ativos, exclusao logica de acessos e troca obrigatoria de senha temporaria
   - regras de venda e inventário
   - limpeza administrativa de dados operacionais para primeira carga real
   - exportação
@@ -99,3 +101,4 @@ Pontos importantes
   - menu de carga inicial do inventário real
   - dashboard e relatórios
   - fluxo de login e experiência do usuário
+  - tela de troca obrigatoria de senha no primeiro acesso ou apos reset

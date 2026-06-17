@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { canAccessView, defaultViewForRole } from './access'
 import { AppShell } from './components/AppShell'
+import { ChangePasswordScreen } from './components/ChangePasswordScreen'
 import { Dashboard } from './components/Dashboard'
 import { InitialLoadView } from './components/InitialLoadView'
 import { LoginScreen } from './components/LoginScreen'
@@ -33,17 +34,39 @@ function App() {
   }, [darkMode])
 
   useEffect(() => {
-    if (!getToken() || user) return
+    if (!getToken()) return undefined
+    let mounted = true
     api.me()
       .then(({ user: currentUser }) => {
+        if (!mounted) return
         setUser(currentUser)
         localStorage.setItem('lanchonete_user', JSON.stringify(currentUser))
       })
-      .catch(() => setToken(''))
-  }, [user])
+      .catch(() => {
+        if (!mounted) return
+        setToken('')
+        setUser(null)
+        localStorage.removeItem('lanchonete_user')
+      })
+
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   async function handleLogin(username, password) {
     const payload = await api.login(username, password)
+    setToken(payload.token)
+    setUser(payload.user)
+    if (!payload.user.password_must_change) setActiveView(defaultViewForRole(payload.user.role))
+    localStorage.setItem('lanchonete_user', JSON.stringify(payload.user))
+  }
+
+  async function handleChangePassword(currentPassword, newPassword) {
+    const payload = await api.changePassword({
+      current_password: currentPassword,
+      new_password: newPassword
+    })
     setToken(payload.token)
     setUser(payload.user)
     setActiveView(defaultViewForRole(payload.user.role))
@@ -107,6 +130,10 @@ function App() {
 
   if (!user) {
     return <LoginScreen onLogin={handleLogin} />
+  }
+
+  if (user.password_must_change) {
+    return <ChangePasswordScreen user={user} onChangePassword={handleChangePassword} onLogout={logout} />
   }
 
   const currentView = canAccessView(user.role, activeView) ? activeView : defaultViewForRole(user.role)

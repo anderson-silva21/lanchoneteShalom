@@ -59,6 +59,11 @@ async function download(path, filename) {
 export const api = {
   login: (username, password) => request('/auth/login', { method: 'POST', body: { username, password } }),
   me: () => request('/auth/me'),
+  changePassword: (payload) => request('/auth/change-password', { method: 'POST', body: payload }),
+  users: () => request('/users'),
+  createUser: (payload) => request('/users', { method: 'POST', body: payload }),
+  resetUserPassword: (id) => request(`/users/${id}/reset-password`, { method: 'POST' }),
+  deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),
   dashboard: () => request('/analytics/dashboard', { cache: 'no-store' }),
   products: (params = {}) => request(`/products?${new URLSearchParams(params)}`),
   productCategories: () => request('/products/categories'),

@@ -65,7 +65,12 @@ function columnExists(table, column) {
 
 function addColumnIfMissing(table, column, definition) {
   if (!tableExists(table) || columnExists(table, column)) return;
-  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  } catch (error) {
+    if (error.code === 'SQLITE_ERROR' && /duplicate column name/i.test(error.message)) return;
+    throw error;
+  }
 }
 
 function roundQuantity(value) {
@@ -173,6 +178,8 @@ function fillMissingUsernames() {
 
 function runMigrations() {
   addColumnIfMissing('users', 'username', 'TEXT');
+  addColumnIfMissing('users', 'active', 'INTEGER NOT NULL DEFAULT 1');
+  addColumnIfMissing('users', 'password_must_change', 'INTEGER NOT NULL DEFAULT 0');
   fillMissingUsernames();
   addColumnIfMissing('products', 'expiration_date', 'TEXT');
   addColumnIfMissing('combos', 'is_promotion', 'INTEGER NOT NULL DEFAULT 0');
@@ -218,6 +225,18 @@ function seedUsers() {
 }
 
 function seedProductCategories() {
+  const insert = db.prepare('INSERT OR IGNORE INTO product_categories (name) VALUES (?)');
+  const categories = [
+    'Bebidas',
+    'Descartáveis',
+    'Doces e snacks',
+    'Insumos',
+    'Lanches',
+    'Porcoes'
+  ];
+
+  categories.forEach((category) => insert.run(category));
+
   db.prepare(`
     INSERT OR IGNORE INTO product_categories (name)
     SELECT DISTINCT category

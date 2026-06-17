@@ -53,6 +53,8 @@ Login inicial:
 - Planilha central com abas de produtos, vendas, itens vendidos, movimentacoes e indicadores.
 - Relatorios exportaveis em CSV, Excel e PDF.
 - Login com niveis `admin`, `manager` e `cashier`.
+- Administrador cria usuarios ativos, gera senha inicial aleatoria, reseta senhas e exclui acessos ativos.
+- Primeiro acesso com senha temporaria exige troca de senha antes de abrir o sistema.
 - Backup manual do banco SQLite.
 - Limpeza administrativa de dados operacionais em Sistema.
 - Modo escuro e PWA instalavel.
@@ -61,7 +63,7 @@ Login inicial:
 
 1. Entre com o usuario `admin`.
 2. Abra `Carga inicial`.
-3. Cadastre cada produto com categoria, unidade, custo, preco, estoque minimo, quantidade real e validade quando existir.
+3. Cadastre cada produto selecionando a categoria padrao, unidade, custo, preco, estoque minimo, quantidade real e validade quando existir.
 4. Use `Sistema > Base de dados > Zerar dados` se precisar apagar produtos, lotes, vendas, combos, eventos, movimentos e inventarios mantendo os usuarios.
 
 Tambem e possivel limpar a base pelo terminal:
