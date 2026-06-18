@@ -12,7 +12,8 @@ import {
   PanelLeftOpen,
   ReceiptText,
   Settings,
-  Sun
+  Sun,
+  WalletCards
 } from 'lucide-react'
 import { canAccessView } from '../access'
 import { BrandMark } from './BrandMark'
@@ -21,6 +22,7 @@ const navItems = [
   { key: 'dashboard', label: 'Dashboard', icon: BarChart3 },
   { key: 'setup', label: 'Carga inicial', icon: PackagePlus },
   { key: 'sales', label: 'PDV', icon: ReceiptText },
+  { key: 'payments', label: 'Financeiro', icon: WalletCards },
   { key: 'products', label: 'Produtos', icon: Boxes },
   { key: 'inventory', label: 'Inventario', icon: ClipboardCheck },
   { key: 'sheet', label: 'Planilha', icon: FileSpreadsheet },

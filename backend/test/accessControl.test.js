@@ -3,9 +3,9 @@ const assert = require('node:assert/strict');
 const { requireScreen, screenRoles } = require('../src/middleware/accessControl');
 
 const expectedAccess = {
-  cashier: ['sales', 'sheet'],
-  manager: ['setup', 'sales', 'products', 'inventory', 'sheet'],
-  admin: ['dashboard', 'setup', 'sales', 'products', 'inventory', 'sheet', 'reports', 'settings']
+  cashier: ['sales', 'payments', 'sheet'],
+  manager: ['setup', 'sales', 'payments', 'products', 'inventory', 'sheet'],
+  admin: ['dashboard', 'setup', 'sales', 'payments', 'products', 'inventory', 'sheet', 'reports', 'settings']
 };
 
 function checkAccess(screen, role) {

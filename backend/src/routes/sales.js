@@ -4,7 +4,7 @@ const { authenticate } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
 const { db } = require('../db');
 const { createEvent } = require('../services/eventsService');
-const { createSale, getSaleById } = require('../services/salesService');
+const { confirmSalePayment, createSale, getCashClosing, getSaleById, listPendingPayments } = require('../services/salesService');
 
 const router = express.Router();
 
@@ -28,6 +28,13 @@ const eventSchema = z.object({
   notes: z.string().trim().optional().nullable()
 });
 
+const paymentConfirmationSchema = z.object({
+  payment_method: z.string().optional(),
+  pagamento: z.string().optional()
+}).refine((payload) => payload.payment_method || payload.pagamento, {
+  message: 'Escolha o metodo de pagamento.'
+});
+
 router.use(authenticate, requireScreen('sales'));
 
 router.get('/events', (req, res) => {
@@ -45,6 +52,21 @@ router.post('/events', requireScreen('dashboard'), (req, res, next) => {
   try {
     const event = createEvent(eventSchema.parse(req.body));
     return res.status(201).json(event);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get('/pending', (req, res) => {
+  return res.json(listPendingPayments());
+});
+
+router.get('/closing', (req, res, next) => {
+  try {
+    return res.json(getCashClosing({
+      date: req.query.date,
+      event_id: req.query.event_id
+    }));
   } catch (error) {
     return next(error);
   }
@@ -83,6 +105,16 @@ router.get('/:id', (req, res) => {
   const sale = getSaleById(req.params.id);
   if (!sale) return res.status(404).json({ message: 'Venda nao encontrada.' });
   return res.json(sale);
+});
+
+router.patch('/:id/payment', (req, res, next) => {
+  try {
+    const payload = paymentConfirmationSchema.parse(req.body);
+    const sale = confirmSalePayment(Number(req.params.id), payload.payment_method || payload.pagamento, req.user.id);
+    return res.json(sale);
+  } catch (error) {
+    return next(error);
+  }
 });
 
 router.post('/', (req, res, next) => {

@@ -1,7 +1,7 @@
 export const viewAccess = {
-  cashier: ['sales', 'sheet'],
-  manager: ['sales', 'setup', 'products', 'inventory', 'sheet'],
-  admin: ['dashboard', 'setup', 'sales', 'products', 'inventory', 'sheet', 'reports', 'settings']
+  cashier: ['sales', 'payments', 'sheet'],
+  manager: ['sales', 'payments', 'setup', 'products', 'inventory', 'sheet'],
+  admin: ['dashboard', 'setup', 'sales', 'payments', 'products', 'inventory', 'sheet', 'reports', 'settings']
 }
 
 export function allowedViewsForRole(role, options = {}) {

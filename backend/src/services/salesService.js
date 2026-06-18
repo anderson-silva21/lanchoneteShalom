@@ -3,7 +3,7 @@ const { findEventForToday } = require('./eventsService');
 const { consumeStockFefo } = require('./stockService');
 
 const pendingPaymentMethod = 'pagamento_pendente';
-const paidPaymentMethods = new Set(['pix', 'cartao', 'dinheiro']);
+const paidPaymentMethods = new Set(['pix', 'cartao', 'dinheiro', 'delivery']);
 const paymentMethods = new Set([...paidPaymentMethods, pendingPaymentMethod]);
 
 function createHttpError(message, status) {
@@ -157,6 +157,189 @@ function createSale(payload, user) {
   return getSaleById(saleId);
 }
 
+function listPendingPayments({ limit = 500 } = {}) {
+  return db.prepare(`
+    SELECT
+      s.id,
+      s.created_at,
+      s.customer_name,
+      s.total,
+      s.notes,
+      s.payment_method,
+      s.payment_status,
+      s.event_id,
+      u.name AS sold_by_name,
+      e.name AS event_name,
+      e.event_date
+    FROM sales s
+    LEFT JOIN users u ON u.id = s.sold_by
+    LEFT JOIN events e ON e.id = s.event_id
+    WHERE s.payment_status = 'pending'
+       OR s.payment_method = ?
+    ORDER BY s.created_at DESC
+    LIMIT ?
+  `).all(pendingPaymentMethod, Number(limit) || 500).map((sale) => ({
+    ...sale,
+    total: money(sale.total)
+  }));
+}
+
+function normalizeClosingDate(value) {
+  const date = String(value || '').trim();
+  if (!date) return db.prepare("SELECT date('now', 'localtime') AS date").get().date;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw createHttpError('Data de fechamento invalida.', 400);
+  }
+  return date;
+}
+
+function normalizeOptionalEventId(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw createHttpError('Evento invalido.', 400);
+  }
+  if (!db.prepare('SELECT id FROM events WHERE id = ?').get(id)) {
+    throw createHttpError('Evento nao encontrado.', 404);
+  }
+  return id;
+}
+
+function money(value) {
+  return Number(Number(value || 0).toFixed(2));
+}
+
+function buildClosingFilter({ date, eventId }) {
+  const where = ['date(s.created_at) = date(?)'];
+  const params = [date];
+
+  if (eventId) {
+    where.push('s.event_id = ?');
+    params.push(eventId);
+  }
+
+  return {
+    where: where.join(' AND '),
+    params
+  };
+}
+
+function getCashClosing(filters = {}) {
+  const date = normalizeClosingDate(filters.date);
+  const rawEventId = filters.event_id !== undefined ? filters.event_id : filters.eventId;
+  const eventId = normalizeOptionalEventId(rawEventId);
+  const { where, params } = buildClosingFilter({ date, eventId });
+
+  const summary = db.prepare(`
+    SELECT
+      COUNT(*) AS sales_count,
+      COALESCE(SUM(s.total), 0) AS gross_total,
+      COALESCE(SUM(CASE
+        WHEN s.payment_status = 'paid' AND s.payment_method != ? THEN s.total
+        ELSE 0
+      END), 0) AS paid_total,
+      COALESCE(SUM(CASE
+        WHEN s.payment_status = 'pending' OR s.payment_method = ? THEN s.total
+        ELSE 0
+      END), 0) AS pending_total,
+      COALESCE(SUM(s.estimated_profit), 0) AS estimated_profit
+    FROM sales s
+    WHERE ${where}
+  `).get(pendingPaymentMethod, pendingPaymentMethod, ...params);
+
+  const paymentMethodsSummary = db.prepare(`
+    SELECT
+      CASE
+        WHEN s.payment_status = 'pending' OR s.payment_method = ? THEN ?
+        ELSE s.payment_method
+      END AS payment_method,
+      CASE
+        WHEN s.payment_status = 'pending' OR s.payment_method = ? THEN 'pending'
+        ELSE 'paid'
+      END AS payment_status,
+      COUNT(*) AS sales_count,
+      COALESCE(SUM(s.total), 0) AS total,
+      COALESCE(SUM(s.estimated_profit), 0) AS estimated_profit
+    FROM sales s
+    WHERE ${where}
+    GROUP BY payment_method, payment_status
+    ORDER BY payment_status DESC, total DESC
+  `).all(pendingPaymentMethod, pendingPaymentMethod, pendingPaymentMethod, ...params).map((row) => ({
+    ...row,
+    sales_count: Number(row.sales_count || 0),
+    total: money(row.total),
+    estimated_profit: money(row.estimated_profit)
+  }));
+
+  const sales = db.prepare(`
+    SELECT
+      s.id,
+      s.created_at,
+      s.customer_name,
+      s.payment_method,
+      s.payment_status,
+      s.payment_confirmed_at,
+      s.total,
+      s.estimated_profit,
+      s.notes,
+      u.name AS sold_by_name,
+      e.name AS event_name,
+      e.event_date
+    FROM sales s
+    LEFT JOIN users u ON u.id = s.sold_by
+    LEFT JOIN events e ON e.id = s.event_id
+    WHERE ${where}
+    ORDER BY s.created_at DESC
+  `).all(...params).map((sale) => ({
+    ...sale,
+    total: money(sale.total),
+    estimated_profit: money(sale.estimated_profit)
+  }));
+
+  const pendingPayments = db.prepare(`
+    SELECT
+      s.id,
+      s.created_at,
+      s.customer_name,
+      s.total,
+      s.notes,
+      s.payment_method,
+      s.payment_status,
+      s.event_id,
+      u.name AS sold_by_name,
+      e.name AS event_name,
+      e.event_date
+    FROM sales s
+    LEFT JOIN users u ON u.id = s.sold_by
+    LEFT JOIN events e ON e.id = s.event_id
+    WHERE (s.payment_status = 'pending' OR s.payment_method = ?)
+      AND ${where}
+    ORDER BY s.created_at DESC
+  `).all(pendingPaymentMethod, ...params).map((sale) => ({
+    ...sale,
+    total: money(sale.total)
+  }));
+
+  const event = eventId
+    ? db.prepare('SELECT id, name, event_date FROM events WHERE id = ?').get(eventId)
+    : null;
+
+  return {
+    date,
+    event,
+    summary: {
+      sales_count: Number(summary.sales_count || 0),
+      gross_total: money(summary.gross_total),
+      paid_total: money(summary.paid_total),
+      pending_total: money(summary.pending_total),
+      estimated_profit: money(summary.estimated_profit)
+    },
+    payment_methods: paymentMethodsSummary,
+    pending_payments: pendingPayments,
+    sales
+  };
+}
+
 function confirmSalePayment(id, paymentMethod, userId) {
   const method = normalizePaymentMethod(paymentMethod);
   if (method === pendingPaymentMethod) {
@@ -184,5 +367,7 @@ function confirmSalePayment(id, paymentMethod, userId) {
 module.exports = {
   confirmSalePayment,
   createSale,
-  getSaleById
+  getCashClosing,
+  getSaleById,
+  listPendingPayments
 };

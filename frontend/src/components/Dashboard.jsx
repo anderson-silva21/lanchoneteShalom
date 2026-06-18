@@ -50,12 +50,13 @@ function createEmptyEventDraft() {
   }
 }
 
-const confirmedPaymentMethods = ['pix', 'cartao', 'dinheiro']
+const confirmedPaymentMethods = ['pix', 'cartao', 'dinheiro', 'delivery']
 
 const paymentLabels = {
   pix: 'Pix',
   cartao: 'Cartao',
-  dinheiro: 'Dinheiro'
+  dinheiro: 'Dinheiro',
+  delivery: 'Delivery'
 }
 
 function getPaymentLabel(value) {
