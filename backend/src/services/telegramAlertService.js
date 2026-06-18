@@ -1,10 +1,12 @@
 const https = require('https');
-const { db } = require('../db');
+const { db, getAppSetting, setAppSetting } = require('../db');
 const { getDashboardAnalytics } = require('./analyticsService');
 
 const LAST_SENT_KEY = 'telegram_alert_last_sent_at';
 const TELEGRAM_MESSAGE_LIMIT = 3600;
 let schedulerStarted = false;
+let schedulerTimer = null;
+let firstRunTimer = null;
 
 const moneyFormatter = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
@@ -77,15 +79,25 @@ function parseCsv(value, fallback) {
     .filter(Boolean);
 }
 
+function settingValue(settingKey, envKey, fallback = '') {
+  const stored = getAppSetting(settingKey, '');
+  if (stored !== '') return stored;
+  return process.env[envKey] ?? fallback;
+}
+
 function getTelegramConfig() {
   const token = String(process.env.TELEGRAM_BOT_TOKEN || '').trim();
-  const chatId = String(process.env.TELEGRAM_CHAT_ID || '').trim();
+  const chatId = String(settingValue('telegram_chat_id', 'TELEGRAM_CHAT_ID')).trim();
   const hasCredentials = Boolean(token && chatId);
-  const enabled = hasCredentials && parseBoolean(process.env.TELEGRAM_ALERTS_ENABLED, true);
-  const intervalMinutes = Math.max(5, Number(process.env.TELEGRAM_ALERT_INTERVAL_MINUTES || 360));
-  const maxItems = Math.max(3, Number(process.env.TELEGRAM_ALERT_MAX_ITEMS || 8));
+  const enabled = hasCredentials && parseBoolean(settingValue('telegram_alerts_enabled', 'TELEGRAM_ALERTS_ENABLED', 'true'), true);
+  const intervalMinutes = Math.max(5, Number(settingValue('telegram_alert_interval_minutes', 'TELEGRAM_ALERT_INTERVAL_MINUTES', 360)));
+  const maxItems = Math.max(3, Number(settingValue('telegram_alert_max_items', 'TELEGRAM_ALERT_MAX_ITEMS', 8)));
   const ignoredMissingExpirationCategories = parseCsv(
-    process.env.TELEGRAM_IGNORE_MISSING_EXPIRATION_CATEGORIES,
+    settingValue(
+      'telegram_ignore_missing_expiration_categories',
+      'TELEGRAM_IGNORE_MISSING_EXPIRATION_CATEGORIES',
+      'Descartaveis'
+    ),
     'Descartaveis'
   );
 
@@ -102,7 +114,7 @@ function getTelegramConfig() {
 }
 
 function getTelegramGroupUrl() {
-  return String(process.env.TELEGRAM_GROUP_URL || 'https://t.me/+FhW7DOd1pLdjYWIx').trim();
+  return String(settingValue('telegram_group_url', 'TELEGRAM_GROUP_URL', 'https://t.me/+FhW7DOd1pLdjYWIx')).trim();
 }
 
 function getLastSentAt() {
@@ -499,7 +511,28 @@ function getTelegramAlertStatus() {
   };
 }
 
-function startTelegramAlertScheduler() {
+function updateTelegramAlertSettings(settings) {
+  if (settings.enabled !== undefined) setAppSetting('telegram_alerts_enabled', settings.enabled ? '1' : '0');
+  if (settings.chat_id !== undefined) setAppSetting('telegram_chat_id', String(settings.chat_id || '').trim());
+  if (settings.group_url !== undefined) setAppSetting('telegram_group_url', String(settings.group_url || '').trim());
+  if (settings.interval_minutes !== undefined) setAppSetting('telegram_alert_interval_minutes', String(settings.interval_minutes));
+  if (settings.max_items !== undefined) setAppSetting('telegram_alert_max_items', String(settings.max_items));
+  if (settings.ignored_missing_expiration_categories !== undefined) {
+    setAppSetting('telegram_ignore_missing_expiration_categories', String(settings.ignored_missing_expiration_categories || ''));
+  }
+  return getTelegramAlertStatus();
+}
+
+function stopTelegramAlertScheduler() {
+  if (firstRunTimer) clearTimeout(firstRunTimer);
+  if (schedulerTimer) clearInterval(schedulerTimer);
+  firstRunTimer = null;
+  schedulerTimer = null;
+  schedulerStarted = false;
+}
+
+function startTelegramAlertScheduler({ restart = false } = {}) {
+  if (restart) stopTelegramAlertScheduler();
   if (schedulerStarted) return;
   schedulerStarted = true;
 
@@ -514,17 +547,19 @@ function startTelegramAlertScheduler() {
     return;
   }
 
-  setTimeout(() => {
+  firstRunTimer = setTimeout(() => {
     sendScheduledTelegramAlert().catch((error) => {
       console.error('Falha ao enviar alerta Telegram:', error.message);
     });
   }, 10000);
+  firstRunTimer.unref?.();
 
-  setInterval(() => {
+  schedulerTimer = setInterval(() => {
     sendScheduledTelegramAlert().catch((error) => {
       console.error('Falha ao enviar alerta Telegram:', error.message);
     });
   }, config.intervalMs);
+  schedulerTimer.unref?.();
 
   console.log(`Alertas Telegram ativos a cada ${config.intervalMinutes} minutos.`);
 }
@@ -535,5 +570,6 @@ module.exports = {
   getTelegramGroupUrl,
   getTelegramAlertStatus,
   sendTelegramAlertDigest,
-  startTelegramAlertScheduler
+  startTelegramAlertScheduler,
+  updateTelegramAlertSettings
 };

@@ -5,6 +5,8 @@ const bcrypt = require('bcryptjs');
 
 const dataDir = path.resolve(__dirname, '../../database');
 const dbPath = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(dataDir, 'lanchonete.sqlite');
+const backupDir = path.join(path.dirname(dbPath), 'backups');
+let migrationBackupCreated = false;
 
 fs.mkdirSync(dataDir, { recursive: true });
 
@@ -15,6 +17,35 @@ db.pragma('foreign_keys = ON');
 function runSchema() {
   const schemaPath = path.join(dataDir, 'schema.sql');
   db.exec(fs.readFileSync(schemaPath, 'utf8'));
+}
+
+function escapeSqlString(value) {
+  return String(value).replace(/'/g, "''");
+}
+
+function hasExistingApplicationTables() {
+  return Boolean(db.prepare(`
+    SELECT name
+    FROM sqlite_master
+    WHERE type = 'table'
+      AND name NOT LIKE 'sqlite_%'
+    LIMIT 1
+  `).get());
+}
+
+function createMigrationBackup(reason = 'schema') {
+  if (migrationBackupCreated) return null;
+  if (String(process.env.BACKUP_BEFORE_MIGRATIONS || 'true').toLowerCase() === 'false') return null;
+  if (!hasExistingApplicationTables()) return null;
+
+  fs.mkdirSync(backupDir, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const file = `lanchonete-pre-migration-${stamp}.sqlite`;
+  const target = path.join(backupDir, file);
+  db.exec(`VACUUM INTO '${escapeSqlString(target)}'`);
+  migrationBackupCreated = true;
+  console.log(`Backup pre-migracao criado: ${file} (${reason})`);
+  return { file, path: target, reason };
 }
 
 function ensureStockBatchSchema() {
@@ -66,6 +97,7 @@ function columnExists(table, column) {
 function addColumnIfMissing(table, column, definition) {
   if (!tableExists(table) || columnExists(table, column)) return;
   try {
+    createMigrationBackup(`add ${table}.${column}`);
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   } catch (error) {
     if (error.code === 'SQLITE_ERROR' && /duplicate column name/i.test(error.message)) return;
@@ -80,6 +112,45 @@ function ensureAppSettingsSchema() {
       value TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+  `);
+}
+
+function ensureAuditLogSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER REFERENCES users(id),
+      username TEXT,
+      role TEXT,
+      action TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id TEXT,
+      summary TEXT NOT NULL,
+      metadata TEXT,
+      ip TEXT,
+      request_id TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id, created_at);
+  `);
+}
+
+function ensureCashClosingSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cash_closings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      closing_date TEXT NOT NULL,
+      event_id INTEGER REFERENCES events(id),
+      summary_json TEXT NOT NULL,
+      notes TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (closing_date, event_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_cash_closings_date ON cash_closings(closing_date, event_id);
   `);
 }
 
@@ -228,6 +299,7 @@ function ensureUserRoleSchema() {
   const table = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get();
   if (String(table?.sql || '').includes("'finance'")) return;
 
+  createMigrationBackup('users.role finance');
   const foreignKeysEnabled = Number(db.pragma('foreign_keys', { simple: true })) === 1;
   db.pragma('foreign_keys = OFF');
 
@@ -287,6 +359,8 @@ function ensureUserRoleSchema() {
 
 function runMigrations() {
   ensureAppSettingsSchema();
+  ensureAuditLogSchema();
+  ensureCashClosingSchema();
   addColumnIfMissing('users', 'username', 'TEXT');
   addColumnIfMissing('users', 'active', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing('users', 'password_must_change', 'INTEGER NOT NULL DEFAULT 0');
@@ -364,6 +438,7 @@ function getOperationalCounts() {
     'inventory_movements',
     'sales',
     'sale_items',
+    'cash_closings',
     'combos',
     'combo_items',
     'events',
@@ -386,6 +461,7 @@ function clearOperationalData({ resetCategories = true } = {}) {
       DELETE FROM inventory_movements;
       DELETE FROM sale_items;
       DELETE FROM sales;
+      DELETE FROM cash_closings;
       DELETE FROM combo_items;
       DELETE FROM combos;
       DELETE FROM stock_batches;
@@ -399,6 +475,7 @@ function clearOperationalData({ resetCategories = true } = {}) {
         'inventory_movements',
         'sales',
         'sale_items',
+        'cash_closings',
         'combos',
         'combo_items',
         'events',
@@ -440,8 +517,10 @@ module.exports = {
   compactDatabase,
   db,
   dbPath,
+  getAppSetting,
   getOperationalCounts,
   isInitialLoadEnabled,
+  setAppSetting,
   setInitialLoadEnabled,
   initDatabase
 };

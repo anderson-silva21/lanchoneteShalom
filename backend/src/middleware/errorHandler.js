@@ -24,7 +24,7 @@ function errorHandler(error, req, res, next) {
   const isJsonSyntaxError = error.type === 'entity.parse.failed';
   const status = isValidationError ? 400 : sqliteResponse.status || error.status || error.statusCode || 500;
   const payload = {
-    message: sqliteResponse.message || (isJsonSyntaxError ? 'JSON invalido.' : (status === 500 ? 'Erro interno no servidor.' : error.message)),
+    message: sqliteResponse.message || (isValidationError ? 'Dados invalidos.' : isJsonSyntaxError ? 'JSON invalido.' : (status === 500 ? 'Erro interno no servidor.' : error.message)),
     requestId: req.id
   };
 

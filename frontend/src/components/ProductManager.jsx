@@ -1,7 +1,7 @@
-import { ArrowDown, ArrowUp, ArrowUpDown, Boxes, PackagePlus, Save, Search, SlidersHorizontal } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Boxes, FileClock, PackagePlus, Save, Search, SlidersHorizontal, Upload } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../services/api'
-import { decimal, formatDate, formatQuantityWithUnit, money } from '../utils/formatters'
+import { decimal, formatDate, formatDateTime, formatQuantityWithUnit, money } from '../utils/formatters'
 import { StatusPill } from './StatusPill'
 
 function createEmptyProduct(category = '') {
@@ -87,8 +87,11 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   const [adjustment, setAdjustment] = useState(() => createEmptyAdjustment())
   const [selectedProductId, setSelectedProductId] = useState('')
   const [selectedStock, setSelectedStock] = useState(null)
+  const [productHistory, setProductHistory] = useState(null)
   const [movementStock, setMovementStock] = useState(null)
   const [message, setMessage] = useState('')
+  const [importCsv, setImportCsv] = useState('')
+  const [importing, setImporting] = useState(false)
   const movementFormRef = useRef(null)
   const movementProductRef = useRef(null)
   const productTableTopScrollRef = useRef(null)
@@ -113,14 +116,21 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   useEffect(() => {
     if (!selectedProductId) {
       setSelectedStock(null)
+      setProductHistory(null)
       return
     }
 
     let mounted = true
     setSelectedStock(null)
-    api.productStock(selectedProductId, { include_empty: '1' })
-      .then((stock) => {
-        if (mounted) setSelectedStock(stock)
+    setProductHistory(null)
+    Promise.all([
+      api.productStock(selectedProductId, { include_empty: '1' }),
+      api.productHistory(selectedProductId)
+    ])
+      .then(([stock, history]) => {
+        if (!mounted) return
+        setSelectedStock(stock)
+        setProductHistory(history)
       })
       .catch((err) => {
         if (mounted) setMessage(err.message)
@@ -202,6 +212,34 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       .map(({ product }) => product)
   }, [filtered, sortConfig])
 
+  async function importProducts(event) {
+    event.preventDefault()
+    setMessage('')
+    if (!importCsv.trim()) {
+      setMessage('Cole o CSV ou selecione um arquivo antes de importar.')
+      return
+    }
+
+    setImporting(true)
+    try {
+      const result = await api.importProducts({ csv: importCsv })
+      setImportCsv('')
+      await loadProducts()
+      onChanged()
+      setMessage(`${result.total} produtos importados.`)
+    } catch (err) {
+      const errors = err.payload?.errors || []
+      setMessage(errors.length ? `${err.message} Linha ${errors[0].line}: ${errors[0].message}` : err.message)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  async function readImportFile(file) {
+    if (!file) return
+    setImportCsv(await file.text())
+  }
+
   async function createProduct(event) {
     event.preventDefault()
     setMessage('')
@@ -241,6 +279,9 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
     try {
       await api.updateProduct(product.id, productPayload)
       await loadProducts()
+      if (String(selectedProductId) === String(product.id)) {
+        setProductHistory(await api.productHistory(product.id))
+      }
       onChanged()
       setMessage('Produto atualizado.')
     } catch (err) {
@@ -290,6 +331,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       await loadProducts()
       if (selectedProductId) {
         setSelectedStock(await api.productStock(selectedProductId, { include_empty: '1' }))
+        setProductHistory(await api.productHistory(selectedProductId))
       }
       onChanged()
       setMessage('Estoque ajustado.')
@@ -325,6 +367,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
         quantity_available: quantityAvailable
       })
       setSelectedStock(stock)
+      setProductHistory(await api.productHistory(stock.productId))
       await loadProducts()
       onChanged()
       setMessage('Lote atualizado.')
@@ -383,6 +426,9 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   const movementBatches = movementStock?.batches || []
   const selectedBatches = selectedStock?.batches || []
   const selectedProduct = products.find((product) => String(product.id) === String(selectedProductId)) || selectedStock?.product
+  const historyMovements = productHistory?.movements || []
+  const historySales = productHistory?.sales || []
+  const historyAudit = productHistory?.audit || []
   const needsMovementBatch = movementMode === 'adjustment_out' || movementMode === 'waste'
   const showsMovementExpiration = movementMode === 'purchase' || (movementMode === 'adjustment_in' && !adjustment.batch_id)
 
@@ -520,6 +566,43 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
         </div>
 
         <div className="space-y-5">
+          {setupMode ? (
+            <form className="mission-panel p-4" onSubmit={importProducts}>
+              <div className="mb-4 flex items-center gap-2">
+                <Upload size={20} />
+                <h2 className="font-display text-lg font-semibold">Importar planilha</h2>
+              </div>
+              <div className="grid gap-3">
+                <label className="text-sm font-medium">
+                  Arquivo CSV
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="mission-input mt-1 w-full px-3 py-2"
+                    onChange={(event) => readImportFile(event.target.files?.[0])}
+                  />
+                </label>
+                <label className="text-sm font-medium">
+                  CSV
+                  <textarea
+                    className="mission-input mt-1 min-h-36 w-full px-3 py-2 font-mono text-xs"
+                    value={importCsv}
+                    onChange={(event) => setImportCsv(event.target.value)}
+                    placeholder="produto;categoria;unidade;quantidade;custo;doacao;venda;minimo;fornecedor;validade"
+                  />
+                </label>
+              </div>
+              <button
+                type="submit"
+                className="mission-btn mission-btn-gold mt-4 flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold"
+                disabled={importing}
+              >
+                <Upload size={17} />
+                {importing ? 'Importando...' : 'Importar CSV'}
+              </button>
+            </form>
+          ) : null}
+
           <form className="mission-panel p-4" onSubmit={createProduct}>
             <div className="mb-4 flex items-center gap-2">
               <PackagePlus size={20} />
@@ -762,6 +845,62 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="mission-panel p-4">
+        <div className="flex items-center gap-2">
+          <FileClock size={20} />
+          <div>
+            <h2 className="font-display text-lg font-semibold">Historico do produto</h2>
+            <p className="mission-muted text-sm">{selectedProduct ? selectedProduct.name : 'Selecione um produto'}</p>
+          </div>
+        </div>
+        {selectedProductId && productHistory === null ? (
+          <p className="mt-4 rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">Carregando historico...</p>
+        ) : selectedProduct ? (
+          <div className="mt-4 grid gap-4 xl:grid-cols-3">
+            <div className="mission-card p-4">
+              <h3 className="font-semibold">Movimentacoes</h3>
+              <div className="mt-3 max-h-64 overflow-y-auto scrollbar-thin">
+                {historyMovements.slice(0, 12).map((movement) => (
+                  <div key={movement.id} className="border-b border-line/70 py-2 text-sm dark:border-shalom-gold/10">
+                    <p className="font-semibold">{movement.type} {formatQuantityWithUnit(movement.quantity_change, selectedProduct.unit)}</p>
+                    <p className="mission-muted">{formatDateTime(movement.created_at)} - {movement.created_by_name || '-'}</p>
+                    {movement.notes ? <p className="mission-muted mt-1">{movement.notes}</p> : null}
+                  </div>
+                ))}
+                {!historyMovements.length ? <p className="mission-muted text-sm">Sem movimentacoes.</p> : null}
+              </div>
+            </div>
+            <div className="mission-card p-4">
+              <h3 className="font-semibold">Vendas</h3>
+              <div className="mt-3 max-h-64 overflow-y-auto scrollbar-thin">
+                {historySales.slice(0, 12).map((sale) => (
+                  <div key={sale.id} className="border-b border-line/70 py-2 text-sm dark:border-shalom-gold/10">
+                    <p className="font-semibold">Venda #{sale.sale_id} - {money.format(sale.line_total)}</p>
+                    <p className="mission-muted">{formatDateTime(sale.created_at)} - {formatQuantityWithUnit(sale.quantity, selectedProduct.unit)}</p>
+                    {sale.event_name ? <p className="mission-muted mt-1">{sale.event_name}</p> : null}
+                  </div>
+                ))}
+                {!historySales.length ? <p className="mission-muted text-sm">Sem vendas.</p> : null}
+              </div>
+            </div>
+            <div className="mission-card p-4">
+              <h3 className="font-semibold">Auditoria</h3>
+              <div className="mt-3 max-h-64 overflow-y-auto scrollbar-thin">
+                {historyAudit.slice(0, 12).map((log) => (
+                  <div key={log.id} className="border-b border-line/70 py-2 text-sm dark:border-shalom-gold/10">
+                    <p className="font-semibold">{log.summary}</p>
+                    <p className="mission-muted">{formatDateTime(log.created_at)} - {log.username || '-'}</p>
+                  </div>
+                ))}
+                {!historyAudit.length ? <p className="mission-muted text-sm">Sem auditoria.</p> : null}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-4 rounded-2xl border border-line/80 bg-white/70 p-4 text-sm mission-muted dark:border-shalom-gold/10 dark:bg-white/10">Selecione um produto para ver o historico.</p>
+        )}
       </section>
 
       {message ? <p className="rounded-2xl bg-shalom-cream/70 px-4 py-3 text-sm text-shalom-deep shadow-sm dark:bg-white/10 dark:text-shalom-gold">{message}</p> : null}

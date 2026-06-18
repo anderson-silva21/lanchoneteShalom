@@ -324,6 +324,24 @@ function getCashClosing(filters = {}) {
     ? db.prepare('SELECT id, name, event_date FROM events WHERE id = ?').get(eventId)
     : null;
 
+  const registeredClosing = eventId
+    ? db.prepare(`
+      SELECT c.*, u.name AS created_by_name
+      FROM cash_closings c
+      LEFT JOIN users u ON u.id = c.created_by
+      WHERE c.closing_date = ? AND c.event_id = ?
+      ORDER BY datetime(c.created_at) DESC, c.id DESC
+      LIMIT 1
+    `).get(date, eventId)
+    : db.prepare(`
+      SELECT c.*, u.name AS created_by_name
+      FROM cash_closings c
+      LEFT JOIN users u ON u.id = c.created_by
+      WHERE c.closing_date = ? AND c.event_id IS NULL
+      ORDER BY datetime(c.created_at) DESC, c.id DESC
+      LIMIT 1
+    `).get(date);
+
   return {
     date,
     event,
@@ -336,7 +354,50 @@ function getCashClosing(filters = {}) {
     },
     payment_methods: paymentMethodsSummary,
     pending_payments: pendingPayments,
-    sales
+    sales,
+    registered_closing: registeredClosing ? {
+      ...registeredClosing,
+      summary: JSON.parse(registeredClosing.summary_json)
+    } : null
+  };
+}
+
+function saveCashClosing(filters = {}, userId = null) {
+  const closing = getCashClosing(filters);
+  const notes = String(filters.notes || '').trim() || null;
+  const eventId = closing.event?.id || null;
+  const summaryJson = JSON.stringify({
+    summary: closing.summary,
+    payment_methods: closing.payment_methods,
+    pending_payments: closing.pending_payments.map((payment) => ({
+      id: payment.id,
+      customer_name: payment.customer_name,
+      total: payment.total
+    }))
+  });
+
+  const existing = eventId
+    ? db.prepare('SELECT id FROM cash_closings WHERE closing_date = ? AND event_id = ?').get(closing.date, eventId)
+    : db.prepare('SELECT id FROM cash_closings WHERE closing_date = ? AND event_id IS NULL').get(closing.date);
+
+  let id;
+  if (existing) {
+    id = existing.id;
+    db.prepare(`
+      UPDATE cash_closings
+      SET summary_json = ?, notes = ?, created_by = ?, created_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(summaryJson, notes, userId, id);
+  } else {
+    id = db.prepare(`
+      INSERT INTO cash_closings (closing_date, event_id, summary_json, notes, created_by)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(closing.date, eventId, summaryJson, notes, userId).lastInsertRowid;
+  }
+
+  return {
+    ...getCashClosing({ date: closing.date, event_id: eventId || undefined }),
+    closing_record_id: id
   };
 }
 
@@ -369,5 +430,6 @@ module.exports = {
   createSale,
   getCashClosing,
   getSaleById,
-  listPendingPayments
+  listPendingPayments,
+  saveCashClosing
 };

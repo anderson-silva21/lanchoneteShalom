@@ -3,6 +3,7 @@ const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
 const { createCombo, listActiveCombos } = require('../services/comboService');
+const { recordAudit } = require('../services/auditService');
 
 const router = express.Router();
 
@@ -28,7 +29,16 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res, next) => {
   try {
-    return res.status(201).json(createCombo(comboSchema.parse(req.body), req.user.id));
+    const combo = createCombo(comboSchema.parse(req.body), req.user.id);
+    recordAudit({
+      req,
+      action: 'combo.create',
+      entityType: 'combo',
+      entityId: combo.id,
+      summary: `Combo criado: ${combo.name}`,
+      metadata: combo
+    });
+    return res.status(201).json(combo);
   } catch (error) {
     return next(error);
   }

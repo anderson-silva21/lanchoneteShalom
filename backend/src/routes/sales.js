@@ -4,7 +4,8 @@ const { authenticate } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
 const { db } = require('../db');
 const { createEvent } = require('../services/eventsService');
-const { confirmSalePayment, createSale, getCashClosing, getSaleById, listPendingPayments } = require('../services/salesService');
+const { confirmSalePayment, createSale, getCashClosing, getSaleById, listPendingPayments, saveCashClosing } = require('../services/salesService');
+const { recordAudit } = require('../services/auditService');
 
 const router = express.Router();
 
@@ -35,6 +36,12 @@ const paymentConfirmationSchema = z.object({
   message: 'Escolha o metodo de pagamento.'
 });
 
+const closingSchema = z.object({
+  date: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  event_id: z.preprocess((value) => value === '' || value === undefined || value === null ? undefined : value, z.coerce.number().int().positive().optional()),
+  notes: z.string().trim().max(1000).optional().nullable()
+});
+
 router.use(authenticate, requireScreen('sales'));
 
 router.get('/events', (req, res) => {
@@ -51,6 +58,14 @@ router.get('/events', (req, res) => {
 router.post('/events', requireScreen('dashboard'), (req, res, next) => {
   try {
     const event = createEvent(eventSchema.parse(req.body));
+    recordAudit({
+      req,
+      action: 'event.create',
+      entityType: 'event',
+      entityId: event.id,
+      summary: `Evento registrado: ${event.name}`,
+      metadata: event
+    });
     return res.status(201).json(event);
   } catch (error) {
     return next(error);
@@ -67,6 +82,28 @@ router.get('/closing', (req, res, next) => {
       date: req.query.date,
       event_id: req.query.event_id
     }));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/closing', (req, res, next) => {
+  try {
+    const payload = closingSchema.parse(req.body);
+    const closing = saveCashClosing(payload, req.user.id);
+    recordAudit({
+      req,
+      action: 'sales.closing.save',
+      entityType: 'cash_closing',
+      entityId: closing.closing_record_id,
+      summary: `Fechamento registrado: ${closing.event ? closing.event.name : closing.date}`,
+      metadata: {
+        date: closing.date,
+        event_id: closing.event?.id || null,
+        summary: closing.summary
+      }
+    });
+    return res.status(201).json(closing);
   } catch (error) {
     return next(error);
   }
@@ -111,6 +148,14 @@ router.patch('/:id/payment', (req, res, next) => {
   try {
     const payload = paymentConfirmationSchema.parse(req.body);
     const sale = confirmSalePayment(Number(req.params.id), payload.payment_method || payload.pagamento, req.user.id);
+    recordAudit({
+      req,
+      action: 'sales.payment.confirm',
+      entityType: 'sale',
+      entityId: sale.id,
+      summary: `Pagamento confirmado: venda #${sale.id}`,
+      metadata: { payment_method: sale.payment_method, total: sale.total }
+    });
     return res.json(sale);
   } catch (error) {
     return next(error);
@@ -120,6 +165,14 @@ router.patch('/:id/payment', (req, res, next) => {
 router.post('/', (req, res, next) => {
   try {
     const sale = createSale(saleSchema.parse(req.body), req.user);
+    recordAudit({
+      req,
+      action: 'sales.create',
+      entityType: 'sale',
+      entityId: sale.id,
+      summary: `Venda registrada: #${sale.id}`,
+      metadata: { total: sale.total, payment_method: sale.payment_method, payment_status: sale.payment_status }
+    });
     return res.status(201).json(sale);
   } catch (error) {
     return next(error);

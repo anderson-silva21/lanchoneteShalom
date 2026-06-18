@@ -4,6 +4,7 @@ const { authenticate } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
 const { confirmSalePayment } = require('../services/salesService');
 const { roundQuantity, sameQuantity, setProductStock } = require('../services/stockService');
+const { recordAudit } = require('../services/auditService');
 
 const router = express.Router();
 
@@ -164,7 +165,16 @@ router.patch('/produtos/:id', requireScreen('products'), (req, res) => {
   });
 
   transaction();
-  return res.json(db.prepare('SELECT * FROM v_products_sheet WHERE id = ?').get(req.params.id));
+  const updated = db.prepare('SELECT * FROM v_products_sheet WHERE id = ?').get(req.params.id);
+  recordAudit({
+    req,
+    action: 'spreadsheet.product.update',
+    entityType: 'product',
+    entityId: params.id,
+    summary: `Produto atualizado pela planilha: ${updated.produto}`,
+    metadata: { before: current, requested: req.body }
+  });
+  return res.json(updated);
 });
 
 router.patch('/vendas/:id', requireScreen('sales'), (req, res) => {
@@ -180,6 +190,13 @@ router.patch('/vendas/:id', requireScreen('sales'), (req, res) => {
     if (!requirePrivilegedForNotes(req, res)) return undefined;
     const result = db.prepare('UPDATE sales SET notes = ? WHERE id = ?').run(normalizeNotes(requestedNotes), req.params.id);
     if (!result.changes) return res.status(404).json({ message: 'Venda nao encontrada.' });
+    recordAudit({
+      req,
+      action: 'spreadsheet.sale.notes.update',
+      entityType: 'sale',
+      entityId: req.params.id,
+      summary: `Observacao atualizada na venda #${req.params.id}`
+    });
   }
 
   if (!hasPaymentUpdate) {
@@ -194,7 +211,16 @@ router.patch('/vendas/:id', requireScreen('sales'), (req, res) => {
   }
 
   confirmSalePayment(Number(req.params.id), paymentMethod, req.user.id);
-  return res.json(db.prepare('SELECT * FROM v_sales_sheet WHERE venda_id = ?').get(req.params.id));
+  const sale = db.prepare('SELECT * FROM v_sales_sheet WHERE venda_id = ?').get(req.params.id);
+  recordAudit({
+    req,
+    action: 'spreadsheet.sale.payment.confirm',
+    entityType: 'sale',
+    entityId: req.params.id,
+    summary: `Pagamento confirmado pela planilha: venda #${req.params.id}`,
+    metadata: { payment_method: paymentMethod }
+  });
+  return res.json(sale);
 });
 
 router.patch('/movimentacoes/:id', (req, res) => {
@@ -205,7 +231,15 @@ router.patch('/movimentacoes/:id', (req, res) => {
   const result = db.prepare('UPDATE inventory_movements SET notes = ? WHERE id = ?').run(normalizeNotes(requestedNotes), req.params.id);
   if (!result.changes) return res.status(404).json({ message: 'Movimentacao nao encontrada.' });
 
-  return res.json(db.prepare('SELECT * FROM v_movements_sheet WHERE id = ?').get(req.params.id));
+  const movement = db.prepare('SELECT * FROM v_movements_sheet WHERE id = ?').get(req.params.id);
+  recordAudit({
+    req,
+    action: 'spreadsheet.movement.notes.update',
+    entityType: 'inventory_movement',
+    entityId: req.params.id,
+    summary: `Observacao atualizada na movimentacao #${req.params.id}`
+  });
+  return res.json(movement);
 });
 
 module.exports = router;

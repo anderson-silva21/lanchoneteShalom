@@ -1,4 +1,4 @@
-import { Bell, Clipboard, DatabaseZap, ExternalLink, KeyRound, Moon, PackagePlus, RotateCcw, Send, ShieldCheck, Smartphone, Trash2, UserPlus, Users } from 'lucide-react'
+import { Activity, Bell, Clipboard, DatabaseZap, ExternalLink, HardDrive, KeyRound, ListChecks, Moon, PackagePlus, RotateCcw, Save, Send, ShieldCheck, Smartphone, Trash2, UserPlus, Users } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../services/api'
 import { decimal, formatDateTime } from '../utils/formatters'
@@ -10,6 +10,18 @@ const roleOptions = [
   { value: 'admin', label: 'Admin' }
 ]
 
+const permissionRows = [
+  ['dashboard', 'Dashboard', ['admin', 'finance']],
+  ['setup', 'Carga inicial', ['admin', 'manager', 'finance']],
+  ['sales', 'PDV', ['admin', 'manager', 'cashier', 'finance']],
+  ['payments', 'Pagamentos', ['admin', 'manager', 'cashier', 'finance']],
+  ['products', 'Produtos', ['admin', 'manager', 'finance']],
+  ['inventory', 'Inventario', ['admin', 'manager', 'finance']],
+  ['sheet', 'Planilha', ['admin', 'manager', 'cashier', 'finance']],
+  ['reports', 'Relatorios', ['admin', 'finance']],
+  ['settings', 'Sistema', ['admin']]
+]
+
 function getDisplayError(err) {
   const issue = err.payload?.issues?.[0]
   if (issue?.path?.includes('role')) return 'Perfil invalido. Atualize/reinicie o backend e tente novamente.'
@@ -19,6 +31,13 @@ function getDisplayError(err) {
 
 function roleLabel(role) {
   return roleOptions.find((item) => item.value === role)?.label || role
+}
+
+function formatBytes(value) {
+  const bytes = Number(value || 0)
+  if (bytes < 1024) return `${decimal.format(bytes)} B`
+  if (bytes < 1024 * 1024) return `${decimal.format(bytes / 1024)} KB`
+  return `${decimal.format(bytes / 1024 / 1024)} MB`
 }
 
 export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false, onSetupEnabledChange = () => {}, onChanged = () => {} }) {
@@ -35,7 +54,18 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
   const [deletingUserId, setDeletingUserId] = useState(null)
   const [savingInitialLoad, setSavingInitialLoad] = useState(false)
   const [telegramStatus, setTelegramStatus] = useState(null)
+  const [telegramDraft, setTelegramDraft] = useState({
+    enabled: false,
+    chat_id: '',
+    group_url: '',
+    interval_minutes: 360,
+    max_items: 8,
+    ignored_missing_expiration_categories: 'Descartaveis'
+  })
+  const [health, setHealth] = useState(null)
+  const [auditLogs, setAuditLogs] = useState([])
   const [testingTelegram, setTestingTelegram] = useState(false)
+  const [savingTelegram, setSavingTelegram] = useState(false)
 
   const loadStatus = useCallback(async () => {
     try {
@@ -57,7 +87,32 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
 
   const loadTelegramStatus = useCallback(async () => {
     try {
-      setTelegramStatus(await api.telegramAlertsStatus())
+      const nextStatus = await api.telegramAlertsStatus()
+      setTelegramStatus(nextStatus)
+      setTelegramDraft({
+        enabled: Boolean(nextStatus.enabled),
+        chat_id: '',
+        group_url: nextStatus.group_url || '',
+        interval_minutes: nextStatus.interval_minutes || 360,
+        max_items: nextStatus.max_items || 8,
+        ignored_missing_expiration_categories: (nextStatus.ignored_missing_expiration_categories || []).join(', ')
+      })
+    } catch (err) {
+      setMessage(err.message)
+    }
+  }, [])
+
+  const loadHealth = useCallback(async () => {
+    try {
+      setHealth(await api.systemHealth())
+    } catch (err) {
+      setMessage(err.message)
+    }
+  }, [])
+
+  const loadAuditLogs = useCallback(async () => {
+    try {
+      setAuditLogs(await api.auditLogs({ limit: 40 }))
     } catch (err) {
       setMessage(err.message)
     }
@@ -67,7 +122,9 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
     loadStatus()
     loadUsers()
     loadTelegramStatus()
-  }, [loadStatus, loadTelegramStatus, loadUsers])
+    loadHealth()
+    loadAuditLogs()
+  }, [loadAuditLogs, loadHealth, loadStatus, loadTelegramStatus, loadUsers])
 
   async function createUser(event) {
     event.preventDefault()
@@ -171,6 +228,7 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
       const result = await api.updateInitialLoad({ enabled: !initialLoadEnabled })
       setStatus(result)
       onSetupEnabledChange(Boolean(result.setup_enabled))
+      loadAuditLogs()
       setMessage(result.setup_enabled ? 'Carga inicial habilitada.' : 'Carga inicial desabilitada.')
     } catch (err) {
       setMessage(err.message)
@@ -185,11 +243,36 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
     try {
       const result = await api.testTelegramAlerts()
       setTelegramStatus(result.status)
+      loadAuditLogs()
       setMessage(result.sent ? 'Alerta Telegram enviado.' : 'Nenhum alerta enviado.')
     } catch (err) {
       setMessage(err.message)
     } finally {
       setTestingTelegram(false)
+    }
+  }
+
+  async function saveTelegramSettings(event) {
+    event.preventDefault()
+    setMessage('')
+    setSavingTelegram(true)
+    try {
+      const nextStatus = await api.updateTelegramAlerts({
+        enabled: telegramDraft.enabled,
+        chat_id: telegramDraft.chat_id,
+        group_url: telegramDraft.group_url,
+        interval_minutes: telegramDraft.interval_minutes,
+        max_items: telegramDraft.max_items,
+        ignored_missing_expiration_categories: telegramDraft.ignored_missing_expiration_categories
+      })
+      setTelegramStatus(nextStatus)
+      setTelegramDraft((current) => ({ ...current, chat_id: '' }))
+      loadAuditLogs()
+      setMessage('Configuracao Telegram salva.')
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setSavingTelegram(false)
     }
   }
 
@@ -201,6 +284,8 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
     { icon: KeyRound, label: 'Sessao', value: user?.username || '-' },
     { icon: DatabaseZap, label: 'Produtos', value: decimal.format(counts.products || 0) },
     { icon: Bell, label: 'Telegram', value: telegramLabel },
+    { icon: HardDrive, label: 'Banco', value: health ? formatBytes(health.database?.size) : '-' },
+    { icon: Activity, label: 'Saude', value: health?.ok ? 'Ok' : health ? 'Atencao' : '-' },
     { icon: Smartphone, label: 'PWA', value: 'Instalavel' }
   ]
 
@@ -249,7 +334,7 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
             <span className={`block h-4 w-4 rounded-full bg-white transition ${initialLoadEnabled ? 'translate-x-5' : ''}`} />
           </span>
         </button>
-        <div className="mt-3 rounded-xl border border-shalom-gold/30 p-3 dark:border-shalom-gold/10">
+        <form className="mt-3 rounded-xl border border-shalom-gold/30 p-3 dark:border-shalom-gold/10" onSubmit={saveTelegramSettings}>
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="flex items-center gap-2 font-medium">
@@ -282,6 +367,75 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
               <dd className="font-semibold">{telegramStatus?.chat_id_preview || '-'}</dd>
             </div>
           </dl>
+          <div className="mt-3 grid gap-2">
+            <label className="flex items-center justify-between gap-3 rounded-lg border border-line/70 px-3 py-2 text-sm font-medium dark:border-shalom-gold/10">
+              <span>Envio automatico</span>
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-shalom-orange"
+                checked={telegramDraft.enabled}
+                onChange={(event) => setTelegramDraft({ ...telegramDraft, enabled: event.target.checked })}
+              />
+            </label>
+            <label className="text-xs font-medium">
+              Chat ID
+              <input
+                className="mission-input mt-1 w-full px-3 py-2"
+                value={telegramDraft.chat_id}
+                onChange={(event) => setTelegramDraft({ ...telegramDraft, chat_id: event.target.value })}
+                placeholder={telegramStatus?.chat_id_preview || 'Manter atual'}
+              />
+            </label>
+            <label className="text-xs font-medium">
+              Link do grupo
+              <input
+                className="mission-input mt-1 w-full px-3 py-2"
+                value={telegramDraft.group_url}
+                onChange={(event) => setTelegramDraft({ ...telegramDraft, group_url: event.target.value })}
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-xs font-medium">
+                Intervalo min.
+                <input
+                  type="number"
+                  min="5"
+                  max="1440"
+                  className="mission-input mt-1 w-full px-3 py-2"
+                  value={telegramDraft.interval_minutes}
+                  onChange={(event) => setTelegramDraft({ ...telegramDraft, interval_minutes: Number(event.target.value) })}
+                />
+              </label>
+              <label className="text-xs font-medium">
+                Itens por bloco
+                <input
+                  type="number"
+                  min="3"
+                  max="30"
+                  className="mission-input mt-1 w-full px-3 py-2"
+                  value={telegramDraft.max_items}
+                  onChange={(event) => setTelegramDraft({ ...telegramDraft, max_items: Number(event.target.value) })}
+                />
+              </label>
+            </div>
+            <label className="text-xs font-medium">
+              Categorias ignoradas sem validade
+              <input
+                className="mission-input mt-1 w-full px-3 py-2"
+                value={telegramDraft.ignored_missing_expiration_categories}
+                onChange={(event) => setTelegramDraft({ ...telegramDraft, ignored_missing_expiration_categories: event.target.value })}
+                placeholder="Descartaveis, Insumos"
+              />
+            </label>
+            <button
+              type="submit"
+              className="mission-btn mission-btn-gold flex w-full items-center justify-center gap-2 px-3 py-2 text-sm font-semibold"
+              disabled={savingTelegram}
+            >
+              <Save size={16} />
+              {savingTelegram ? 'Salvando...' : 'Salvar Telegram'}
+            </button>
+          </div>
           <a
             className={`mission-btn mt-3 flex w-full items-center justify-center gap-2 border border-line/80 px-3 py-2 text-sm font-semibold hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10 ${telegramStatus?.group_url ? '' : 'pointer-events-none opacity-55'}`}
             href={telegramStatus?.group_url || '#'}
@@ -291,7 +445,7 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
             <ExternalLink size={16} />
             Entrar no grupo do Telegram
           </a>
-        </div>
+        </form>
       </aside>
 
       <section className="mission-panel p-4 xl:col-span-2">
@@ -420,6 +574,105 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
               ) : null}
             </tbody>
           </table>
+        </div>
+      </section>
+
+      <section className="mission-panel p-4 xl:col-span-2">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex items-center gap-2">
+            <Activity size={20} />
+            <div>
+              <h2 className="font-display text-lg font-semibold">Saude do sistema</h2>
+              <p className="mission-muted text-sm">{health?.now ? `Atualizado em ${formatDateTime(health.now)}` : 'Carregando status'}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="mission-btn border border-line/80 px-4 py-2 text-sm font-semibold hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10"
+            onClick={() => {
+              loadHealth()
+              loadAuditLogs()
+            }}
+          >
+            Atualizar
+          </button>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {[
+            ['Status', health?.ok ? 'Ok' : health ? 'Atencao' : '-'],
+            ['Versao', health?.version || '-'],
+            ['Uptime', health?.uptime_seconds ? `${decimal.format(Math.round(health.uptime_seconds / 60))} min` : '-'],
+            ['Backup recente', health?.backup?.last_backup ? formatDateTime(health.backup.last_backup.created_at) : '-'],
+            ['Banco', health?.database ? formatBytes(health.database.size) : '-'],
+            ['WAL', health?.database ? formatBytes(health.database.wal_size) : '-'],
+            ['Auditoria', health?.audit ? decimal.format(health.audit.total) : '-'],
+            ['Ambiente', health?.env || '-']
+          ].map(([label, value]) => (
+            <div key={label} className="mission-card px-3 py-2 text-sm">
+              <span className="mission-muted block text-xs">{label}</span>
+              <strong className="mt-1 block break-words">{value}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid gap-5 xl:col-span-2 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <div className="mission-panel p-4">
+          <div className="flex items-center gap-2">
+            <ShieldCheck size={20} />
+            <h2 className="font-display text-lg font-semibold">Permissoes</h2>
+          </div>
+          <div className="mt-4 overflow-x-auto scrollbar-thin">
+            <table className="min-w-[620px] w-full border-separate border-spacing-0 text-left text-sm">
+              <thead>
+                <tr className="text-xs uppercase tracking-[0.12em] text-shalom-blue/70 dark:text-shalom-gold/80">
+                  <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Tela</th>
+                  {roleOptions.map((role) => (
+                    <th key={role.value} className="border-b border-line px-3 py-2 text-center dark:border-shalom-gold/10">{role.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {permissionRows.map(([key, label, roles]) => (
+                  <tr key={key}>
+                    <td className="border-b border-line/80 px-3 py-2 font-semibold dark:border-shalom-gold/10">{label}</td>
+                    {roleOptions.map((role) => (
+                      <td key={role.value} className="border-b border-line/80 px-3 py-2 text-center dark:border-shalom-gold/10">
+                        {roles.includes(role.value) ? 'Sim' : '-'}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="mission-panel p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <ListChecks size={20} />
+              <div>
+                <h2 className="font-display text-lg font-semibold">Auditoria recente</h2>
+                <p className="mission-muted text-sm">{decimal.format(auditLogs.length)} registros carregados</p>
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 max-h-80 overflow-y-auto scrollbar-thin">
+            {auditLogs.length ? auditLogs.map((log) => (
+              <article key={log.id} className="border-b border-line/70 py-3 text-sm dark:border-shalom-gold/10">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">{log.summary}</p>
+                    <p className="mission-muted mt-1">{log.username || '-'} - {log.action}</p>
+                  </div>
+                  <span className="mission-muted whitespace-nowrap text-xs">{formatDateTime(log.created_at)}</span>
+                </div>
+              </article>
+            )) : (
+              <p className="mission-muted text-sm">Nenhum registro de auditoria.</p>
+            )}
+          </div>
         </div>
       </section>
 

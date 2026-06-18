@@ -167,7 +167,7 @@ function App() {
     products: <ProductManager refreshKey={refreshKey} onChanged={refresh} intent={productIntent} />,
     inventory: <PostEventInventory refreshKey={refreshKey} onChanged={refresh} />,
     sheet: <SpreadsheetView refreshKey={refreshKey} onChanged={refresh} user={user} />,
-    reports: <ReportsView />,
+    reports: <ReportsView user={user} />,
     settings: <SettingsView user={user} darkMode={darkMode} setDarkMode={setDarkMode} setupEnabled={setupEnabled} onSetupEnabledChange={setSetupEnabled} onChanged={refresh} />
   }
 

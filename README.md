@@ -53,8 +53,13 @@ Login inicial:
 - Login com niveis `admin`, `manager`, `finance` e `cashier`.
 - Administrador cria usuarios ativos, gera senha inicial aleatoria, reseta senhas e exclui acessos ativos.
 - Primeiro acesso com senha temporaria exige troca de senha antes de abrir o sistema.
-- Backup manual do banco SQLite.
+- Backup manual, backup automatico, backup pre-migracao e restauracao controlada do banco SQLite.
+- Auditoria de acoes criticas: usuarios, produtos, estoque, vendas, pagamentos, fechamentos, Telegram e reset de dados.
+- Saude do sistema em `Sistema`: versao, integridade do banco, tamanho dos arquivos, ultimo backup e status do Telegram.
+- Historico por produto com movimentacoes, vendas e auditoria.
+- Fechamento de caixa/evento com registro formal do resumo.
 - Alertas via Telegram para estoque baixo, validades, lotes sem validade e pagamentos pendentes.
+- Configuracao dos alertas Telegram pela tela `Sistema`, mantendo o token do bot no `.env`.
 - Limpeza administrativa de dados operacionais em Sistema.
 - Modo escuro e PWA instalavel.
 
@@ -64,7 +69,15 @@ Login inicial:
 2. Em `Sistema`, habilite `Carga inicial`.
 3. Abra `Carga inicial`.
 4. Cadastre cada produto selecionando a categoria padrao, unidade, custo, preco, estoque minimo, quantidade real e validade quando existir. Se o item foi doado, marque a opcao de doacao para registrar custo zero.
-5. Use `Sistema > Base de dados > Zerar dados` se precisar apagar produtos, lotes, vendas, combos, eventos, movimentos e inventarios mantendo os usuarios.
+5. Se preferir, importe um CSV na propria tela de `Carga inicial`. Cabecalho recomendado:
+
+```csv
+produto;categoria;unidade;quantidade;custo;doacao;venda;minimo;fornecedor;validade
+Agua 500ml;Bebidas;garrafa;24;1,20;nao;3,00;6;Distribuidor;2026-12-31
+Guardanapo;Descartaveis;pacote;10;0;sim;0;2;;
+```
+
+6. Use `Sistema > Base de dados > Zerar dados` se precisar apagar produtos, lotes, vendas, combos, eventos, movimentos e inventarios mantendo os usuarios. Antes da limpeza o backend cria um backup de seguranca automaticamente.
 
 Tambem e possivel limpar a base pelo terminal:
 
@@ -81,6 +94,10 @@ PORT=4000
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 JWT_SECRET=troque-este-segredo
 DB_PATH=../database/lanchonete.sqlite
+AUTO_BACKUP_ENABLED=true
+AUTO_BACKUP_INTERVAL_HOURS=24
+AUTO_BACKUP_RETENTION=14
+BACKUP_BEFORE_MIGRATIONS=true
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
 TELEGRAM_GROUP_URL=
@@ -90,9 +107,17 @@ TELEGRAM_ALERT_MAX_ITEMS=8
 TELEGRAM_IGNORE_MISSING_EXPIRATION_CATEGORIES=Descartaveis
 ```
 
-Para ativar o robo do Telegram, crie um bot com o BotFather, envie uma mensagem para o bot ou adicione-o ao grupo desejado, preencha `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` e `TELEGRAM_GROUP_URL`, reinicie o backend e use `Sistema > Alertas Telegram > Enviar teste`.
+Para ativar o robo do Telegram, crie um bot com o BotFather, envie uma mensagem para o bot ou adicione-o ao grupo desejado, preencha `TELEGRAM_BOT_TOKEN`, reinicie o backend e configure os demais campos em `Sistema > Alertas Telegram`.
 O `TELEGRAM_ALERT_MAX_ITEMS` controla quantos itens entram em cada mensagem de detalhe; quando houver mais itens, o sistema envia mensagens adicionais em vez de cortar o alerta. A lista `TELEGRAM_IGNORE_MISSING_EXPIRATION_CATEGORIES` evita alertas de validade para categorias sem vencimento real, como descartaveis.
 Se o grupo do Telegram virar supergrupo, o `TELEGRAM_CHAT_ID` muda e normalmente passa a comecar com `-100`. Em deploy com PM2, apos alterar `backend/.env`, reinicie com `pm2 restart lanchonete-backend --update-env` e confira em `Sistema > Alertas Telegram` se o chat id carregado termina com os mesmos digitos do valor novo.
+
+## Operacao segura
+
+- Antes de migracoes destrutivas, o backend cria `database/backups/lanchonete-pre-migration-*.sqlite`.
+- Backups manuais e restauracao ficam em `Relatorios > Backups` para administradores.
+- A restauracao cria um backup `pre-restore`, substitui o SQLite e encerra o processo para o PM2/subprocesso iniciar novamente com o banco restaurado.
+- A auditoria recente fica em `Sistema`; registros completos podem ser consultados pela API `/api/system/audit-logs`.
+- O fechamento de caixa/evento fica em `Pagamentos > Fechamento`, com data, evento opcional e observacoes.
 
 No frontend, crie `frontend/.env` apenas se quiser forcar outro endereco de API:
 
