@@ -341,7 +341,6 @@ export function SalesTerminal({ onSaleComplete }) {
             <option value="pix">Pix</option>
             <option value="cartao">Cartao</option>
             <option value="dinheiro">Dinheiro</option>
-            <option value="delivery">Delivery</option>
             <option value="pagamento_pendente">Pagamento pendente</option>
           </select>
         </label>

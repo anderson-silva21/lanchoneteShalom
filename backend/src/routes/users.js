@@ -7,12 +7,12 @@ const { requireScreen } = require('../middleware/accessControl');
 const { generateTemporaryPassword } = require('../utils/passwords');
 
 const router = express.Router();
-const roles = new Set(['admin', 'manager', 'cashier']);
+const roles = new Set(['admin', 'manager', 'cashier', 'finance']);
 
 const userSchema = z.object({
   name: z.string().trim().min(2),
   username: z.string().trim().toLowerCase().regex(/^[a-z0-9._-]{3,40}$/),
-  role: z.enum(['admin', 'manager', 'cashier'])
+  role: z.enum(['admin', 'manager', 'cashier', 'finance'])
 });
 
 function publicUser(row) {

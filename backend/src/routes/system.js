@@ -31,7 +31,7 @@ function getSetupStatus() {
 
 router.use(authenticate);
 
-router.get('/setup-status', requireRole('admin', 'manager'), (req, res) => {
+router.get('/setup-status', requireRole('admin', 'manager', 'finance'), (req, res) => {
   return res.json(getSetupStatus());
 });
 

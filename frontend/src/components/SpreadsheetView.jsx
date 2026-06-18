@@ -6,11 +6,10 @@ const paymentLabels = {
   pix: 'Pix',
   cartao: 'Cartao',
   dinheiro: 'Dinheiro',
-  delivery: 'Delivery',
   pagamento_pendente: 'Pagamento pendente'
 }
 
-const confirmedPaymentMethods = ['pix', 'cartao', 'dinheiro', 'delivery']
+const confirmedPaymentMethods = ['pix', 'cartao', 'dinheiro']
 
 const paymentStatusLabels = {
   pendente: 'Pendente',
@@ -32,9 +31,9 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
   const [query, setQuery] = useState('')
   const [message, setMessage] = useState('')
   const [paymentEditingRows, setPaymentEditingRows] = useState({})
-  const isAdmin = user?.role === 'admin'
-  const canEditProducts = user?.role === 'admin' || user?.role === 'manager'
-  const canConfirmPayments = ['admin', 'manager', 'cashier'].includes(user?.role)
+  const canEditNotes = ['admin', 'finance'].includes(user?.role)
+  const canEditProducts = ['admin', 'manager', 'finance'].includes(user?.role)
+  const canConfirmPayments = ['admin', 'manager', 'cashier', 'finance'].includes(user?.role)
 
   useEffect(() => {
     api.sheets().then(setSheets).catch((err) => setMessage(err.message))
@@ -70,8 +69,8 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
   function hasActionColumn() {
     return (
       (activeSheet === 'produtos' && canEditProducts)
-      || (activeSheet === 'vendas' && (canConfirmPayments || isAdmin))
-      || (activeSheet === 'movimentacoes' && isAdmin)
+      || (activeSheet === 'vendas' && canConfirmPayments)
+      || (activeSheet === 'movimentacoes' && canEditNotes)
     )
   }
 
@@ -89,7 +88,7 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
         const payload = {}
         const shouldConfirmPayment = isPendingSale(row) && row.status_pagamento === 'pago' && row.pagamento !== 'pagamento_pendente'
 
-        if (isAdmin) payload.observacoes = row.observacoes ?? ''
+        if (canEditNotes) payload.observacoes = row.observacoes ?? ''
         if (shouldConfirmPayment) {
           payload.pagamento = row.pagamento
           payload.status_pagamento = row.status_pagamento
@@ -113,8 +112,8 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
       }
 
       if (activeSheet === 'movimentacoes') {
-        if (!isAdmin) {
-          setMessage('Somente administradores podem alterar observacoes.')
+        if (!canEditNotes) {
+          setMessage('Somente administradores e financeiro podem alterar observacoes.')
           return
         }
 
@@ -177,7 +176,7 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
                   const editable = canEditProducts && activeSheet === 'produtos' && !['id', 'status_estoque', 'status_validade', 'atualizado_em'].includes(column)
                   const canConfirmPayment = canConfirmPayments && isPendingSale(row) && column === 'pagamento'
                   const canUpdatePaymentStatus = canConfirmPayments && isPendingSale(row) && column === 'status_pagamento'
-                  const canEditObservation = isAdmin && ['vendas', 'movimentacoes'].includes(activeSheet) && column === 'observacoes'
+                  const canEditObservation = canEditNotes && ['vendas', 'movimentacoes'].includes(activeSheet) && column === 'observacoes'
                   return (
                     <td key={column} className="whitespace-nowrap border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">
                       {editable ? (
@@ -216,17 +215,17 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
                 {activeSheet === 'vendas' && canConfirmPayments ? (
                   <td className="border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">
                     {isPendingSale(row) ? (
-                      <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 disabled:cursor-not-allowed disabled:opacity-45 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => saveRow(row)} title={row.status_pagamento === 'pago' && row.pagamento !== 'pagamento_pendente' ? 'Confirmar pagamento' : isAdmin ? 'Salvar observacao' : 'Marque como pago e escolha o metodo'} disabled={!isAdmin && (row.status_pagamento !== 'pago' || row.pagamento === 'pagamento_pendente')}>
+                      <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 disabled:cursor-not-allowed disabled:opacity-45 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => saveRow(row)} title={row.status_pagamento === 'pago' && row.pagamento !== 'pagamento_pendente' ? 'Confirmar pagamento' : canEditNotes ? 'Salvar observacao' : 'Marque como pago e escolha o metodo'} disabled={!canEditNotes && (row.status_pagamento !== 'pago' || row.pagamento === 'pagamento_pendente')}>
                         <Save size={16} />
                       </button>
-                    ) : isAdmin ? (
+                    ) : canEditNotes ? (
                       <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => saveRow(row)} title="Salvar observacao">
                         <Save size={16} />
                       </button>
                     ) : null}
                   </td>
                 ) : null}
-                {activeSheet === 'movimentacoes' && isAdmin ? (
+                {activeSheet === 'movimentacoes' && canEditNotes ? (
                   <td className="border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">
                     <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => saveRow(row)} title="Salvar observacao">
                       <Save size={16} />

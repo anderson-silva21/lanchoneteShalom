@@ -6,10 +6,16 @@ import { decimal, formatDateTime } from '../utils/formatters'
 const roleOptions = [
   { value: 'cashier', label: 'Caixa' },
   { value: 'manager', label: 'Gerente' },
+  { value: 'finance', label: 'Financeiro' },
   { value: 'admin', label: 'Admin' }
 ]
 
-const telegramInviteUrl = 'https://t.me/+FhW7DOd1pLdjYWIx'
+function getDisplayError(err) {
+  const issue = err.payload?.issues?.[0]
+  if (issue?.path?.includes('role')) return 'Perfil invalido. Atualize/reinicie o backend e tente novamente.'
+  if (issue?.message) return issue.message
+  return err.message || 'Nao foi possivel completar a acao.'
+}
 
 function roleLabel(role) {
   return roleOptions.find((item) => item.value === role)?.label || role
@@ -22,6 +28,7 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
   const [generatedPassword, setGeneratedPassword] = useState(null)
   const [confirmation, setConfirmation] = useState('')
   const [message, setMessage] = useState('')
+  const [userMessage, setUserMessage] = useState('')
   const [resetting, setResetting] = useState(false)
   const [savingUser, setSavingUser] = useState(false)
   const [resettingUserId, setResettingUserId] = useState(null)
@@ -65,7 +72,14 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
   async function createUser(event) {
     event.preventDefault()
     setMessage('')
+    setUserMessage('')
     setGeneratedPassword(null)
+
+    if (!userDraft.name.trim() || !userDraft.username.trim()) {
+      setUserMessage('Informe nome e usuario para criar o acesso.')
+      return
+    }
+
     setSavingUser(true)
     try {
       const result = await api.createUser(userDraft)
@@ -76,9 +90,12 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
         username: result.user.username,
         password: result.temporary_password
       })
+      setUserMessage('Usuario criado.')
       setMessage('Usuario criado.')
     } catch (err) {
-      setMessage(err.message)
+      const displayError = getDisplayError(err)
+      setUserMessage(displayError)
+      setMessage(displayError)
     } finally {
       setSavingUser(false)
     }
@@ -266,8 +283,8 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
             </div>
           </dl>
           <a
-            className="mission-btn mt-3 flex w-full items-center justify-center gap-2 border border-line/80 px-3 py-2 text-sm font-semibold hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10"
-            href={telegramInviteUrl}
+            className={`mission-btn mt-3 flex w-full items-center justify-center gap-2 border border-line/80 px-3 py-2 text-sm font-semibold hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10 ${telegramStatus?.group_url ? '' : 'pointer-events-none opacity-55'}`}
+            href={telegramStatus?.group_url || '#'}
             target="_blank"
             rel="noreferrer"
           >
@@ -312,6 +329,7 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
               className="mission-input mt-1 w-full px-3 py-2"
               value={userDraft.name}
               onChange={(event) => setUserDraft({ ...userDraft, name: event.target.value })}
+              required
             />
           </label>
           <label className="text-sm font-medium">
@@ -320,6 +338,7 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
               className="mission-input mt-1 w-full px-3 py-2"
               value={userDraft.username}
               onChange={(event) => setUserDraft({ ...userDraft, username: event.target.value.toLowerCase() })}
+              required
             />
           </label>
           <label className="text-sm font-medium">
@@ -341,6 +360,11 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
             {savingUser ? 'Criando...' : 'Criar'}
           </button>
         </form>
+        {userMessage ? (
+          <p className="mt-3 rounded-xl border border-shalom-gold/25 bg-shalom-cream/60 px-3 py-2 text-sm font-medium text-shalom-deep dark:border-shalom-gold/10 dark:bg-white/10 dark:text-white" aria-live="polite">
+            {userMessage}
+          </p>
+        ) : null}
 
         <div className="mt-4 overflow-x-auto scrollbar-thin">
           <table className="min-w-[760px] w-full border-separate border-spacing-0 text-left text-sm">

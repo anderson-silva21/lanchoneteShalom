@@ -4,6 +4,7 @@ import {
   Boxes,
   CalendarClock,
   CalendarPlus,
+  ExternalLink,
   LineChart,
   PackagePlus,
   ReceiptText,
@@ -50,13 +51,12 @@ function createEmptyEventDraft() {
   }
 }
 
-const confirmedPaymentMethods = ['pix', 'cartao', 'dinheiro', 'delivery']
+const confirmedPaymentMethods = ['pix', 'cartao', 'dinheiro']
 
 const paymentLabels = {
   pix: 'Pix',
   cartao: 'Cartao',
-  dinheiro: 'Dinheiro',
-  delivery: 'Delivery'
+  dinheiro: 'Dinheiro'
 }
 
 function getPaymentLabel(value) {
@@ -118,7 +118,7 @@ function DashboardModal({ title, description, children, footer, onClose }) {
   )
 }
 
-export function Dashboard({ refreshKey, onNavigateToProducts }) {
+export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -249,9 +249,23 @@ export function Dashboard({ refreshKey, onNavigateToProducts }) {
   const missingExpirationProducts = data.missing_expiration_products || []
   const eventRevenue = data.event_revenue || []
   const pendingPayments = data.pending_payments || []
+  const canOpenTelegramGroup = user?.role === 'finance' && data.telegram_group_url
 
   return (
     <div className="space-y-5">
+      {canOpenTelegramGroup ? (
+        <section className="flex justify-end">
+          <a
+            className="mission-btn mission-btn-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold"
+            href={data.telegram_group_url}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <ExternalLink size={16} />
+            Acessar grupo do Telegram
+          </a>
+        </section>
+      ) : null}
       <section className="grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MetricCard icon={Banknote} label="Faturamento hoje" value={money.format(data.kpis.revenue_today)} detail={`${data.kpis.sales_today} vendas`} tone="green" />
         <MetricCard icon={ReceiptText} label="Ticket medio" value={money.format(data.kpis.average_ticket_today)} detail="Media do dia" tone="blue" />

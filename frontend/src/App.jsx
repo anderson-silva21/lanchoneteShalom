@@ -57,7 +57,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!user || user.password_must_change || !['admin', 'manager'].includes(user.role)) {
+    if (!user || user.password_must_change || !['admin', 'manager', 'finance'].includes(user.role)) {
       setSetupEnabled(false)
       return undefined
     }
@@ -160,7 +160,7 @@ function App() {
 
   const currentView = canAccessView(user.role, activeView, { setupEnabled }) ? activeView : defaultViewForRole(user.role, { setupEnabled })
   const views = {
-    dashboard: <Dashboard refreshKey={refreshKey} onNavigateToProducts={navigateToProducts} />,
+    dashboard: <Dashboard refreshKey={refreshKey} onNavigateToProducts={navigateToProducts} user={user} />,
     setup: <InitialLoadView refreshKey={refreshKey} onChanged={refresh} />,
     sales: <SalesTerminal onSaleComplete={refresh} />,
     payments: <PaymentsView refreshKey={refreshKey} onChanged={refresh} />,

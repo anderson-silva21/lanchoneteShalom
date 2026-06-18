@@ -210,7 +210,7 @@ router.get('/batches', (req, res) => {
   return res.json(listStockBatches({ productId, includeEmpty }));
 });
 
-router.patch('/batches/:id', requireRole('admin', 'manager'), (req, res) => {
+router.patch('/batches/:id', requireRole('admin', 'manager', 'finance'), (req, res) => {
   const payload = batchSchema.parse(req.body);
   return res.json(updateBatch({
     batchId: req.params.id,
@@ -245,7 +245,7 @@ router.get('/movements', (req, res) => {
   return res.json(movements);
 });
 
-router.post('/movements', requireRole('admin', 'manager'), (req, res) => {
+router.post('/movements', requireRole('admin', 'manager', 'finance'), (req, res) => {
   const payload = movementSchema.parse(req.body);
 
   const transaction = db.transaction(() => {
@@ -329,7 +329,7 @@ router.post('/movements', requireRole('admin', 'manager'), (req, res) => {
   return res.status(201).json(movement);
 });
 
-router.get('/post-event', requireRole('admin', 'manager'), (req, res) => {
+router.get('/post-event', requireRole('admin', 'manager', 'finance'), (req, res) => {
   const inventories = db.prepare(`
     SELECT
       i.id,
@@ -351,13 +351,13 @@ router.get('/post-event', requireRole('admin', 'manager'), (req, res) => {
   return res.json(inventories);
 });
 
-router.get('/post-event/:id', requireRole('admin', 'manager'), (req, res) => {
+router.get('/post-event/:id', requireRole('admin', 'manager', 'finance'), (req, res) => {
   const inventory = getPostEventInventory(req.params.id);
   if (!inventory) return res.status(404).json({ message: 'Inventario nao encontrado.' });
   return res.json(inventory);
 });
 
-router.post('/post-event', requireRole('admin', 'manager'), (req, res) => {
+router.post('/post-event', requireRole('admin', 'manager', 'finance'), (req, res) => {
   const payload = postEventInventorySchema.parse(req.body);
   const id = createPostEventInventory(payload, req.user.id);
   return res.status(201).json(getPostEventInventory(id));

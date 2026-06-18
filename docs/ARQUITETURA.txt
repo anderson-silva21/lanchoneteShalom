@@ -92,6 +92,7 @@ Pontos importantes
 - O backend é responsável por:
   - autenticação
   - gestao de usuarios ativos, exclusao logica de acessos e troca obrigatoria de senha temporaria
+  - perfis de acesso admin, manager, finance e cashier
   - configuracao administrativa para habilitar ou desabilitar a carga inicial
   - regras de venda e inventário, incluindo custo zero para produtos doados
   - alertas agendados via Telegram para estoque, validades e pagamentos pendentes

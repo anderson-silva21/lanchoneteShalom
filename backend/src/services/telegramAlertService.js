@@ -101,6 +101,10 @@ function getTelegramConfig() {
   };
 }
 
+function getTelegramGroupUrl() {
+  return String(process.env.TELEGRAM_GROUP_URL || 'https://t.me/+FhW7DOd1pLdjYWIx').trim();
+}
+
 function getLastSentAt() {
   const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(LAST_SENT_KEY);
   return row?.value || null;
@@ -487,6 +491,7 @@ function getTelegramAlertStatus() {
     configured: config.configured,
     enabled: config.enabled,
     chat_id_preview: maskChatId(config.chatId),
+    group_url: getTelegramGroupUrl(),
     interval_minutes: config.intervalMinutes,
     max_items: config.maxItems,
     ignored_missing_expiration_categories: config.ignoredMissingExpirationCategories,
@@ -527,6 +532,7 @@ function startTelegramAlertScheduler() {
 module.exports = {
   buildTelegramAlertMessage,
   buildTelegramAlertMessages,
+  getTelegramGroupUrl,
   getTelegramAlertStatus,
   sendTelegramAlertDigest,
   startTelegramAlertScheduler

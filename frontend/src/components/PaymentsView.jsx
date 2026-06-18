@@ -11,13 +11,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../services/api'
 import { formatDate, formatDateTime, money } from '../utils/formatters'
 
-const confirmedPaymentMethods = ['pix', 'cartao', 'dinheiro', 'delivery']
+const confirmedPaymentMethods = ['pix', 'cartao', 'dinheiro']
 
 const paymentLabels = {
   pix: 'Pix',
   cartao: 'Cartao',
   dinheiro: 'Dinheiro',
-  delivery: 'Delivery',
   pagamento_pendente: 'Pagamento pendente'
 }
 

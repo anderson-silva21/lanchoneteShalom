@@ -212,12 +212,74 @@ function fillMissingUsernames() {
   });
 }
 
+function ensureUserRoleSchema() {
+  if (!tableExists('users')) return;
+
+  const table = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get();
+  if (String(table?.sql || '').includes("'finance'")) return;
+
+  const foreignKeysEnabled = Number(db.pragma('foreign_keys', { simple: true })) === 1;
+  db.pragma('foreign_keys = OFF');
+
+  const migrate = db.transaction(() => {
+    db.exec(`
+      DROP TABLE IF EXISTS users_role_migration;
+
+      CREATE TABLE users_role_migration (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        username TEXT NOT NULL UNIQUE,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'cashier', 'finance')),
+        active INTEGER NOT NULL DEFAULT 1,
+        password_must_change INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      INSERT INTO users_role_migration (
+        id,
+        name,
+        username,
+        email,
+        password_hash,
+        role,
+        active,
+        password_must_change,
+        created_at
+      )
+      SELECT
+        id,
+        name,
+        username,
+        email,
+        password_hash,
+        role,
+        active,
+        password_must_change,
+        created_at
+      FROM users;
+
+      DROP TABLE users;
+      ALTER TABLE users_role_migration RENAME TO users;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
+    `);
+  });
+
+  try {
+    migrate();
+  } finally {
+    db.pragma(`foreign_keys = ${foreignKeysEnabled ? 'ON' : 'OFF'}`);
+  }
+}
+
 function runMigrations() {
   ensureAppSettingsSchema();
   addColumnIfMissing('users', 'username', 'TEXT');
   addColumnIfMissing('users', 'active', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing('users', 'password_must_change', 'INTEGER NOT NULL DEFAULT 0');
   fillMissingUsernames();
+  ensureUserRoleSchema();
   addColumnIfMissing('products', 'expiration_date', 'TEXT');
   addColumnIfMissing('products', 'is_donation', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('combos', 'is_promotion', 'INTEGER NOT NULL DEFAULT 0');

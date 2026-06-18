@@ -75,9 +75,9 @@ function normalizeNotes(value) {
   return String(value).trim() || null;
 }
 
-function requireAdminForNotes(req, res) {
-  if (req.user.role === 'admin') return true;
-  res.status(403).json({ message: 'Somente administradores podem alterar observacoes.' });
+function requirePrivilegedForNotes(req, res) {
+  if (['admin', 'finance'].includes(req.user.role)) return true;
+  res.status(403).json({ message: 'Somente administradores e financeiro podem alterar observacoes.' });
   return false;
 }
 
@@ -177,7 +177,7 @@ router.patch('/vendas/:id', requireScreen('sales'), (req, res) => {
   }
 
   if (hasNotesUpdate) {
-    if (!requireAdminForNotes(req, res)) return undefined;
+    if (!requirePrivilegedForNotes(req, res)) return undefined;
     const result = db.prepare('UPDATE sales SET notes = ? WHERE id = ?').run(normalizeNotes(requestedNotes), req.params.id);
     if (!result.changes) return res.status(404).json({ message: 'Venda nao encontrada.' });
   }
@@ -200,7 +200,7 @@ router.patch('/vendas/:id', requireScreen('sales'), (req, res) => {
 router.patch('/movimentacoes/:id', (req, res) => {
   const requestedNotes = getRequestedNotes(req.body);
   if (requestedNotes === undefined) return res.status(400).json({ message: 'Nenhum campo editavel enviado.' });
-  if (!requireAdminForNotes(req, res)) return undefined;
+  if (!requirePrivilegedForNotes(req, res)) return undefined;
 
   const result = db.prepare('UPDATE inventory_movements SET notes = ? WHERE id = ?').run(normalizeNotes(requestedNotes), req.params.id);
   if (!result.changes) return res.status(404).json({ message: 'Movimentacao nao encontrada.' });

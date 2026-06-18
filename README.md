@@ -50,7 +50,7 @@ Login inicial:
 - Cadastro de produtos com custo, preco, quantidade, estoque minimo, fornecedor, codigo, unidade e marcacao de doacao sem custo.
 - Planilha central com abas de produtos, vendas, itens vendidos, movimentacoes e indicadores.
 - Relatorios exportaveis em CSV, Excel e PDF.
-- Login com niveis `admin`, `manager` e `cashier`.
+- Login com niveis `admin`, `manager`, `finance` e `cashier`.
 - Administrador cria usuarios ativos, gera senha inicial aleatoria, reseta senhas e exclui acessos ativos.
 - Primeiro acesso com senha temporaria exige troca de senha antes de abrir o sistema.
 - Backup manual do banco SQLite.
@@ -83,13 +83,14 @@ JWT_SECRET=troque-este-segredo
 DB_PATH=../database/lanchonete.sqlite
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_ID=
+TELEGRAM_GROUP_URL=
 TELEGRAM_ALERTS_ENABLED=true
 TELEGRAM_ALERT_INTERVAL_MINUTES=360
 TELEGRAM_ALERT_MAX_ITEMS=8
 TELEGRAM_IGNORE_MISSING_EXPIRATION_CATEGORIES=Descartaveis
 ```
 
-Para ativar o robo do Telegram, crie um bot com o BotFather, envie uma mensagem para o bot ou adicione-o ao grupo desejado, preencha `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`, reinicie o backend e use `Sistema > Alertas Telegram > Enviar teste`.
+Para ativar o robo do Telegram, crie um bot com o BotFather, envie uma mensagem para o bot ou adicione-o ao grupo desejado, preencha `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` e `TELEGRAM_GROUP_URL`, reinicie o backend e use `Sistema > Alertas Telegram > Enviar teste`.
 O `TELEGRAM_ALERT_MAX_ITEMS` controla quantos itens entram em cada mensagem de detalhe; quando houver mais itens, o sistema envia mensagens adicionais em vez de cortar o alerta. A lista `TELEGRAM_IGNORE_MISSING_EXPIRATION_CATEGORIES` evita alertas de validade para categorias sem vencimento real, como descartaveis.
 Se o grupo do Telegram virar supergrupo, o `TELEGRAM_CHAT_ID` muda e normalmente passa a comecar com `-100`. Em deploy com PM2, apos alterar `backend/.env`, reinicie com `pm2 restart lanchonete-backend --update-env` e confira em `Sistema > Alertas Telegram` se o chat id carregado termina com os mesmos digitos do valor novo.
 
