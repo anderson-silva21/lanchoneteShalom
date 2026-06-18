@@ -10,6 +10,7 @@ const helmet = require('helmet');
 const { initDatabase, dbPath } = require('./db');
 const errorHandler = require('./middleware/errorHandler');
 const { assignRequestId, httpLogger } = require('./middleware/requestLogger');
+const { startAutomaticBackupScheduler } = require('./services/backupService');
 const { startTelegramAlertScheduler } = require('./services/telegramAlertService');
 
 const authRoutes = require('./routes/auth');
@@ -111,6 +112,7 @@ app.use(errorHandler);
 
 app.listen(port, '0.0.0.0', () => {
   console.log(`API pronta em http://localhost:${port}`);
+  startAutomaticBackupScheduler();
   startTelegramAlertScheduler();
 });
 //192.168.15.10/24

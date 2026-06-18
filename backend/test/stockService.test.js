@@ -11,7 +11,7 @@ const { db, initDatabase } = require('../src/db');
 const { getDashboardAnalytics } = require('../src/services/analyticsService');
 const { createCombo, listActiveCombos } = require('../src/services/comboService');
 const { createEvent } = require('../src/services/eventsService');
-const { confirmSalePayment, createSale } = require('../src/services/salesService');
+const { confirmSalePayment, createSale, getCashClosing, listPendingPayments } = require('../src/services/salesService');
 const { addStock, getProductStock, updateBatch } = require('../src/services/stockService');
 const { buildTelegramAlertMessage } = require('../src/services/telegramAlertService');
 
@@ -359,14 +359,18 @@ test('pagamento pendente exige cliente', () => {
   }, { id: userId }), /Informe a pessoa ou cliente/);
 });
 
-test('delivery nao e aceito como metodo de pagamento', () => {
+test('delivery e aceito como metodo de pagamento confirmado', () => {
   const product = createProduct({ name: 'Cafe' });
   addStock({ productId: product.id, quantity: 2, expirationDate: '2026-12-20', userId });
 
-  assert.throws(() => createSale({
+  const sale = createSale({
     payment_method: 'delivery',
     items: [{ product_id: product.id, quantity: 1 }]
-  }, { id: userId }), /Metodo de pagamento invalido/);
+  }, { id: userId });
+
+  assert.equal(sale.payment_method, 'delivery');
+  assert.equal(sale.payment_status, 'paid');
+  assert.ok(sale.payment_confirmed_at);
 });
 
 test('pagamento pendente aparece na dashboard e pode ser confirmado', () => {
@@ -389,9 +393,25 @@ test('pagamento pendente aparece na dashboard e pode ser confirmado', () => {
   assert.equal(dashboard.kpis.pending_payment_total, 8);
   assert.equal(dashboard.pending_payments[0].notes, 'Paga no proximo encontro');
 
+  const pendingPayments = listPendingPayments();
+  assert.equal(pendingPayments.length, 1);
+  assert.equal(pendingPayments[0].customer_name, 'Maria');
+  assert.equal(pendingPayments[0].total, 8);
+
+  const closingBefore = getCashClosing({ date: String(sale.created_at).slice(0, 10) });
+  assert.equal(closingBefore.summary.sales_count, 1);
+  assert.equal(closingBefore.summary.pending_total, 8);
+  assert.equal(closingBefore.summary.paid_total, 0);
+  assert.equal(closingBefore.pending_payments.length, 1);
+
   const confirmed = confirmSalePayment(sale.id, 'pix', userId);
   assert.equal(confirmed.payment_method, 'pix');
   assert.equal(confirmed.payment_status, 'paid');
+
+  const closingAfter = getCashClosing({ date: String(sale.created_at).slice(0, 10) });
+  assert.equal(closingAfter.summary.pending_total, 0);
+  assert.equal(closingAfter.summary.paid_total, 8);
+  assert.equal(closingAfter.payment_methods[0].payment_method, 'pix');
 
   const row = db.prepare('SELECT pagamento, status_pagamento, cliente FROM v_sales_sheet WHERE venda_id = ?').get(sale.id);
   assert.deepEqual(row, {
