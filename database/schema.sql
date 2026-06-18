@@ -18,6 +18,21 @@ CREATE TABLE IF NOT EXISTS app_settings (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER REFERENCES users(id),
+  username TEXT,
+  role TEXT,
+  action TEXT NOT NULL,
+  entity_type TEXT,
+  entity_id TEXT,
+  summary TEXT NOT NULL,
+  metadata TEXT,
+  ip TEXT,
+  request_id TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS product_categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
@@ -132,6 +147,17 @@ CREATE TABLE IF NOT EXISTS events (
   UNIQUE (name, event_date)
 );
 
+CREATE TABLE IF NOT EXISTS cash_closings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  closing_date TEXT NOT NULL,
+  event_id INTEGER REFERENCES events(id),
+  summary_json TEXT NOT NULL,
+  notes TEXT,
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (closing_date, event_id)
+);
+
 CREATE TABLE IF NOT EXISTS post_event_inventory_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   inventory_id INTEGER NOT NULL REFERENCES post_event_inventories(id) ON DELETE CASCADE,
@@ -152,9 +178,12 @@ CREATE TABLE IF NOT EXISTS post_event_inventory_items (
 CREATE INDEX IF NOT EXISTS idx_products_status ON products(active, category, stock_quantity);
 CREATE INDEX IF NOT EXISTS idx_stock_batches_product_expiration ON stock_batches(product_id, quantity_available, expiration_date);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_combos_active_expiration ON combos(active, expires_at);
 CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(created_at);
 CREATE INDEX IF NOT EXISTS idx_sales_event ON sales(event_id);
+CREATE INDEX IF NOT EXISTS idx_cash_closings_date ON cash_closings(closing_date, event_id);
 CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
 CREATE INDEX IF NOT EXISTS idx_movements_product_date ON inventory_movements(product_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_movements_batch_date ON inventory_movements(batch_id, created_at);

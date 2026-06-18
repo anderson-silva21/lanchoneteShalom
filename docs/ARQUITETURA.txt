@@ -15,7 +15,7 @@ Este projeto é um monorepo simples com duas partes principais:
      - usuarios administrativos (/api/users)
      - produtos, estoque e vendas, incluindo produtos recebidos por doacao sem custo
      - relatórios e exportação
-     - backup
+     - backup, restauracao e auditoria operacional
      - planilha central
 
 O root package.json orquestra ambos:
@@ -65,11 +65,13 @@ Padrões e separação de responsabilidades
   - Cada domínio tem sua própria rota, o que facilita manutenção.
 - backend/src/middleware/*
   - Logging, tratamento de erros e controle de requisições ficam centralizados.
-- backend/src/db.js
-  - Inicialização do banco e configuração de caminho do arquivo SQLite.
-  - Cria schema e usuarios iniciais, mas nao popula produtos, estoque, vendas, combos ou eventos ficticios.
-- frontend/src/components/*
-  - UI modularizada em componentes reutilizáveis.
+  - backend/src/db.js
+     - Inicialização do banco e configuração de caminho do arquivo SQLite.
+     - Cria schema e usuarios iniciais, mas nao popula produtos, estoque, vendas, combos ou eventos ficticios.
+     - Executa migracoes leves e cria backup pre-migracao antes de alteracoes destrutivas de schema.
+  - frontend/src/components/*
+     - UI modularizada em componentes reutilizáveis.
+     - Sistema concentra saude, permissao, auditoria e configuracoes administrativas.
 
 ---
 
@@ -96,12 +98,18 @@ Pontos importantes
   - configuracao administrativa para habilitar ou desabilitar a carga inicial
   - regras de venda e inventário, incluindo custo zero para produtos doados
   - alertas agendados via Telegram para estoque, validades e pagamentos pendentes
+  - configuracao dos alertas Telegram via banco, com .env como fallback para credenciais sensiveis
+  - auditoria de acoes criticas e historico por produto
+  - registro de fechamento de caixa/evento
+  - backup manual, automatico, pre-migracao e restauracao controlada
   - limpeza administrativa de dados operacionais para primeira carga real
   - exportação
 - O frontend é responsável por:
   - UI de PDV
   - menu de carga inicial do inventário real quando habilitado pelo admin
   - tela administrativa para verificar e testar alertas do Telegram
+  - tela administrativa para saude do sistema, matriz de permissoes e auditoria recente
+  - importacao CSV na carga inicial
   - dashboard e relatórios
   - fluxo de login e experiência do usuário
   - tela de troca obrigatoria de senha no primeiro acesso ou apos reset

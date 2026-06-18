@@ -13,6 +13,7 @@ const {
   setProductStock,
   updateBatch
 } = require('../services/stockService');
+const { recordAudit } = require('../services/auditService');
 
 const router = express.Router();
 
@@ -212,12 +213,21 @@ router.get('/batches', (req, res) => {
 
 router.patch('/batches/:id', requireRole('admin', 'manager', 'finance'), (req, res) => {
   const payload = batchSchema.parse(req.body);
-  return res.json(updateBatch({
+  const stock = updateBatch({
     batchId: req.params.id,
     expirationDate: payload.expiration_date,
     quantityAvailable: payload.quantity_available,
     userId: req.user.id
-  }));
+  });
+  recordAudit({
+    req,
+    action: 'inventory.batch.update',
+    entityType: 'product',
+    entityId: stock.productId,
+    summary: `Lote #${req.params.id} atualizado`,
+    metadata: { batch_id: Number(req.params.id), payload }
+  });
+  return res.json(stock);
 });
 
 router.get('/products/:id/stock', (req, res) => {
@@ -326,6 +336,15 @@ router.post('/movements', requireRole('admin', 'manager', 'finance'), (req, res)
     WHERE m.id = ?
   `).get(id);
 
+  recordAudit({
+    req,
+    action: 'inventory.movement.create',
+    entityType: 'product',
+    entityId: movement.product_id,
+    summary: `Movimentacao registrada: ${movement.product_name}`,
+    metadata: movement
+  });
+
   return res.status(201).json(movement);
 });
 
@@ -360,7 +379,16 @@ router.get('/post-event/:id', requireRole('admin', 'manager', 'finance'), (req, 
 router.post('/post-event', requireRole('admin', 'manager', 'finance'), (req, res) => {
   const payload = postEventInventorySchema.parse(req.body);
   const id = createPostEventInventory(payload, req.user.id);
-  return res.status(201).json(getPostEventInventory(id));
+  const inventory = getPostEventInventory(id);
+  recordAudit({
+    req,
+    action: 'inventory.post_event.create',
+    entityType: 'post_event_inventory',
+    entityId: id,
+    summary: `Inventario pos-evento registrado: ${inventory.event_name}`,
+    metadata: { event_name: inventory.event_name, event_date: inventory.event_date, totals: inventory.totals }
+  });
+  return res.status(201).json(inventory);
 });
 
 module.exports = router;

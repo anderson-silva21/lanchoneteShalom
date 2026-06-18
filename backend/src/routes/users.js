@@ -4,6 +4,7 @@ const { z } = require('zod');
 const { db } = require('../db');
 const { authenticate } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
+const { recordAudit } = require('../services/auditService');
 const { generateTemporaryPassword } = require('../utils/passwords');
 
 const router = express.Router();
@@ -71,6 +72,15 @@ router.post('/', (req, res) => {
     WHERE id = ?
   `).get(result.lastInsertRowid);
 
+  recordAudit({
+    req,
+    action: 'user.create',
+    entityType: 'user',
+    entityId: user.id,
+    summary: `Usuario criado: ${user.username}`,
+    metadata: { role: user.role, name: user.name }
+  });
+
   return res.status(201).json({
     user: publicUser(user),
     temporary_password: temporaryPassword
@@ -93,6 +103,15 @@ router.post('/:id/reset-password', (req, res) => {
     FROM users
     WHERE id = ?
   `).get(user.id);
+
+  recordAudit({
+    req,
+    action: 'user.reset_password',
+    entityType: 'user',
+    entityId: updated.id,
+    summary: `Senha temporaria resetada: ${updated.username}`,
+    metadata: { username: updated.username, role: updated.role }
+  });
 
   return res.json({
     user: publicUser(updated),
@@ -125,6 +144,15 @@ router.delete('/:id', (req, res) => {
     SET active = 0, password_must_change = 0
     WHERE id = ?
   `).run(user.id);
+
+  recordAudit({
+    req,
+    action: 'user.delete',
+    entityType: 'user',
+    entityId: user.id,
+    summary: `Usuario excluido: ${user.username}`,
+    metadata: { username: user.username, role: user.role }
+  });
 
   return res.status(204).send();
 });

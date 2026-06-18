@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const Database = require('better-sqlite3');
 const { db, dbPath } = require('../db');
 
 const backupDir = path.join(path.dirname(dbPath), 'backups');
@@ -36,6 +37,47 @@ function statBackup(file) {
   };
 }
 
+function resolveBackupFile(file) {
+  const root = path.resolve(backupDir);
+  const target = path.resolve(root, path.basename(String(file || '')));
+  if (!target.startsWith(`${root}${path.sep}`) || !target.endsWith('.sqlite')) {
+    const error = new Error('Arquivo de backup invalido.');
+    error.status = 400;
+    throw error;
+  }
+  if (!fs.existsSync(target)) {
+    const error = new Error('Backup nao encontrado.');
+    error.status = 404;
+    throw error;
+  }
+  return target;
+}
+
+function validateBackupFile(file) {
+  const target = resolveBackupFile(file);
+  let backupDb;
+  try {
+    backupDb = new Database(target, { readonly: true, fileMustExist: true });
+    const integrity = backupDb.pragma('integrity_check', { simple: true });
+    if (integrity !== 'ok') {
+      const error = new Error(`Backup invalido: ${integrity}`);
+      error.status = 400;
+      throw error;
+    }
+
+    const hasUsers = backupDb.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'").get();
+    if (!hasUsers) {
+      const error = new Error('Backup invalido: tabela de usuarios ausente.');
+      error.status = 400;
+      throw error;
+    }
+  } finally {
+    backupDb?.close();
+  }
+
+  return target;
+}
+
 function listBackups() {
   ensureBackupDir();
   return fs.readdirSync(backupDir)
@@ -44,10 +86,10 @@ function listBackups() {
     .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
-async function createBackup({ automatic = false } = {}) {
+async function createBackup({ automatic = false, label = '' } = {}) {
   ensureBackupDir();
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const prefix = automatic ? 'lanchonete-auto' : 'lanchonete';
+  const prefix = label ? `lanchonete-${label}` : automatic ? 'lanchonete-auto' : 'lanchonete';
   const file = `${prefix}-${stamp}.sqlite`;
   const target = path.join(backupDir, file);
 
@@ -59,6 +101,24 @@ async function createBackup({ automatic = false } = {}) {
     path: target,
     size: stat.size,
     created_at: new Date().toISOString()
+  };
+}
+
+async function restoreBackup(file) {
+  const source = validateBackupFile(file);
+  const safetyBackup = await createBackup({ label: 'pre-restore' });
+
+  db.pragma('wal_checkpoint(TRUNCATE)');
+  db.close();
+
+  fs.copyFileSync(source, dbPath);
+  fs.rmSync(`${dbPath}-wal`, { force: true });
+  fs.rmSync(`${dbPath}-shm`, { force: true });
+
+  return {
+    restored_file: path.basename(source),
+    safety_backup: safetyBackup.file,
+    restart_required: true
   };
 }
 
@@ -121,11 +181,25 @@ function startAutomaticBackupScheduler() {
   return schedulerTimer;
 }
 
+function getBackupStatus() {
+  const backups = listBackups();
+  return {
+    directory: backupDir,
+    total: backups.length,
+    last_backup: backups[0] || null,
+    automatic_enabled: normalizeBoolean(process.env.AUTO_BACKUP_ENABLED, true),
+    automatic_interval_hours: positiveNumber(process.env.AUTO_BACKUP_INTERVAL_HOURS, 24),
+    automatic_retention: positiveInteger(process.env.AUTO_BACKUP_RETENTION, 14)
+  };
+}
+
 module.exports = {
   backupDir,
   createBackup,
+  getBackupStatus,
   listBackups,
   pruneOldBackups,
+  restoreBackup,
   runAutomaticBackup,
   startAutomaticBackupScheduler
 };

@@ -80,8 +80,10 @@ export function PaymentsView({ refreshKey, onChanged }) {
   const [closingDate, setClosingDate] = useState(todayInputValue)
   const [eventId, setEventId] = useState('')
   const [selectedMethods, setSelectedMethods] = useState({})
+  const [closingNotes, setClosingNotes] = useState('')
   const [loading, setLoading] = useState(true)
   const [confirmingId, setConfirmingId] = useState('')
+  const [savingClosing, setSavingClosing] = useState(false)
   const [message, setMessage] = useState('')
 
   const closingParams = useMemo(() => {
@@ -141,6 +143,24 @@ export function PaymentsView({ refreshKey, onChanged }) {
     }
   }
 
+  async function saveClosing() {
+    setMessage('')
+    setSavingClosing(true)
+    try {
+      const payload = { date: closingDate, notes: closingNotes }
+      if (eventId) payload.event_id = eventId
+      const nextClosing = await api.saveCashClosing(payload)
+      setClosing(nextClosing)
+      setClosingNotes('')
+      onChanged?.()
+      setMessage('Fechamento registrado.')
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setSavingClosing(false)
+    }
+  }
+
   const summary = closing?.summary || {
     sales_count: 0,
     gross_total: 0,
@@ -186,6 +206,28 @@ export function PaymentsView({ refreshKey, onChanged }) {
             </button>
           </div>
         </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <label className="block text-sm font-medium">
+            Observacoes do fechamento
+            <input className="mission-input mt-1 w-full px-3 py-2.5" value={closingNotes} onChange={(event) => setClosingNotes(event.target.value)} />
+          </label>
+          <button
+            type="button"
+            className="mission-btn mission-btn-gold flex min-h-11 items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold"
+            onClick={saveClosing}
+            disabled={loading || savingClosing}
+          >
+            <CheckCircle2 size={16} />
+            {savingClosing ? 'Registrando...' : 'Registrar fechamento'}
+          </button>
+        </div>
+
+        {closing?.registered_closing ? (
+          <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-400/20 dark:bg-emerald-500/15 dark:text-emerald-100">
+            Fechamento registrado em {formatDateTime(closing.registered_closing.created_at)} por {closing.registered_closing.created_by_name || '-'}.
+          </div>
+        ) : null}
 
         {message ? <p className="mt-4 rounded-2xl bg-shalom-cream/70 px-4 py-3 text-sm text-shalom-deep dark:bg-white/10 dark:text-shalom-gold">{message}</p> : null}
 
