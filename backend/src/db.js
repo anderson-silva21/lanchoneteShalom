@@ -212,6 +212,16 @@ function fillMissingUsernames() {
   });
 }
 
+function dropSheetViews() {
+  db.exec(`
+    DROP VIEW IF EXISTS v_products_sheet;
+    DROP VIEW IF EXISTS v_stock_batches_sheet;
+    DROP VIEW IF EXISTS v_sales_sheet;
+    DROP VIEW IF EXISTS v_movements_sheet;
+    DROP VIEW IF EXISTS v_post_event_inventory_sheet;
+  `);
+}
+
 function ensureUserRoleSchema() {
   if (!tableExists('users')) return;
 
@@ -222,6 +232,8 @@ function ensureUserRoleSchema() {
   db.pragma('foreign_keys = OFF');
 
   const migrate = db.transaction(() => {
+    dropSheetViews();
+
     db.exec(`
       DROP TABLE IF EXISTS users_role_migration;
 

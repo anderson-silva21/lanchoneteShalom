@@ -30,6 +30,10 @@ test('migracao permite criar usuario com perfil financeiro', () => {
 
     INSERT INTO users (name, username, email, password_hash, role)
     VALUES ('Admin', 'admin', 'admin@example.com', 'hash', 'admin');
+
+    CREATE VIEW v_sales_sheet AS
+    SELECT id, name AS operador
+    FROM users;
   `);
 
   initDatabase();
