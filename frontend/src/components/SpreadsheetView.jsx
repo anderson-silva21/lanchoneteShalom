@@ -1,5 +1,6 @@
-import { Save, Search } from 'lucide-react'
+import { Save, Search, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { api } from '../services/api'
 
 const paymentLabels = {
@@ -24,6 +25,68 @@ function getPaymentStatusLabel(value) {
   return paymentStatusLabels[value] || value
 }
 
+function DeleteSaleModal({ sale, confirmation, deleting, onConfirmationChange, onClose, onConfirm }) {
+  const expectedConfirmation = `EXCLUIR ${sale.venda_id}`
+
+  return createPortal(
+    <div className="dashboard-modal-overlay" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="dashboard-modal-panel mission-panel text-ink shadow-blue dark:text-slate-50" role="dialog" aria-modal="true" aria-labelledby="delete-sale-title">
+        <div className="flex items-start justify-between gap-3 border-b border-line/80 p-4 dark:border-shalom-gold/10">
+          <div>
+            <h2 id="delete-sale-title" className="font-display text-lg font-semibold text-shalom-wine dark:text-rose-100">Excluir venda #{sale.venda_id}</h2>
+            <p className="mission-muted mt-1 text-sm">A venda sera removida do faturamento e o estoque consumido sera estornado.</p>
+          </div>
+          <button type="button" className="mission-btn border border-line/80 bg-white/70 p-2 dark:border-shalom-gold/10 dark:bg-white/10" onClick={onClose} aria-label="Fechar">
+            <X size={18} />
+          </button>
+        </div>
+
+        <form className="dashboard-modal-body scrollbar-thin space-y-4 p-4" onSubmit={onConfirm}>
+          <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+              <dt className="mission-muted">Data</dt>
+              <dd className="mt-1 font-semibold">{sale.data_hora || '-'}</dd>
+            </div>
+            <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+              <dt className="mission-muted">Faturamento</dt>
+              <dd className="mt-1 font-semibold">R$ {Number(sale.faturamento || 0).toFixed(2).replace('.', ',')}</dd>
+            </div>
+            <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+              <dt className="mission-muted">Pagamento</dt>
+              <dd className="mt-1 font-semibold">{getPaymentLabel(sale.pagamento)}</dd>
+            </div>
+            <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+              <dt className="mission-muted">Operador</dt>
+              <dd className="mt-1 font-semibold">{sale.operador || '-'}</dd>
+            </div>
+          </dl>
+
+          <label className="block text-sm font-medium">
+            Confirmacao
+            <input
+              className="mission-input mt-2 w-full px-3 py-2.5"
+              value={confirmation}
+              onChange={(event) => onConfirmationChange(event.target.value)}
+              placeholder={expectedConfirmation}
+              autoFocus
+            />
+          </label>
+
+          <button
+            type="submit"
+            className="mission-btn flex w-full items-center justify-center gap-2 border border-shalom-wine/35 px-4 py-3 font-semibold text-shalom-wine hover:bg-shalom-wine/10 disabled:cursor-not-allowed disabled:opacity-55 dark:border-rose-200/20 dark:text-rose-100 dark:hover:bg-rose-400/10"
+            disabled={confirmation !== expectedConfirmation || deleting}
+          >
+            <Trash2 size={17} />
+            {deleting ? 'Excluindo...' : 'Excluir venda'}
+          </button>
+        </form>
+      </section>
+    </div>,
+    document.body
+  )
+}
+
 export function SpreadsheetView({ refreshKey, onChanged, user }) {
   const [sheets, setSheets] = useState([])
   const [activeSheet, setActiveSheet] = useState('produtos')
@@ -31,9 +94,13 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
   const [query, setQuery] = useState('')
   const [message, setMessage] = useState('')
   const [paymentEditingRows, setPaymentEditingRows] = useState({})
+  const [saleToDelete, setSaleToDelete] = useState(null)
+  const [deleteConfirmation, setDeleteConfirmation] = useState('')
+  const [deletingSale, setDeletingSale] = useState(false)
   const canEditNotes = ['admin', 'finance'].includes(user?.role)
   const canEditProducts = ['admin', 'manager', 'finance'].includes(user?.role)
   const canConfirmPayments = ['admin', 'manager', 'cashier', 'finance'].includes(user?.role)
+  const canDeleteSales = user?.role === 'admin'
 
   useEffect(() => {
     api.sheets().then(setSheets).catch((err) => setMessage(err.message))
@@ -42,6 +109,8 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
   useEffect(() => {
     api.sheet(activeSheet).then(setRows).catch((err) => setMessage(err.message))
     setPaymentEditingRows({})
+    setSaleToDelete(null)
+    setDeleteConfirmation('')
   }, [activeSheet, refreshKey])
 
   const columns = rows[0] ? Object.keys(rows[0]) : []
@@ -69,9 +138,46 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
   function hasActionColumn() {
     return (
       (activeSheet === 'produtos' && canEditProducts)
-      || (activeSheet === 'vendas' && canConfirmPayments)
+      || (activeSheet === 'vendas' && (canConfirmPayments || canDeleteSales))
       || (activeSheet === 'movimentacoes' && canEditNotes)
     )
+  }
+
+  function openDeleteSale(row) {
+    setMessage('')
+    setSaleToDelete(row)
+    setDeleteConfirmation('')
+  }
+
+  async function deleteSelectedSale(event) {
+    event.preventDefault()
+    if (!saleToDelete) return
+
+    const confirmation = `EXCLUIR ${saleToDelete.venda_id}`
+    if (deleteConfirmation !== confirmation) {
+      setMessage(`Digite ${confirmation} para confirmar.`)
+      return
+    }
+
+    setMessage('')
+    setDeletingSale(true)
+    try {
+      const result = await api.deleteSheetSale(saleToDelete.venda_id, { confirmation: deleteConfirmation })
+      setRows((current) => current.filter((item) => item.venda_id !== saleToDelete.venda_id))
+      setPaymentEditingRows((current) => {
+        const next = { ...current }
+        delete next[saleToDelete.venda_id]
+        return next
+      })
+      setSaleToDelete(null)
+      setDeleteConfirmation('')
+      onChanged()
+      setMessage(result.message || `Venda #${saleToDelete.venda_id} excluida.`)
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setDeletingSale(false)
+    }
   }
 
   async function saveRow(row) {
@@ -212,17 +318,24 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
                     </button>
                   </td>
                 ) : null}
-                {activeSheet === 'vendas' && canConfirmPayments ? (
+                {activeSheet === 'vendas' && (canConfirmPayments || canDeleteSales) ? (
                   <td className="border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">
-                    {isPendingSale(row) ? (
-                      <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 disabled:cursor-not-allowed disabled:opacity-45 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => saveRow(row)} title={row.status_pagamento === 'pago' && row.pagamento !== 'pagamento_pendente' ? 'Confirmar pagamento' : canEditNotes ? 'Salvar observacao' : 'Marque como pago e escolha o metodo'} disabled={!canEditNotes && (row.status_pagamento !== 'pago' || row.pagamento === 'pagamento_pendente')}>
-                        <Save size={16} />
-                      </button>
-                    ) : canEditNotes ? (
-                      <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => saveRow(row)} title="Salvar observacao">
-                        <Save size={16} />
-                      </button>
-                    ) : null}
+                    <div className="flex items-center gap-2">
+                      {canConfirmPayments && isPendingSale(row) ? (
+                        <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 disabled:cursor-not-allowed disabled:opacity-45 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => saveRow(row)} title={row.status_pagamento === 'pago' && row.pagamento !== 'pagamento_pendente' ? 'Confirmar pagamento' : canEditNotes ? 'Salvar observacao' : 'Marque como pago e escolha o metodo'} disabled={!canEditNotes && (row.status_pagamento !== 'pago' || row.pagamento === 'pagamento_pendente')}>
+                          <Save size={16} />
+                        </button>
+                      ) : canEditNotes ? (
+                        <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => saveRow(row)} title="Salvar observacao">
+                          <Save size={16} />
+                        </button>
+                      ) : null}
+                      {canDeleteSales ? (
+                        <button className="mission-btn border border-shalom-wine/35 p-2 text-shalom-wine hover:bg-shalom-wine/10 dark:border-rose-200/20 dark:text-rose-100 dark:hover:bg-rose-400/10" onClick={() => openDeleteSale(row)} title="Excluir venda">
+                          <Trash2 size={16} />
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 ) : null}
                 {activeSheet === 'movimentacoes' && canEditNotes ? (
@@ -239,6 +352,21 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
       </div>
 
       {message ? <p className="mt-4 rounded-2xl bg-shalom-cream/70 px-4 py-3 text-sm text-shalom-deep dark:bg-white/10 dark:text-shalom-gold">{message}</p> : null}
+
+      {saleToDelete ? (
+        <DeleteSaleModal
+          sale={saleToDelete}
+          confirmation={deleteConfirmation}
+          deleting={deletingSale}
+          onConfirmationChange={setDeleteConfirmation}
+          onClose={() => {
+            if (deletingSale) return
+            setSaleToDelete(null)
+            setDeleteConfirmation('')
+          }}
+          onConfirm={deleteSelectedSale}
+        />
+      ) : null}
     </div>
   )
 }

@@ -1,8 +1,9 @@
 const express = require('express');
+const { z } = require('zod');
 const { db } = require('../db');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireRole } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
-const { confirmSalePayment } = require('../services/salesService');
+const { confirmSalePayment, deleteSale } = require('../services/salesService');
 const { roundQuantity, sameQuantity, setProductStock } = require('../services/stockService');
 const { recordAudit } = require('../services/auditService');
 
@@ -81,6 +82,10 @@ function requirePrivilegedForNotes(req, res) {
   res.status(403).json({ message: 'Somente administradores e financeiro podem alterar observacoes.' });
   return false;
 }
+
+const saleDeleteSchema = z.object({
+  confirmation: z.string().trim()
+});
 
 router.use(authenticate, requireScreen('sheet'));
 
@@ -221,6 +226,42 @@ router.patch('/vendas/:id', requireScreen('sales'), (req, res) => {
     metadata: { payment_method: paymentMethod }
   });
   return res.json(sale);
+});
+
+router.delete('/vendas/:id', requireRole('admin'), (req, res, next) => {
+  try {
+    const saleId = Number(req.params.id);
+    if (!Number.isInteger(saleId) || saleId <= 0) {
+      return res.status(400).json({ message: 'Venda invalida.' });
+    }
+
+    const payload = saleDeleteSchema.parse(req.body || {});
+    const expectedConfirmation = `EXCLUIR ${saleId}`;
+    if (payload.confirmation !== expectedConfirmation) {
+      return res.status(400).json({ message: `Digite ${expectedConfirmation} para confirmar a exclusao da venda.` });
+    }
+
+    const result = deleteSale(saleId, req.user.id);
+    recordAudit({
+      req,
+      action: 'spreadsheet.sale.delete',
+      entityType: 'sale',
+      entityId: saleId,
+      summary: `Venda excluida pela planilha: #${saleId}`,
+      metadata: {
+        sale: result.sale,
+        restored_stock: result.restored_stock,
+        deleted_items: result.deleted_items
+      }
+    });
+
+    return res.json({
+      message: `Venda #${saleId} excluida. Estoque estornado em ${result.restored_stock.length} movimento(s).`,
+      ...result
+    });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 router.patch('/movimentacoes/:id', (req, res) => {

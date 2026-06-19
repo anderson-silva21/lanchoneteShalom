@@ -93,6 +93,7 @@ export const api = {
   sheet: (sheet) => request(`/spreadsheet/${sheet}`),
   updateSheetProduct: (id, payload) => request(`/spreadsheet/produtos/${id}`, { method: 'PATCH', body: payload }),
   updateSheetSale: (id, payload) => request(`/spreadsheet/vendas/${id}`, { method: 'PATCH', body: payload }),
+  deleteSheetSale: (id, payload) => request(`/spreadsheet/vendas/${id}`, { method: 'DELETE', body: payload }),
   confirmSheetSalePayment: (id, payload) => request(`/spreadsheet/vendas/${id}`, { method: 'PATCH', body: payload }),
   updateSheetMovement: (id, payload) => request(`/spreadsheet/movimentacoes/${id}`, { method: 'PATCH', body: payload }),
   setupStatus: () => request('/system/setup-status', { cache: 'no-store' }),

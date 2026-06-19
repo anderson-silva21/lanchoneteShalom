@@ -11,7 +11,7 @@ const { db, initDatabase } = require('../src/db');
 const { getDashboardAnalytics } = require('../src/services/analyticsService');
 const { createCombo, listActiveCombos } = require('../src/services/comboService');
 const { createEvent } = require('../src/services/eventsService');
-const { confirmSalePayment, createSale, getCashClosing, listPendingPayments } = require('../src/services/salesService');
+const { confirmSalePayment, createSale, deleteSale, getCashClosing, getSaleById, listPendingPayments } = require('../src/services/salesService');
 const { addStock, getProductStock, updateBatch } = require('../src/services/stockService');
 const { buildTelegramAlertMessage } = require('../src/services/telegramAlertService');
 
@@ -296,6 +296,47 @@ test('venda distribuida consome multiplos lotes quando o primeiro nao basta', ()
 
   const updatedProduct = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(product.id);
   assert.equal(updatedProduct.stock_quantity, 1);
+});
+
+test('exclusao de venda remove faturamento e estorna estoque consumido', () => {
+  const product = createProduct({ name: 'Agua', sale_price: 4, cost_price: 1.5 });
+  addStock({ productId: product.id, quantity: 5, expirationDate: '2026-12-20', userId });
+
+  const sale = createSale({
+    payment_method: 'pix',
+    items: [{ product_id: product.id, quantity: 2 }]
+  }, { id: userId });
+
+  assert.equal(db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(product.id).stock_quantity, 3);
+
+  const result = deleteSale(sale.id, userId);
+
+  assert.equal(result.sale.id, sale.id);
+  assert.equal(result.deleted_items, 1);
+  assert.equal(result.restored_stock.length, 1);
+  assert.equal(result.restored_stock[0].quantity_restored, 2);
+  assert.equal(getSaleById(sale.id), null);
+  assert.equal(db.prepare('SELECT COUNT(*) AS total FROM sale_items WHERE sale_id = ?').get(sale.id).total, 0);
+  assert.equal(db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(product.id).stock_quantity, 5);
+
+  const reversal = db.prepare(`
+    SELECT type, quantity_change, reference_type, reference_id, notes
+    FROM inventory_movements
+    WHERE reference_type = 'sale_delete' AND reference_id = ?
+  `).get(sale.id);
+
+  assert.deepEqual({
+    type: reversal.type,
+    quantity_change: reversal.quantity_change,
+    reference_type: reversal.reference_type,
+    reference_id: reversal.reference_id
+  }, {
+    type: 'adjustment',
+    quantity_change: 2,
+    reference_type: 'sale_delete',
+    reference_id: sale.id
+  });
+  assert.match(reversal.notes, /Estorno/);
 });
 
 test('consulta de lotes identifica produtos vencidos', () => {

@@ -1,6 +1,6 @@
 const { db } = require('../db');
 const { findEventForToday } = require('./eventsService');
-const { consumeStockFefo } = require('./stockService');
+const { consumeStockFefo, roundQuantity, syncProductStock } = require('./stockService');
 const { BRAZIL_SQL_NOW, brazilDate, brazilTimestamp } = require('../utils/time');
 
 const pendingPaymentMethod = 'pagamento_pendente';
@@ -156,6 +156,102 @@ function getSaleById(id) {
 function createSale(payload, user) {
   const saleId = createSaleTransaction(payload, user);
   return getSaleById(saleId);
+}
+
+function getProductTotal(productId) {
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(quantity_available), 0) AS total
+    FROM stock_batches
+    WHERE product_id = ?
+  `).get(productId);
+
+  return roundQuantity(row?.total || 0);
+}
+
+function restoreSaleMovement(movement, saleId, userId) {
+  const quantityToRestore = roundQuantity(Math.abs(Number(movement.quantity_change || 0)));
+  if (quantityToRestore <= 0) return null;
+
+  const quantityBefore = getProductTotal(movement.product_id);
+  const batch = movement.batch_id
+    ? db.prepare('SELECT id, quantity_available FROM stock_batches WHERE id = ? AND product_id = ?')
+      .get(movement.batch_id, movement.product_id)
+    : null;
+
+  let batchId = batch?.id || null;
+  if (batch) {
+    db.prepare('UPDATE stock_batches SET quantity_available = ? WHERE id = ?')
+      .run(roundQuantity(Number(batch.quantity_available || 0) + quantityToRestore), batch.id);
+  } else {
+    batchId = db.prepare(`
+      INSERT INTO stock_batches (product_id, expiration_date, quantity_available)
+      VALUES (?, ?, ?)
+    `).run(movement.product_id, movement.expiration_date || null, quantityToRestore).lastInsertRowid;
+  }
+
+  const synced = syncProductStock(movement.product_id);
+  const movementId = db.prepare(`
+    INSERT INTO inventory_movements
+      (product_id, batch_id, type, quantity_change, quantity_before, quantity_after, reference_type, reference_id, notes, expiration_date, created_by)
+    VALUES
+      (?, ?, 'adjustment', ?, ?, ?, 'sale_delete', ?, ?, ?, ?)
+  `).run(
+    movement.product_id,
+    batchId,
+    quantityToRestore,
+    quantityBefore,
+    synced.stock_quantity,
+    saleId,
+    `Estorno por exclusao da venda #${saleId}`,
+    movement.expiration_date || null,
+    userId || null
+  ).lastInsertRowid;
+
+  return {
+    movement_id: movementId,
+    product_id: movement.product_id,
+    batch_id: batchId,
+    quantity_restored: quantityToRestore,
+    quantity_before: quantityBefore,
+    quantity_after: synced.stock_quantity
+  };
+}
+
+const deleteSaleTransaction = db.transaction((id, userId) => {
+  const sale = getSaleById(id);
+  if (!sale) throw createHttpError('Venda nao encontrada.', 404);
+
+  const movements = db.prepare(`
+    SELECT *
+    FROM inventory_movements
+    WHERE reference_type = 'sale'
+      AND reference_id = ?
+      AND type = 'sale'
+    ORDER BY id ASC
+  `).all(id);
+
+  const restoredStock = movements
+    .filter((movement) => Number(movement.quantity_change || 0) < 0)
+    .map((movement) => restoreSaleMovement(movement, id, userId))
+    .filter(Boolean);
+
+  db.prepare('DELETE FROM sale_items WHERE sale_id = ?').run(id);
+  db.prepare('DELETE FROM sales WHERE id = ?').run(id);
+
+  return {
+    sale,
+    restored_stock: restoredStock,
+    deleted_items: sale.items.length
+  };
+});
+
+function deleteSale(id, userId) {
+  const saleId = Number(id);
+  if (!Number.isInteger(saleId) || saleId <= 0) {
+    throw createHttpError('Venda invalida.', 400);
+  }
+
+  return deleteSaleTransaction(saleId, userId);
 }
 
 function listPendingPayments({ limit = 500 } = {}) {
@@ -429,6 +525,7 @@ function confirmSalePayment(id, paymentMethod, userId) {
 module.exports = {
   confirmSalePayment,
   createSale,
+  deleteSale,
   getCashClosing,
   getSaleById,
   listPendingPayments,
