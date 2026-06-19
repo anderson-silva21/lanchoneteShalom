@@ -71,6 +71,7 @@ export const api = {
   importProducts: (payload) => request('/products/import', { method: 'POST', body: payload }),
   productHistory: (id) => request(`/products/${id}/history`, { cache: 'no-store' }),
   updateProduct: (id, product) => request(`/products/${id}`, { method: 'PATCH', body: product }),
+  deleteProduct: (id, payload) => request(`/products/${id}`, { method: 'DELETE', body: payload }),
   combos: () => request('/combos'),
   createCombo: (combo) => request('/combos', { method: 'POST', body: combo }),
   createSale: (sale) => request('/sales', { method: 'POST', body: sale }),

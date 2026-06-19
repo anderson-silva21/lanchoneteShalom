@@ -87,6 +87,68 @@ function DeleteSaleModal({ sale, confirmation, deleting, onConfirmationChange, o
   )
 }
 
+function DeleteProductModal({ product, confirmation, deleting, onConfirmationChange, onClose, onConfirm }) {
+  const expectedConfirmation = `EXCLUIR PRODUTO ${product.id}`
+
+  return createPortal(
+    <div className="dashboard-modal-overlay" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="dashboard-modal-panel mission-panel text-ink shadow-blue dark:text-slate-50" role="dialog" aria-modal="true" aria-labelledby="delete-product-title">
+        <div className="flex items-start justify-between gap-3 border-b border-line/80 p-4 dark:border-shalom-gold/10">
+          <div>
+            <h2 id="delete-product-title" className="font-display text-lg font-semibold text-shalom-wine dark:text-rose-100">Excluir produto</h2>
+            <p className="mission-muted mt-1 text-sm">O produto sera inativado e o historico de vendas e movimentacoes sera preservado.</p>
+          </div>
+          <button type="button" className="mission-btn border border-line/80 bg-white/70 p-2 dark:border-shalom-gold/10 dark:bg-white/10" onClick={onClose} aria-label="Fechar">
+            <X size={18} />
+          </button>
+        </div>
+
+        <form className="dashboard-modal-body scrollbar-thin space-y-4 p-4" onSubmit={onConfirm}>
+          <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+              <dt className="mission-muted">Produto</dt>
+              <dd className="mt-1 font-semibold">{product.produto || '-'}</dd>
+            </div>
+            <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+              <dt className="mission-muted">Codigo</dt>
+              <dd className="mt-1 font-semibold">{product.codigo || '-'}</dd>
+            </div>
+            <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+              <dt className="mission-muted">Categoria</dt>
+              <dd className="mt-1 font-semibold">{product.categoria || '-'}</dd>
+            </div>
+            <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+              <dt className="mission-muted">Estoque</dt>
+              <dd className="mt-1 font-semibold">{product.estoque ?? 0} {product.unidade || ''}</dd>
+            </div>
+          </dl>
+
+          <label className="block text-sm font-medium">
+            Confirmacao
+            <input
+              className="mission-input mt-2 w-full px-3 py-2.5"
+              value={confirmation}
+              onChange={(event) => onConfirmationChange(event.target.value)}
+              placeholder={expectedConfirmation}
+              autoFocus
+            />
+          </label>
+
+          <button
+            type="submit"
+            className="mission-btn flex w-full items-center justify-center gap-2 border border-shalom-wine/35 px-4 py-3 font-semibold text-shalom-wine hover:bg-shalom-wine/10 disabled:cursor-not-allowed disabled:opacity-55 dark:border-rose-200/20 dark:text-rose-100 dark:hover:bg-rose-400/10"
+            disabled={confirmation !== expectedConfirmation || deleting}
+          >
+            <Trash2 size={17} />
+            {deleting ? 'Excluindo...' : 'Excluir produto'}
+          </button>
+        </form>
+      </section>
+    </div>,
+    document.body
+  )
+}
+
 export function SpreadsheetView({ refreshKey, onChanged, user }) {
   const [sheets, setSheets] = useState([])
   const [activeSheet, setActiveSheet] = useState('produtos')
@@ -97,8 +159,12 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
   const [saleToDelete, setSaleToDelete] = useState(null)
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
   const [deletingSale, setDeletingSale] = useState(false)
+  const [productToDelete, setProductToDelete] = useState(null)
+  const [productDeleteConfirmation, setProductDeleteConfirmation] = useState('')
+  const [deletingProduct, setDeletingProduct] = useState(false)
   const canEditNotes = ['admin', 'finance'].includes(user?.role)
   const canEditProducts = ['admin', 'manager', 'finance'].includes(user?.role)
+  const canDeleteProducts = user?.role === 'admin'
   const canConfirmPayments = ['admin', 'manager', 'cashier', 'finance'].includes(user?.role)
   const canDeleteSales = user?.role === 'admin'
 
@@ -111,6 +177,8 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
     setPaymentEditingRows({})
     setSaleToDelete(null)
     setDeleteConfirmation('')
+    setProductToDelete(null)
+    setProductDeleteConfirmation('')
   }, [activeSheet, refreshKey])
 
   const columns = rows[0] ? Object.keys(rows[0]) : []
@@ -177,6 +245,39 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
       setMessage(err.message)
     } finally {
       setDeletingSale(false)
+    }
+  }
+
+  function openDeleteProduct(row) {
+    setMessage('')
+    setProductToDelete(row)
+    setProductDeleteConfirmation('')
+  }
+
+  async function deleteSelectedProduct(event) {
+    event.preventDefault()
+    if (!productToDelete) return
+
+    const confirmation = `EXCLUIR PRODUTO ${productToDelete.id}`
+    if (productDeleteConfirmation !== confirmation) {
+      setMessage(`Digite ${confirmation} para confirmar.`)
+      return
+    }
+
+    const deletedProduct = productToDelete
+    setMessage('')
+    setDeletingProduct(true)
+    try {
+      const result = await api.deleteProduct(deletedProduct.id, { confirmation: productDeleteConfirmation })
+      setRows((current) => current.filter((item) => item.id !== deletedProduct.id))
+      setProductToDelete(null)
+      setProductDeleteConfirmation('')
+      onChanged()
+      setMessage(result.message || `Produto ${deletedProduct.produto} excluido.`)
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setDeletingProduct(false)
     }
   }
 
@@ -313,9 +414,16 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
                 })}
                 {activeSheet === 'produtos' && canEditProducts ? (
                   <td className="border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">
-                    <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => saveRow(row)} title="Salvar linha">
-                      <Save size={16} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => saveRow(row)} title="Salvar linha">
+                        <Save size={16} />
+                      </button>
+                      {canDeleteProducts ? (
+                        <button className="mission-btn border border-shalom-wine/35 p-2 text-shalom-wine hover:bg-shalom-wine/10 dark:border-rose-200/20 dark:text-rose-100 dark:hover:bg-rose-400/10" onClick={() => openDeleteProduct(row)} title="Excluir produto">
+                          <Trash2 size={16} />
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 ) : null}
                 {activeSheet === 'vendas' && (canConfirmPayments || canDeleteSales) ? (
@@ -365,6 +473,21 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
             setDeleteConfirmation('')
           }}
           onConfirm={deleteSelectedSale}
+        />
+      ) : null}
+
+      {productToDelete ? (
+        <DeleteProductModal
+          product={productToDelete}
+          confirmation={productDeleteConfirmation}
+          deleting={deletingProduct}
+          onConfirmationChange={setProductDeleteConfirmation}
+          onClose={() => {
+            if (deletingProduct) return
+            setProductToDelete(null)
+            setProductDeleteConfirmation('')
+          }}
+          onConfirm={deleteSelectedProduct}
         />
       ) : null}
     </div>

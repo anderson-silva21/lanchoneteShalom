@@ -164,7 +164,7 @@ function App() {
     setup: <InitialLoadView refreshKey={refreshKey} onChanged={refresh} />,
     sales: <SalesTerminal onSaleComplete={refresh} />,
     payments: <PaymentsView refreshKey={refreshKey} onChanged={refresh} />,
-    products: <ProductManager refreshKey={refreshKey} onChanged={refresh} intent={productIntent} />,
+    products: <ProductManager refreshKey={refreshKey} onChanged={refresh} intent={productIntent} user={user} />,
     inventory: <PostEventInventory refreshKey={refreshKey} onChanged={refresh} />,
     sheet: <SpreadsheetView refreshKey={refreshKey} onChanged={refresh} user={user} />,
     reports: <ReportsView user={user} />,

@@ -1,9 +1,10 @@
 const express = require('express');
 const { z } = require('zod');
 const { db } = require('../db');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireRole } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
 const { addStock, roundQuantity } = require('../services/stockService');
+const { deleteProductSafely } = require('../services/productService');
 const { recordAudit } = require('../services/auditService');
 
 const router = express.Router();
@@ -33,6 +34,10 @@ const importSchema = z.object({
   rows: z.array(z.record(z.any())).optional()
 }).refine((payload) => payload.csv || payload.rows?.length, {
   message: 'Informe um CSV ou linhas para importar.'
+});
+
+const productDeleteSchema = z.object({
+  confirmation: z.string().trim().min(1)
 });
 
 function categoryPrefix(category) {
@@ -431,20 +436,30 @@ router.patch('/:id', requireScreen('products'), (req, res) => {
   return res.json(updated);
 });
 
-router.delete('/:id', requireScreen('products'), (req, res) => {
-  const product = db.prepare('SELECT id, name, category FROM products WHERE id = ?').get(req.params.id);
-  db.prepare('UPDATE products SET active = 0 WHERE id = ?').run(req.params.id);
-  if (product) {
+router.delete('/:id', requireScreen('products'), requireRole('admin'), (req, res, next) => {
+  try {
+    const payload = productDeleteSchema.parse(req.body || {});
+    const result = deleteProductSafely({
+      id: req.params.id,
+      confirmation: payload.confirmation
+    });
+
     recordAudit({
       req,
       action: 'product.delete',
       entityType: 'product',
-      entityId: product.id,
-      summary: `Produto inativado: ${product.name}`,
-      metadata: product
+      entityId: result.product.id,
+      summary: `Produto excluido: ${result.product.name}`,
+      metadata: result
     });
+
+    return res.json({
+      message: `Produto ${result.product.name} excluido.`,
+      ...result
+    });
+  } catch (error) {
+    return next(error);
   }
-  return res.status(204).send();
 });
 
 module.exports = router;

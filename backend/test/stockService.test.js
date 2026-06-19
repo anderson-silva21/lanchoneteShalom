@@ -11,6 +11,7 @@ const { db, initDatabase } = require('../src/db');
 const { getDashboardAnalytics } = require('../src/services/analyticsService');
 const { createCombo, listActiveCombos } = require('../src/services/comboService');
 const { createEvent } = require('../src/services/eventsService');
+const { deleteProductSafely } = require('../src/services/productService');
 const { confirmSalePayment, createSale, deleteSale, getCashClosing, getSaleById, listPendingPayments } = require('../src/services/salesService');
 const { addStock, getProductStock, updateBatch } = require('../src/services/stockService');
 const { buildTelegramAlertMessage } = require('../src/services/telegramAlertService');
@@ -536,4 +537,76 @@ test('promocao expirada nao aparece no PDV', () => {
   }, userId);
 
   assert.equal(listActiveCombos().length, 0);
+});
+
+test('exclusao segura de produto exige confirmacao exata', () => {
+  const product = createProduct({ name: 'Canjica' });
+
+  assert.throws(() => deleteProductSafely({
+    id: product.id,
+    confirmation: 'EXCLUIR'
+  }), (error) => {
+    assert.equal(error.status, 400);
+    assert.match(error.message, new RegExp(`EXCLUIR PRODUTO ${product.id}`));
+    return true;
+  });
+  assert.equal(db.prepare('SELECT active FROM products WHERE id = ?').get(product.id).active, 1);
+});
+
+test('exclusao segura de produto bloqueia estoque disponivel', () => {
+  const product = createProduct({ name: 'Refrigerante' });
+  addStock({ productId: product.id, quantity: 3, expirationDate: '2026-12-20', userId });
+
+  assert.throws(() => deleteProductSafely({
+    id: product.id,
+    confirmation: `EXCLUIR PRODUTO ${product.id}`
+  }), (error) => {
+    assert.equal(error.status, 409);
+    assert.match(error.message, /Zere o estoque/);
+    assert.equal(error.details.product_stock, 3);
+    assert.equal(error.details.batch_stock, 3);
+    return true;
+  });
+  assert.equal(db.prepare('SELECT active FROM products WHERE id = ?').get(product.id).active, 1);
+});
+
+test('exclusao segura de produto bloqueia combo ativo', () => {
+  const product = createProduct({ name: 'Combo Item' });
+  const comboId = db.prepare(`
+    INSERT INTO combos (name, sale_price, created_by, active)
+    VALUES ('Combo Ativo', 15, ?, 1)
+  `).run(userId).lastInsertRowid;
+  db.prepare('INSERT INTO combo_items (combo_id, product_id, quantity) VALUES (?, ?, 1)').run(comboId, product.id);
+
+  assert.throws(() => deleteProductSafely({
+    id: product.id,
+    confirmation: `EXCLUIR PRODUTO ${product.id}`
+  }), (error) => {
+    assert.equal(error.status, 409);
+    assert.match(error.message, /combo ativo/);
+    assert.equal(error.details.combos[0].id, comboId);
+    return true;
+  });
+  assert.equal(db.prepare('SELECT active FROM products WHERE id = ?').get(product.id).active, 1);
+});
+
+test('exclusao segura de produto inativa o cadastro e preserva historico', () => {
+  const product = createProduct({ name: 'Pastel Historico', sale_price: 8, cost_price: 3 });
+  addStock({ productId: product.id, quantity: 1, expirationDate: '2026-12-20', userId });
+
+  const sale = createSale({
+    payment_method: 'pix',
+    items: [{ product_id: product.id, quantity: 1 }]
+  }, { id: userId });
+
+  const result = deleteProductSafely({
+    id: product.id,
+    confirmation: `EXCLUIR PRODUTO ${product.id}`
+  });
+
+  assert.equal(result.product.id, product.id);
+  assert.equal(result.sales_count, 1);
+  assert.equal(db.prepare('SELECT active FROM products WHERE id = ?').get(product.id).active, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS total FROM sale_items WHERE product_id = ?').get(product.id).total, 1);
+  assert.equal(getSaleById(sale.id).id, sale.id);
 });
