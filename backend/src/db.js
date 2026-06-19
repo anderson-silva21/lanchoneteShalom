@@ -2,11 +2,13 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
+const { BRAZIL_SQL_NOW, brazilTimestamp } = require('./utils/time');
 
 const dataDir = path.resolve(__dirname, '../../database');
 const dbPath = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(dataDir, 'lanchonete.sqlite');
 const backupDir = path.join(path.dirname(dbPath), 'backups');
 let migrationBackupCreated = false;
+const BRAZIL_TIMESTAMP_MIGRATION_KEY = 'timestamps_brazil_minus3_migrated_v1';
 
 fs.mkdirSync(dataDir, { recursive: true });
 
@@ -39,7 +41,7 @@ function createMigrationBackup(reason = 'schema') {
   if (!hasExistingApplicationTables()) return null;
 
   fs.mkdirSync(backupDir, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const stamp = `${brazilTimestamp().replace(/[: ]/g, '-')}-${String(new Date().getMilliseconds()).padStart(3, '0')}`;
   const file = `lanchonete-pre-migration-${stamp}.sqlite`;
   const target = path.join(backupDir, file);
   db.exec(`VACUUM INTO '${escapeSqlString(target)}'`);
@@ -55,8 +57,8 @@ function ensureStockBatchSchema() {
       product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
       expiration_date TEXT,
       quantity_available REAL NOT NULL DEFAULT 0 CHECK (quantity_available >= 0),
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
     );
 
     CREATE INDEX IF NOT EXISTS idx_stock_batches_product_expiration
@@ -66,7 +68,7 @@ function ensureStockBatchSchema() {
     AFTER UPDATE ON stock_batches
     FOR EACH ROW
     BEGIN
-      UPDATE stock_batches SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+      UPDATE stock_batches SET updated_at = datetime('now', '-3 hours') WHERE id = OLD.id;
     END;
   `);
 }
@@ -78,7 +80,7 @@ function ensureEventSchema() {
       name TEXT NOT NULL,
       event_date TEXT NOT NULL,
       notes TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
       UNIQUE (name, event_date)
     );
 
@@ -110,7 +112,7 @@ function ensureAppSettingsSchema() {
     CREATE TABLE IF NOT EXISTS app_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
     );
   `);
 }
@@ -129,7 +131,7 @@ function ensureAuditLogSchema() {
       metadata TEXT,
       ip TEXT,
       request_id TEXT,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
     );
 
     CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
@@ -146,7 +148,7 @@ function ensureCashClosingSchema() {
       summary_json TEXT NOT NULL,
       notes TEXT,
       created_by INTEGER REFERENCES users(id),
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
       UNIQUE (closing_date, event_id)
     );
 
@@ -164,10 +166,10 @@ function setAppSetting(key, value) {
   ensureAppSettingsSchema();
   db.prepare(`
     INSERT INTO app_settings (key, value, updated_at)
-    VALUES (?, ?, CURRENT_TIMESTAMP)
+    VALUES (?, ?, ${BRAZIL_SQL_NOW})
     ON CONFLICT(key) DO UPDATE SET
       value = excluded.value,
-      updated_at = CURRENT_TIMESTAMP
+      updated_at = ${BRAZIL_SQL_NOW}
   `).run(key, String(value));
 }
 
@@ -293,6 +295,126 @@ function dropSheetViews() {
   `);
 }
 
+function dropTimestampTriggers() {
+  const triggerNames = [
+    'trg_products_updated_at',
+    'trg_stock_batches_updated_at',
+    'trg_users_created_at_local',
+    'trg_audit_logs_created_at_local',
+    'trg_product_categories_created_at_local',
+    'trg_products_created_at_local',
+    'trg_stock_batches_created_at_local',
+    'trg_combos_created_at_local',
+    'trg_sales_created_at_local',
+    'trg_inventory_movements_created_at_local',
+    'trg_post_event_inventories_created_at_local',
+    'trg_events_created_at_local',
+    'trg_cash_closings_created_at_local',
+    'trg_post_event_inventory_items_created_at_local'
+  ];
+
+  triggerNames.forEach((trigger) => {
+    db.exec(`DROP TRIGGER IF EXISTS ${trigger}`);
+  });
+}
+
+function createLocalCreatedAtTrigger(table, primaryKey = 'id') {
+  if (!tableExists(table) || !columnExists(table, 'created_at')) return;
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS trg_${table}_created_at_local
+    AFTER INSERT ON ${table}
+    FOR EACH ROW
+    WHEN ABS(strftime('%s', NEW.created_at) - strftime('%s', 'now')) <= 1
+    BEGIN
+      UPDATE ${table} SET created_at = ${BRAZIL_SQL_NOW} WHERE ${primaryKey} = NEW.${primaryKey};
+    END;
+  `);
+}
+
+function ensureBrazilTimestampTriggers() {
+  dropTimestampTriggers();
+
+  [
+    'users',
+    'audit_logs',
+    'product_categories',
+    'products',
+    'stock_batches',
+    'combos',
+    'sales',
+    'inventory_movements',
+    'post_event_inventories',
+    'events',
+    'cash_closings',
+    'post_event_inventory_items'
+  ].forEach((table) => createLocalCreatedAtTrigger(table));
+
+  if (tableExists('products') && columnExists('products', 'updated_at')) {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_products_updated_at
+      AFTER UPDATE ON products
+      FOR EACH ROW
+      BEGIN
+        UPDATE products SET updated_at = ${BRAZIL_SQL_NOW} WHERE id = OLD.id;
+      END;
+    `);
+  }
+
+  if (tableExists('stock_batches') && columnExists('stock_batches', 'updated_at')) {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_stock_batches_updated_at
+      AFTER UPDATE ON stock_batches
+      FOR EACH ROW
+      BEGIN
+        UPDATE stock_batches SET updated_at = ${BRAZIL_SQL_NOW} WHERE id = OLD.id;
+      END;
+    `);
+  }
+}
+
+function shiftTimestampColumn(table, column) {
+  if (!tableExists(table) || !columnExists(table, column)) return;
+  db.prepare(`
+    UPDATE ${table}
+    SET ${column} = datetime(${column}, '-3 hours')
+    WHERE ${column} IS NOT NULL
+      AND trim(${column}) != ''
+  `).run();
+}
+
+function migrateExistingTimestampsToBrazilTime() {
+  ensureAppSettingsSchema();
+  if (getAppSetting(BRAZIL_TIMESTAMP_MIGRATION_KEY, '0') === '1') return;
+
+  createMigrationBackup('timestamps brazil minus3');
+  dropTimestampTriggers();
+
+  const migrate = db.transaction(() => {
+    [
+      ['users', 'created_at'],
+      ['app_settings', 'updated_at'],
+      ['audit_logs', 'created_at'],
+      ['product_categories', 'created_at'],
+      ['products', 'created_at'],
+      ['products', 'updated_at'],
+      ['stock_batches', 'created_at'],
+      ['stock_batches', 'updated_at'],
+      ['combos', 'created_at'],
+      ['sales', 'created_at'],
+      ['sales', 'payment_confirmed_at'],
+      ['inventory_movements', 'created_at'],
+      ['post_event_inventories', 'created_at'],
+      ['events', 'created_at'],
+      ['cash_closings', 'created_at'],
+      ['post_event_inventory_items', 'created_at']
+    ].forEach(([table, column]) => shiftTimestampColumn(table, column));
+
+    setAppSetting(BRAZIL_TIMESTAMP_MIGRATION_KEY, '1');
+  });
+
+  migrate();
+}
+
 function ensureUserRoleSchema() {
   if (!tableExists('users')) return;
 
@@ -318,7 +440,7 @@ function ensureUserRoleSchema() {
         role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'cashier', 'finance')),
         active INTEGER NOT NULL DEFAULT 1,
         password_must_change INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
       );
 
       INSERT INTO users_role_migration (
@@ -357,6 +479,224 @@ function ensureUserRoleSchema() {
   }
 }
 
+const userForeignKeyTableDefinitions = {
+  sales: {
+    createSql: (table) => `
+      CREATE TABLE ${table} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        total REAL NOT NULL DEFAULT 0,
+        estimated_profit REAL NOT NULL DEFAULT 0,
+        payment_method TEXT NOT NULL DEFAULT 'dinheiro',
+        payment_status TEXT NOT NULL DEFAULT 'paid' CHECK (payment_status IN ('paid', 'pending')),
+        customer_name TEXT,
+        payment_confirmed_at TEXT,
+        payment_confirmed_by INTEGER REFERENCES users(id),
+        notes TEXT,
+        event_id INTEGER REFERENCES events(id),
+        sold_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (${BRAZIL_SQL_NOW})
+      );
+    `,
+    columns: [
+      ['id', 'NULL'],
+      ['total', '0'],
+      ['estimated_profit', '0'],
+      ['payment_method', "'dinheiro'"],
+      ['payment_status', "CASE WHEN payment_method = 'pagamento_pendente' THEN 'pending' ELSE 'paid' END"],
+      ['customer_name', 'NULL'],
+      ['payment_confirmed_at', 'NULL'],
+      ['payment_confirmed_by', 'NULL'],
+      ['notes', 'NULL'],
+      ['event_id', 'NULL'],
+      ['sold_by', 'NULL'],
+      ['created_at', BRAZIL_SQL_NOW]
+    ]
+  },
+  inventory_movements: {
+    createSql: (table) => `
+      CREATE TABLE ${table} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL REFERENCES products(id),
+        batch_id INTEGER REFERENCES stock_batches(id),
+        type TEXT NOT NULL CHECK (type IN ('sale', 'purchase', 'adjustment', 'waste')),
+        quantity_change REAL NOT NULL,
+        quantity_before REAL NOT NULL,
+        quantity_after REAL NOT NULL,
+        reference_type TEXT,
+        reference_id INTEGER,
+        notes TEXT,
+        expiration_date TEXT,
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (${BRAZIL_SQL_NOW})
+      );
+    `,
+    columns: [
+      ['id', 'NULL'],
+      ['product_id', 'NULL'],
+      ['batch_id', 'NULL'],
+      ['type', "'adjustment'"],
+      ['quantity_change', '0'],
+      ['quantity_before', '0'],
+      ['quantity_after', '0'],
+      ['reference_type', 'NULL'],
+      ['reference_id', 'NULL'],
+      ['notes', 'NULL'],
+      ['expiration_date', 'NULL'],
+      ['created_by', 'NULL'],
+      ['created_at', BRAZIL_SQL_NOW]
+    ]
+  },
+  combos: {
+    createSql: (table) => `
+      CREATE TABLE ${table} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        sale_price REAL NOT NULL DEFAULT 0,
+        is_promotion INTEGER NOT NULL DEFAULT 0,
+        expires_at TEXT,
+        created_by INTEGER REFERENCES users(id),
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (${BRAZIL_SQL_NOW})
+      );
+    `,
+    columns: [
+      ['id', 'NULL'],
+      ['name', "''"],
+      ['sale_price', '0'],
+      ['is_promotion', '0'],
+      ['expires_at', 'NULL'],
+      ['created_by', 'NULL'],
+      ['active', '1'],
+      ['created_at', BRAZIL_SQL_NOW]
+    ]
+  },
+  cash_closings: {
+    createSql: (table) => `
+      CREATE TABLE ${table} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        closing_date TEXT NOT NULL,
+        event_id INTEGER REFERENCES events(id),
+        summary_json TEXT NOT NULL,
+        notes TEXT,
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (${BRAZIL_SQL_NOW}),
+        UNIQUE (closing_date, event_id)
+      );
+    `,
+    columns: [
+      ['id', 'NULL'],
+      ['closing_date', "date('now', '-3 hours')"],
+      ['event_id', 'NULL'],
+      ['summary_json', "'{}'"],
+      ['notes', 'NULL'],
+      ['created_by', 'NULL'],
+      ['created_at', BRAZIL_SQL_NOW]
+    ]
+  },
+  post_event_inventories: {
+    createSql: (table) => `
+      CREATE TABLE ${table} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_name TEXT NOT NULL,
+        event_date TEXT NOT NULL,
+        notes TEXT,
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (${BRAZIL_SQL_NOW})
+      );
+    `,
+    columns: [
+      ['id', 'NULL'],
+      ['event_name', "''"],
+      ['event_date', "date('now', '-3 hours')"],
+      ['notes', 'NULL'],
+      ['created_by', 'NULL'],
+      ['created_at', BRAZIL_SQL_NOW]
+    ]
+  },
+  audit_logs: {
+    createSql: (table) => `
+      CREATE TABLE ${table} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER REFERENCES users(id),
+        username TEXT,
+        role TEXT,
+        action TEXT NOT NULL,
+        entity_type TEXT,
+        entity_id TEXT,
+        summary TEXT NOT NULL,
+        metadata TEXT,
+        ip TEXT,
+        request_id TEXT,
+        created_at TEXT NOT NULL DEFAULT (${BRAZIL_SQL_NOW})
+      );
+    `,
+    columns: [
+      ['id', 'NULL'],
+      ['user_id', 'NULL'],
+      ['username', 'NULL'],
+      ['role', 'NULL'],
+      ['action', "'system.migration'"],
+      ['entity_type', 'NULL'],
+      ['entity_id', 'NULL'],
+      ['summary', "'Registro migrado'"],
+      ['metadata', 'NULL'],
+      ['ip', 'NULL'],
+      ['request_id', 'NULL'],
+      ['created_at', BRAZIL_SQL_NOW]
+    ]
+  }
+};
+
+function hasLegacyUserForeignKey(table) {
+  if (!tableExists(table)) return false;
+  return db.prepare(`PRAGMA foreign_key_list(${table})`).all().some((foreignKey) => {
+    const target = String(foreignKey.table || '');
+    return target !== 'users' && /^users([_"]|$)/.test(target);
+  });
+}
+
+function rebuildTableWithUserForeignKey(table, definition) {
+  const migrationTable = `${table}_user_fk_migration`;
+  const insertColumns = definition.columns.map(([column]) => column).join(', ');
+  const selectColumns = definition.columns.map(([column, fallback]) => {
+    return columnExists(table, column) ? column : `${fallback} AS ${column}`;
+  }).join(', ');
+
+  db.exec(`DROP TABLE IF EXISTS ${migrationTable};`);
+  db.exec(definition.createSql(migrationTable));
+  db.exec(`
+    INSERT INTO ${migrationTable} (${insertColumns})
+    SELECT ${selectColumns}
+    FROM ${table};
+
+    DROP TABLE ${table};
+    ALTER TABLE ${migrationTable} RENAME TO ${table};
+  `);
+}
+
+function repairLegacyUserForeignKeys() {
+  const tablesToRepair = Object.entries(userForeignKeyTableDefinitions)
+    .filter(([table]) => hasLegacyUserForeignKey(table));
+
+  if (!tablesToRepair.length) return;
+
+  createMigrationBackup('legacy user foreign keys');
+  const foreignKeysEnabled = Number(db.pragma('foreign_keys', { simple: true })) === 1;
+  db.pragma('foreign_keys = OFF');
+
+  const repair = db.transaction(() => {
+    dropSheetViews();
+    dropTimestampTriggers();
+    tablesToRepair.forEach(([table, definition]) => rebuildTableWithUserForeignKey(table, definition));
+  });
+
+  try {
+    repair();
+  } finally {
+    db.pragma(`foreign_keys = ${foreignKeysEnabled ? 'ON' : 'OFF'}`);
+  }
+}
+
 function runMigrations() {
   ensureAppSettingsSchema();
   ensureAuditLogSchema();
@@ -372,12 +712,17 @@ function runMigrations() {
   addColumnIfMissing('combos', 'expires_at', 'TEXT');
   addColumnIfMissing('combos', 'created_by', 'INTEGER REFERENCES users(id)');
   addColumnIfMissing('sales', 'event_id', 'INTEGER REFERENCES events(id)');
+  addColumnIfMissing('sales', 'estimated_profit', 'REAL NOT NULL DEFAULT 0');
   addColumnIfMissing('sales', 'payment_status', "TEXT NOT NULL DEFAULT 'paid'");
   addColumnIfMissing('sales', 'customer_name', 'TEXT');
   addColumnIfMissing('sales', 'payment_confirmed_at', 'TEXT');
   addColumnIfMissing('sales', 'payment_confirmed_by', 'INTEGER REFERENCES users(id)');
+  addColumnIfMissing('sale_items', 'combo_id', 'INTEGER');
+  addColumnIfMissing('sale_items', 'unit_cost', 'REAL NOT NULL DEFAULT 0');
+  addColumnIfMissing('sale_items', 'line_profit', 'REAL NOT NULL DEFAULT 0');
   addColumnIfMissing('inventory_movements', 'expiration_date', 'TEXT');
   addColumnIfMissing('inventory_movements', 'batch_id', 'INTEGER REFERENCES stock_batches(id)');
+  repairLegacyUserForeignKeys();
   migrateLegacyStockBatches();
 }
 
@@ -502,6 +847,8 @@ function initDatabase() {
   ensureEventSchema();
   runMigrations();
   runSchema();
+  migrateExistingTimestampsToBrazilTime();
+  ensureBrazilTimestampTriggers();
   runMigrations();
   const seed = db.transaction(() => {
     seedUsers();
@@ -509,6 +856,7 @@ function initDatabase() {
     migrateLegacyStockBatches();
   });
   seed();
+  ensureBrazilTimestampTriggers();
   runMigrations();
 }
 

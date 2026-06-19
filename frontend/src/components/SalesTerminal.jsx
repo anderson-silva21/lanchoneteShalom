@@ -224,8 +224,12 @@ export function SalesTerminal({ onSaleComplete }) {
       setNotes('')
       setCustomerName('')
       setMessage(`Venda #${sale.id} registrada: ${money.format(sale.total)}`)
-      await loadData()
-      onSaleComplete()
+      try {
+        await loadData()
+        onSaleComplete()
+      } catch (refreshError) {
+        setMessage(`Venda #${sale.id} registrada: ${money.format(sale.total)}. Nao foi possivel atualizar a tela: ${refreshError.message}`)
+      }
     } catch (err) {
       setMessage(err.message)
     } finally {

@@ -7,6 +7,7 @@ const { clearOperationalData, compactDatabase, db, dbPath, getOperationalCounts,
 const { createBackup, getBackupStatus } = require('../services/backupService');
 const { listAuditLogs, recordAudit } = require('../services/auditService');
 const { getTelegramAlertStatus, sendTelegramAlertDigest, startTelegramAlertScheduler, updateTelegramAlertSettings } = require('../services/telegramAlertService');
+const { brazilTimestamp } = require('../utils/time');
 const packageJson = require('../../package.json');
 
 const router = express.Router();
@@ -62,8 +63,8 @@ function getSystemHealth() {
     node: process.version,
     pid: process.pid,
     uptime_seconds: Math.round(process.uptime()),
-    started_at: new Date(Date.now() - process.uptime() * 1000).toISOString(),
-    now: new Date().toISOString(),
+    started_at: brazilTimestamp(new Date(Date.now() - process.uptime() * 1000)),
+    now: brazilTimestamp(),
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     env: process.env.NODE_ENV || 'development',
     database: {

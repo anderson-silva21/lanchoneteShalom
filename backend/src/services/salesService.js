@@ -1,6 +1,7 @@
 const { db } = require('../db');
 const { findEventForToday } = require('./eventsService');
 const { consumeStockFefo } = require('./stockService');
+const { BRAZIL_SQL_NOW, brazilDate, brazilTimestamp } = require('../utils/time');
 
 const pendingPaymentMethod = 'pagamento_pendente';
 const paidPaymentMethods = new Set(['pix', 'cartao', 'dinheiro']);
@@ -44,7 +45,7 @@ const createSaleTransaction = db.transaction((payload, user) => {
     throw createHttpError('Evento nao encontrado.', 404);
   }
 
-  const paymentConfirmedAt = paymentStatus === 'paid' ? new Date().toISOString() : null;
+  const paymentConfirmedAt = paymentStatus === 'paid' ? brazilTimestamp() : null;
   const paymentConfirmedBy = paymentStatus === 'paid' ? user.id : null;
   const insertSale = db.prepare(`
     INSERT INTO sales
@@ -186,7 +187,7 @@ function listPendingPayments({ limit = 500 } = {}) {
 
 function normalizeClosingDate(value) {
   const date = String(value || '').trim();
-  if (!date) return db.prepare("SELECT date('now', 'localtime') AS date").get().date;
+  if (!date) return brazilDate();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     throw createHttpError('Data de fechamento invalida.', 400);
   }
@@ -385,7 +386,7 @@ function saveCashClosing(filters = {}, userId = null) {
     id = existing.id;
     db.prepare(`
       UPDATE cash_closings
-      SET summary_json = ?, notes = ?, created_by = ?, created_at = CURRENT_TIMESTAMP
+      SET summary_json = ?, notes = ?, created_by = ?, created_at = ${BRAZIL_SQL_NOW}
       WHERE id = ?
     `).run(summaryJson, notes, userId, id);
   } else {
@@ -417,7 +418,7 @@ function confirmSalePayment(id, paymentMethod, userId) {
     UPDATE sales
     SET payment_method = ?,
         payment_status = 'paid',
-        payment_confirmed_at = CURRENT_TIMESTAMP,
+        payment_confirmed_at = ${BRAZIL_SQL_NOW},
         payment_confirmed_by = ?
     WHERE id = ?
   `).run(method, userId || null, id);

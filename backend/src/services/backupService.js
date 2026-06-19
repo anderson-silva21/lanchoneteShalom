@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const Database = require('better-sqlite3');
 const { db, dbPath } = require('../db');
+const { brazilTimestamp } = require('../utils/time');
 
 const backupDir = path.join(path.dirname(dbPath), 'backups');
 let schedulerTimer = null;
@@ -88,7 +89,7 @@ function listBackups() {
 
 async function createBackup({ automatic = false, label = '' } = {}) {
   ensureBackupDir();
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const stamp = `${brazilTimestamp().replace(/[: ]/g, '-')}-${String(new Date().getMilliseconds()).padStart(3, '0')}`;
   const prefix = label ? `lanchonete-${label}` : automatic ? 'lanchonete-auto' : 'lanchonete';
   const file = `${prefix}-${stamp}.sqlite`;
   const target = path.join(backupDir, file);
@@ -100,7 +101,7 @@ async function createBackup({ automatic = false, label = '' } = {}) {
     file,
     path: target,
     size: stat.size,
-    created_at: new Date().toISOString()
+    created_at: brazilTimestamp()
   };
 }
 

@@ -402,13 +402,13 @@ function listStockBatches({ productId = null, includeEmpty = false } = {}) {
       p.unit,
       b.expiration_date,
       b.quantity_available,
-      CAST(julianday(date(b.expiration_date)) - julianday(date('now', 'localtime')) AS INTEGER) AS days_to_expire,
+      CAST(julianday(date(b.expiration_date)) - julianday(date('now', '-3 hours')) AS INTEGER) AS days_to_expire,
       CASE
         WHEN b.quantity_available <= 0 THEN 'empty'
         WHEN b.expiration_date IS NULL OR b.expiration_date = '' THEN 'missing'
-        WHEN date(b.expiration_date) < date('now', 'localtime') THEN 'expired'
-        WHEN date(b.expiration_date) <= date('now', 'localtime', '+7 days') THEN 'critical'
-        WHEN date(b.expiration_date) <= date('now', 'localtime', '+30 days') THEN 'warning'
+        WHEN date(b.expiration_date) < date('now', '-3 hours') THEN 'expired'
+        WHEN date(b.expiration_date) <= date('now', '-3 hours', '+7 days') THEN 'critical'
+        WHEN date(b.expiration_date) <= date('now', '-3 hours', '+30 days') THEN 'warning'
         ELSE 'ok'
       END AS expiration_status,
       b.created_at,

@@ -12,6 +12,7 @@ const errorHandler = require('./middleware/errorHandler');
 const { assignRequestId, httpLogger } = require('./middleware/requestLogger');
 const { startAutomaticBackupScheduler } = require('./services/backupService');
 const { startTelegramAlertScheduler } = require('./services/telegramAlertService');
+const { brazilTimestamp } = require('./utils/time');
 
 const authRoutes = require('./routes/auth');
 const analyticsRoutes = require('./routes/analytics');
@@ -92,7 +93,7 @@ app.get('/health', (req, res) => {
   res.json({
     ok: true,
     db: dbPath,
-    time: new Date().toISOString()
+    time: brazilTimestamp()
   });
 });
 

@@ -48,7 +48,7 @@ router.get('/events', (req, res) => {
   const events = db.prepare(`
     SELECT id, name, event_date
     FROM events
-    WHERE date(event_date) >= date('now', 'localtime', 'start of year')
+    WHERE date(event_date) >= date('now', '-3 hours', 'start of year')
     ORDER BY date(event_date) DESC, name ASC
   `).all();
 

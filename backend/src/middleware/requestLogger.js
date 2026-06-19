@@ -1,5 +1,6 @@
 const { randomUUID } = require('crypto');
 const morgan = require('morgan');
+const { brazilTimestamp } = require('../utils/time');
 
 const SENSITIVE_KEY_PATTERN = /(password|senha|token|authorization|secret)/i;
 const MAX_STRING_LENGTH = 500;
@@ -57,7 +58,7 @@ function getRequestContext(req) {
 
 function logRequestError(error, req, status, extra = {}) {
   const logEntry = {
-    timestamp: new Date().toISOString(),
+    timestamp: brazilTimestamp(),
     level: status >= 500 ? 'error' : 'warn',
     status,
     request: getRequestContext(req),

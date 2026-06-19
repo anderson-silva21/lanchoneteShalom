@@ -1,4 +1,5 @@
 const { db } = require('../db');
+const { brazilDate } = require('../utils/time');
 
 function createHttpError(message, status) {
   const error = new Error(message);
@@ -26,7 +27,7 @@ const createEventTransaction = db.transaction((payload) => {
   const assignment = db.prepare(`
     UPDATE sales
     SET event_id = ?
-    WHERE date(created_at, 'localtime') = date(?)
+    WHERE date(created_at) = date(?)
   `).run(eventId, payload.event_date);
 
   const revenue = db.prepare(`
@@ -50,9 +51,9 @@ function findEventForToday() {
   return db.prepare(`
     SELECT id, name, event_date
     FROM events
-    WHERE date(event_date) = date('now', 'localtime')
+    WHERE date(event_date) = date(?)
     LIMIT 1
-  `).get() || null;
+  `).get(brazilDate()) || null;
 }
 
 module.exports = {

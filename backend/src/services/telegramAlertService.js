@@ -1,6 +1,7 @@
 const https = require('https');
 const { db, getAppSetting, setAppSetting } = require('../db');
 const { getDashboardAnalytics } = require('./analyticsService');
+const { BRAZIL_SQL_NOW, brazilTimestamp, parseBrazilTimestamp } = require('../utils/time');
 
 const LAST_SENT_KEY = 'telegram_alert_last_sent_at';
 const TELEGRAM_MESSAGE_LIMIT = 3600;
@@ -132,10 +133,10 @@ function maskChatId(chatId) {
 function setLastSentAt(value) {
   db.prepare(`
     INSERT INTO app_settings (key, value, updated_at)
-    VALUES (?, ?, CURRENT_TIMESTAMP)
+    VALUES (?, ?, ${BRAZIL_SQL_NOW})
     ON CONFLICT(key) DO UPDATE SET
       value = excluded.value,
-      updated_at = CURRENT_TIMESTAMP
+      updated_at = ${BRAZIL_SQL_NOW}
   `).run(LAST_SENT_KEY, value);
 }
 
@@ -480,7 +481,7 @@ async function sendTelegramAlertDigest({ force = false } = {}) {
     await sendTelegramMessage(message, config);
   }
 
-  const sentAt = new Date().toISOString();
+  const sentAt = brazilTimestamp();
   setLastSentAt(sentAt);
   return { sent: true, sent_at: sentAt, messages_sent: messages.length };
 }
@@ -490,7 +491,8 @@ async function sendScheduledTelegramAlert() {
   if (!config.enabled) return { sent: false, reason: config.configured ? 'disabled' : 'not_configured' };
 
   const lastSentAt = getLastSentAt();
-  if (lastSentAt && Date.now() - new Date(lastSentAt).getTime() < config.intervalMs) {
+  const lastSentDate = parseBrazilTimestamp(lastSentAt);
+  if (lastSentDate && Date.now() - lastSentDate.getTime() < config.intervalMs) {
     return { sent: false, reason: 'interval' };
   }
 

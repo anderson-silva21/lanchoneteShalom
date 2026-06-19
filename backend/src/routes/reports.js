@@ -3,6 +3,7 @@ const { db } = require('../db');
 const { authenticate } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
 const { toCsv, toXlsxBuffer, toPdfStream } = require('../services/exportService');
+const { brazilDate } = require('../utils/time');
 const { formatQuantityWithUnit } = require('../utils/unitFormatter');
 
 const router = express.Router();
@@ -178,7 +179,7 @@ router.get('/export', async (req, res, next) => {
     if (!report) return res.status(400).json({ message: 'Relatorio invalido.' });
 
     const rows = formatReportRows(type, db.prepare(report.query).all());
-    const filename = `${type}-${new Date().toISOString().slice(0, 10)}`;
+    const filename = `${type}-${brazilDate()}`;
 
     if (format === 'csv') {
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
