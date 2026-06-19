@@ -9,13 +9,28 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'cashier', 'finance')),
   active INTEGER NOT NULL DEFAULT 1,
   password_must_change INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
 );
 
 CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER REFERENCES users(id),
+  username TEXT,
+  role TEXT,
+  action TEXT NOT NULL,
+  entity_type TEXT,
+  entity_id TEXT,
+  summary TEXT NOT NULL,
+  metadata TEXT,
+  ip TEXT,
+  request_id TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
 );
 
 CREATE TABLE IF NOT EXISTS audit_logs (
@@ -36,7 +51,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE TABLE IF NOT EXISTS product_categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
 );
 
 CREATE TABLE IF NOT EXISTS products (
@@ -53,8 +68,8 @@ CREATE TABLE IF NOT EXISTS products (
   unit TEXT NOT NULL DEFAULT 'unidade',
   expiration_date TEXT,
   active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
 );
 
 CREATE TABLE IF NOT EXISTS stock_batches (
@@ -62,8 +77,8 @@ CREATE TABLE IF NOT EXISTS stock_batches (
   product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   expiration_date TEXT,
   quantity_available REAL NOT NULL DEFAULT 0 CHECK (quantity_available >= 0),
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
 );
 
 CREATE TABLE IF NOT EXISTS combos (
@@ -74,7 +89,7 @@ CREATE TABLE IF NOT EXISTS combos (
   expires_at TEXT,
   created_by INTEGER REFERENCES users(id),
   active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
 );
 
 CREATE TABLE IF NOT EXISTS combo_items (
@@ -97,7 +112,7 @@ CREATE TABLE IF NOT EXISTS sales (
   notes TEXT,
   event_id INTEGER REFERENCES events(id),
   sold_by INTEGER REFERENCES users(id),
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
 );
 
 CREATE TABLE IF NOT EXISTS sale_items (
@@ -126,7 +141,7 @@ CREATE TABLE IF NOT EXISTS inventory_movements (
   notes TEXT,
   expiration_date TEXT,
   created_by INTEGER REFERENCES users(id),
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
 );
 
 CREATE TABLE IF NOT EXISTS post_event_inventories (
@@ -135,7 +150,7 @@ CREATE TABLE IF NOT EXISTS post_event_inventories (
   event_date TEXT NOT NULL,
   notes TEXT,
   created_by INTEGER REFERENCES users(id),
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -143,7 +158,7 @@ CREATE TABLE IF NOT EXISTS events (
   name TEXT NOT NULL,
   event_date TEXT NOT NULL,
   notes TEXT,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
   UNIQUE (name, event_date)
 );
 
@@ -154,7 +169,7 @@ CREATE TABLE IF NOT EXISTS cash_closings (
   summary_json TEXT NOT NULL,
   notes TEXT,
   created_by INTEGER REFERENCES users(id),
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
   UNIQUE (closing_date, event_id)
 );
 
@@ -171,7 +186,7 @@ CREATE TABLE IF NOT EXISTS post_event_inventory_items (
   difference REAL NOT NULL,
   consumed_quantity REAL NOT NULL,
   quantity_change REAL NOT NULL,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
   UNIQUE (inventory_id, product_id)
 );
 
@@ -191,18 +206,21 @@ CREATE INDEX IF NOT EXISTS idx_events_date_name ON events(event_date, name);
 CREATE INDEX IF NOT EXISTS idx_post_event_inventories_date ON post_event_inventories(event_date, created_at);
 CREATE INDEX IF NOT EXISTS idx_post_event_inventory_items_inventory ON post_event_inventory_items(inventory_id);
 
+DROP TRIGGER IF EXISTS trg_products_updated_at;
+DROP TRIGGER IF EXISTS trg_stock_batches_updated_at;
+
 CREATE TRIGGER IF NOT EXISTS trg_products_updated_at
 AFTER UPDATE ON products
 FOR EACH ROW
 BEGIN
-  UPDATE products SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+  UPDATE products SET updated_at = datetime('now', '-3 hours') WHERE id = OLD.id;
 END;
 
 CREATE TRIGGER IF NOT EXISTS trg_stock_batches_updated_at
 AFTER UPDATE ON stock_batches
 FOR EACH ROW
 BEGIN
-  UPDATE stock_batches SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+  UPDATE stock_batches SET updated_at = datetime('now', '-3 hours') WHERE id = OLD.id;
 END;
 
 DROP VIEW IF EXISTS v_products_sheet;
@@ -232,9 +250,9 @@ SELECT
   END AS status_estoque,
   CASE
     WHEN expiration_date IS NULL OR expiration_date = '' THEN 'sem_validade'
-    WHEN date(expiration_date) < date('now', 'localtime') THEN 'vencido'
-    WHEN date(expiration_date) <= date('now', 'localtime', '+7 days') THEN 'vence_7_dias'
-    WHEN date(expiration_date) <= date('now', 'localtime', '+30 days') THEN 'vence_30_dias'
+    WHEN date(expiration_date) < date('now', '-3 hours') THEN 'vencido'
+    WHEN date(expiration_date) <= date('now', '-3 hours', '+7 days') THEN 'vence_7_dias'
+    WHEN date(expiration_date) <= date('now', '-3 hours', '+30 days') THEN 'vence_30_dias'
     ELSE 'ok'
   END AS status_validade,
   updated_at AS atualizado_em
@@ -251,13 +269,13 @@ SELECT
   p.unit AS unidade,
   b.quantity_available AS quantidade,
   b.expiration_date AS validade,
-  CAST(julianday(date(b.expiration_date)) - julianday(date('now', 'localtime')) AS INTEGER) AS dias_para_vencer,
+  CAST(julianday(date(b.expiration_date)) - julianday(date('now', '-3 hours')) AS INTEGER) AS dias_para_vencer,
   CASE
     WHEN b.quantity_available <= 0 THEN 'esgotado'
     WHEN b.expiration_date IS NULL OR b.expiration_date = '' THEN 'sem_validade'
-    WHEN date(b.expiration_date) < date('now', 'localtime') THEN 'vencido'
-    WHEN date(b.expiration_date) <= date('now', 'localtime', '+7 days') THEN 'vence_7_dias'
-    WHEN date(b.expiration_date) <= date('now', 'localtime', '+30 days') THEN 'vence_30_dias'
+    WHEN date(b.expiration_date) < date('now', '-3 hours') THEN 'vencido'
+    WHEN date(b.expiration_date) <= date('now', '-3 hours', '+7 days') THEN 'vence_7_dias'
+    WHEN date(b.expiration_date) <= date('now', '-3 hours', '+30 days') THEN 'vence_30_dias'
     ELSE 'ok'
   END AS status_validade,
   b.created_at AS criado_em,

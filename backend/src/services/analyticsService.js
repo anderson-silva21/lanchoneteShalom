@@ -1,20 +1,30 @@
-const dayjs = require('dayjs');
 const { db } = require('../db');
+const { brazilDate, parseBrazilTimestamp } = require('../utils/time');
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function money(value) {
   return Number(value || 0);
 }
 
-function localDayRange(date = dayjs()) {
-  const start = dayjs(date).startOf('day');
+function dateDaysAgo(days) {
+  return brazilDate(new Date(Date.now() - days * DAY_MS));
+}
+
+function nextBrazilDate(date) {
+  return brazilDate(new Date(parseBrazilTimestamp(`${date} 00:00:00`).getTime() + DAY_MS));
+}
+
+function localDayRange(date = brazilDate()) {
+  const startDate = typeof date === 'string' ? date.slice(0, 10) : brazilDate(date);
   return {
-    start: start.toISOString(),
-    end: start.add(1, 'day').toISOString()
+    start: `${startDate} 00:00:00`,
+    end: `${nextBrazilDate(startDate)} 00:00:00`
   };
 }
 
 function localStartDaysAgo(days) {
-  return dayjs().subtract(days, 'day').startOf('day').toISOString();
+  return `${dateDaysAgo(days)} 00:00:00`;
 }
 
 function fillDailySeries(rows, days = 14) {
@@ -22,11 +32,11 @@ function fillDailySeries(rows, days = 14) {
   const series = [];
 
   for (let index = days - 1; index >= 0; index -= 1) {
-    const date = dayjs().subtract(index, 'day').format('YYYY-MM-DD');
+    const date = dateDaysAgo(index);
     const existing = byDate.get(date);
     series.push({
       date,
-      label: dayjs(date).format('DD/MM'),
+      label: `${date.slice(8, 10)}/${date.slice(5, 7)}`,
       revenue: money(existing?.revenue),
       profit: money(existing?.profit),
       sales: Number(existing?.sales || 0)
@@ -48,8 +58,8 @@ function getDashboardAnalytics() {
       COUNT(*) AS sales_count,
       COALESCE(AVG(total), 0) AS average_ticket
     FROM sales
-    WHERE unixepoch(created_at) >= unixepoch(?)
-      AND unixepoch(created_at) < unixepoch(?)
+    WHERE created_at >= ?
+      AND created_at < ?
   `).get(todayRange.start, todayRange.end);
 
   const lowStockProducts = db.prepare(`
@@ -92,10 +102,10 @@ function getDashboardAnalytics() {
       p.supplier,
       p.internal_code,
       b.expiration_date,
-      CAST(julianday(date(b.expiration_date)) - julianday(date('now', 'localtime')) AS INTEGER) AS days_to_expire,
+      CAST(julianday(date(b.expiration_date)) - julianday(date('now', '-3 hours')) AS INTEGER) AS days_to_expire,
       CASE
-        WHEN date(b.expiration_date) < date('now', 'localtime') THEN 'expired'
-        WHEN date(b.expiration_date) <= date('now', 'localtime', '+7 days') THEN 'critical'
+        WHEN date(b.expiration_date) < date('now', '-3 hours') THEN 'expired'
+        WHEN date(b.expiration_date) <= date('now', '-3 hours', '+7 days') THEN 'critical'
         ELSE 'warning'
       END AS expiration_status
     FROM stock_batches b
@@ -104,7 +114,7 @@ function getDashboardAnalytics() {
       AND b.quantity_available > 0
       AND b.expiration_date IS NOT NULL
       AND b.expiration_date != ''
-      AND date(b.expiration_date) <= date('now', 'localtime', '+30 days')
+      AND date(b.expiration_date) <= date('now', '-3 hours', '+30 days')
     ORDER BY date(b.expiration_date) ASC, p.name ASC, b.id ASC
   `).all();
 
@@ -146,7 +156,7 @@ function getDashboardAnalytics() {
       SUM(line_profit) AS profit
     FROM sale_items si
     JOIN sales s ON s.id = si.sale_id
-    WHERE unixepoch(s.created_at) >= unixepoch(?)
+    WHERE s.created_at >= ?
     GROUP BY item_name
     ORDER BY quantity DESC
     LIMIT 6
@@ -167,7 +177,7 @@ function getDashboardAnalytics() {
         SUM(si.quantity) AS quantity
       FROM sale_items si
       JOIN sales s ON s.id = si.sale_id
-      WHERE unixepoch(s.created_at) >= unixepoch(?)
+      WHERE s.created_at >= ?
       GROUP BY si.product_id
     ) sold ON sold.product_id = p.id
     WHERE p.active = 1 AND p.sale_price > 0
@@ -178,14 +188,14 @@ function getDashboardAnalytics() {
 
   const dailyRows = db.prepare(`
     SELECT
-      date(created_at, 'localtime') AS date,
+      date(created_at) AS date,
       SUM(total) AS revenue,
       SUM(estimated_profit) AS profit,
       COUNT(*) AS sales
     FROM sales
-    WHERE unixepoch(created_at) >= unixepoch(?)
-    GROUP BY date(created_at, 'localtime')
-    ORDER BY date(created_at, 'localtime')
+    WHERE created_at >= ?
+    GROUP BY date(created_at)
+    ORDER BY date(created_at)
   `).all(thirteenDaysAgo);
 
   const stockConsumption = db.prepare(`
@@ -197,7 +207,7 @@ function getDashboardAnalytics() {
     FROM inventory_movements m
     JOIN products p ON p.id = m.product_id
     WHERE m.type = 'sale'
-      AND unixepoch(m.created_at) >= unixepoch(?)
+      AND m.created_at >= ?
     GROUP BY p.id, p.name, p.category, p.unit
     ORDER BY quantity DESC
     LIMIT 8
@@ -211,7 +221,7 @@ function getDashboardAnalytics() {
     FROM sale_items si
     JOIN sales s ON s.id = si.sale_id
     LEFT JOIN products p ON p.id = si.product_id
-    WHERE unixepoch(s.created_at) >= unixepoch(?)
+    WHERE s.created_at >= ?
     GROUP BY COALESCE(p.category, 'Combos')
     ORDER BY revenue DESC
   `).all(thirtyDaysAgo);
@@ -231,7 +241,7 @@ function getDashboardAnalytics() {
     FROM products p
     LEFT JOIN inventory_movements m ON m.product_id = p.id
       AND m.type = 'sale'
-      AND unixepoch(m.created_at) >= unixepoch(?)
+      AND m.created_at >= ?
     WHERE p.active = 1
     GROUP BY p.id
     HAVING p.stock_quantity <= p.min_stock OR avg_daily_usage > 0
@@ -269,11 +279,11 @@ function getDashboardAnalytics() {
       SUM(s.estimated_profit) AS profit
     FROM events e
     JOIN sales s ON s.event_id = e.id
-    WHERE date(e.event_date) >= date('now', 'localtime', 'start of year')
-      AND date(e.event_date) <= date('now', 'localtime')
+    WHERE date(e.event_date) >= date(?, 'start of year')
+      AND date(e.event_date) <= date(?)
     GROUP BY e.name
     ORDER BY revenue DESC, e.name ASC
-  `).all().map((item) => ({
+  `).all(brazilDate(), brazilDate()).map((item) => ({
     ...item,
     occurrences: Number(item.occurrences || 0),
     sales: Number(item.sales || 0),
@@ -289,7 +299,7 @@ function getDashboardAnalytics() {
       CASE WHEN SUM(line_total) > 0 THEN SUM(line_profit) / SUM(line_total) ELSE 0 END AS margin
     FROM sale_items si
     JOIN sales s ON s.id = si.sale_id
-    WHERE unixepoch(s.created_at) >= unixepoch(?)
+    WHERE s.created_at >= ?
     GROUP BY item_name
     ORDER BY profit DESC
     LIMIT 6

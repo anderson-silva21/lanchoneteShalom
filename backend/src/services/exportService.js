@@ -44,7 +44,7 @@ function toPdfStream(rows, title) {
   const doc = new PDFDocument({ margin: 36, size: 'A4', layout: 'landscape' });
   doc.fontSize(16).text(title, { align: 'left' });
   doc.moveDown(0.5);
-  doc.fontSize(9).fillColor('#555').text(`Gerado em ${new Date().toLocaleString('pt-BR')}`);
+  doc.fontSize(9).fillColor('#555').text(`Gerado em ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`);
   doc.moveDown();
 
   if (!rows.length) {

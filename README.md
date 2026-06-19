@@ -60,6 +60,7 @@ Login inicial:
 - Fechamento de caixa/evento com registro formal do resumo.
 - Alertas via Telegram para estoque baixo, validades, lotes sem validade e pagamentos pendentes.
 - Configuracao dos alertas Telegram pela tela `Sistema`, mantendo o token do bot no `.env`.
+- Horarios operacionais gravados e exibidos em UTC-3, horario de Brasilia/Sao Paulo.
 - Limpeza administrativa de dados operacionais em Sistema.
 - Modo escuro e PWA instalavel.
 
