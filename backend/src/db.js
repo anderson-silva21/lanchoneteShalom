@@ -479,6 +479,8 @@ function ensureUserRoleSchema() {
         role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'cashier', 'finance')),
         active INTEGER NOT NULL DEFAULT 1,
         password_must_change INTEGER NOT NULL DEFAULT 0,
+        login_failed_attempts INTEGER NOT NULL DEFAULT 0,
+        login_locked_until TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
       );
 
@@ -491,6 +493,8 @@ function ensureUserRoleSchema() {
         role,
         active,
         password_must_change,
+        login_failed_attempts,
+        login_locked_until,
         created_at
       )
       SELECT
@@ -502,6 +506,8 @@ function ensureUserRoleSchema() {
         role,
         active,
         password_must_change,
+        0,
+        NULL,
         created_at
       FROM users;
 
@@ -745,6 +751,8 @@ function runMigrations() {
   addColumnIfMissing('users', 'password_must_change', 'INTEGER NOT NULL DEFAULT 0');
   fillMissingUsernames();
   ensureUserRoleSchema();
+  addColumnIfMissing('users', 'login_failed_attempts', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('users', 'login_locked_until', 'TEXT');
   addColumnIfMissing('products', 'expiration_date', 'TEXT');
   addColumnIfMissing('products', 'is_donation', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('combos', 'is_promotion', 'INTEGER NOT NULL DEFAULT 0');

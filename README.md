@@ -40,6 +40,39 @@ Login inicial:
 - Admin: `admin` / `admin123`
 - Caixa: `caixa` / `caixa123`
 
+## Ambiente de desenvolvimento com dados ficticios
+
+Para testar telas, dashboards, alertas, vendas, pagamentos pendentes e combos sem tocar no banco principal, use o banco dedicado `database/lanchonete.dev.sqlite`.
+
+Crie ou atualize a base demo:
+
+```bash
+npm run seed:dev
+```
+
+Se quiser apagar os dados ficticios existentes e recriar tudo do zero:
+
+```bash
+npm run seed:dev -- --reset
+```
+
+Suba a aplicacao usando esse banco demo:
+
+```bash
+npm run dev:demo
+```
+
+Usuarios extras criados apenas no banco demo:
+
+- Gerente: `gerente` / `gerente123`
+- Financeiro: `financeiro` / `financeiro123`
+
+Travas de seguranca do seed demo:
+
+- Nao roda com `NODE_ENV=production`.
+- Nao roda no banco principal `database/lanchonete.sqlite`.
+- Se o banco demo ja tiver dados operacionais, exige `--reset` para evitar mistura acidental.
+
 ## Funcionalidades
 
 - Base inicia sem produtos, vendas, combos, eventos ou estoque ficticio.
@@ -51,6 +84,7 @@ Login inicial:
 - Planilha central com abas de produtos, vendas, itens vendidos, movimentacoes e indicadores.
 - Relatorios exportaveis em CSV, Excel e PDF.
 - Login com niveis `admin`, `manager`, `finance` e `cashier`.
+- Login protegido com rate limit, bloqueio temporario apos falhas repetidas e auditoria de tentativas invalidas.
 - Administrador cria usuarios ativos, gera senha inicial aleatoria, reseta senhas e exclui acessos ativos.
 - Primeiro acesso com senha temporaria exige troca de senha antes de abrir o sistema.
 - Backup manual, backup automatico, backup pre-migracao e restauracao controlada do banco SQLite.
@@ -95,6 +129,11 @@ PORT=4000
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 JWT_SECRET=troque-este-segredo
 DB_PATH=../database/lanchonete.sqlite
+LOGIN_RATE_LIMIT_WINDOW_MINUTES=15
+LOGIN_RATE_LIMIT_MAX_PER_IP=30
+LOGIN_RATE_LIMIT_MAX_PER_USER=10
+LOGIN_LOCK_FAILED_ATTEMPTS=5
+LOGIN_LOCK_MINUTES=15
 AUTO_BACKUP_ENABLED=true
 AUTO_BACKUP_INTERVAL_HOURS=24
 AUTO_BACKUP_RETENTION=14

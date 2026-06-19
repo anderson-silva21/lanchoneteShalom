@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'cashier', 'finance')),
   active INTEGER NOT NULL DEFAULT 1,
   password_must_change INTEGER NOT NULL DEFAULT 0,
+  login_failed_attempts INTEGER NOT NULL DEFAULT 0,
+  login_locked_until TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
 );
 

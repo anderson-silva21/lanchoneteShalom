@@ -5,8 +5,10 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
+    "dev:demo": "nodemon scripts/devDemoServer.js",
     "start": "node src/server.js",
     "seed": "node src/server.js",
+    "seed:dev": "node scripts/seedDevData.js",
     "db:reset": "node scripts/resetOperationalData.js",
     "test": "node --test test/*.test.js",
     "user:create": "node scripts/createUser.js"
