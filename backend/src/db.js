@@ -156,6 +156,45 @@ function ensureCashClosingSchema() {
   `);
 }
 
+function ensureAuditLogSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER REFERENCES users(id),
+      username TEXT,
+      role TEXT,
+      action TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id TEXT,
+      summary TEXT NOT NULL,
+      metadata TEXT,
+      ip TEXT,
+      request_id TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id, created_at);
+  `);
+}
+
+function ensureCashClosingSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cash_closings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      closing_date TEXT NOT NULL,
+      event_id INTEGER REFERENCES events(id),
+      summary_json TEXT NOT NULL,
+      notes TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (closing_date, event_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_cash_closings_date ON cash_closings(closing_date, event_id);
+  `);
+}
+
 function getAppSetting(key, fallback = '') {
   ensureAppSettingsSchema();
   const row = db.prepare('SELECT value FROM app_settings WHERE key = ?').get(key);

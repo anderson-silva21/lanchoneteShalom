@@ -33,6 +33,21 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
 );
 
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER REFERENCES users(id),
+  username TEXT,
+  role TEXT,
+  action TEXT NOT NULL,
+  entity_type TEXT,
+  entity_id TEXT,
+  summary TEXT NOT NULL,
+  metadata TEXT,
+  ip TEXT,
+  request_id TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS product_categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
