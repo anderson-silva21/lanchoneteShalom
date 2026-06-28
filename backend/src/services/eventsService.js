@@ -131,28 +131,14 @@ const updateEventTransaction = db.transaction((id, payload) => {
     eventId
   );
 
-  const unassignment = db.prepare(`
-    UPDATE sales
-    SET event_id = NULL
-    WHERE event_id = ?
-      AND date(created_at) != date(?)
-  `).run(eventId, payload.event_date);
-
-  const assignment = db.prepare(`
-    UPDATE sales
-    SET event_id = ?
-    WHERE date(created_at) = date(?)
-      AND (event_id IS NULL OR event_id != ?)
-  `).run(eventId, payload.event_date, eventId);
-
   if (current.event_date !== payload.event_date) {
     db.prepare('UPDATE cash_closings SET closing_date = ? WHERE event_id = ?').run(payload.event_date, eventId);
   }
 
   return {
     ...getEventWithSummary(eventId),
-    reassigned_sales: Number(assignment.changes || 0),
-    unassigned_sales: Number(unassignment.changes || 0)
+    reassigned_sales: 0,
+    unassigned_sales: 0
   };
 });
 

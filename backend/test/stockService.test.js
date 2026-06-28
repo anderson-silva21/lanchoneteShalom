@@ -476,7 +476,7 @@ test('registro de evento atribui vendas existentes realizadas na mesma data', ()
   assert.equal(event.assigned_revenue, 150);
 });
 
-test('edicao de evento atualiza nome e data e reatribui vendas da nova data', () => {
+test('edicao de evento atualiza nome e data sem zerar vendas vinculadas', () => {
   const oldSaleId = db.prepare(`
     INSERT INTO sales (total, estimated_profit, payment_method, sold_by, created_at)
     VALUES (40, 20, 'pix', ?, '2026-07-10 12:00:00')
@@ -499,9 +499,9 @@ test('edicao de evento atualiza nome e data e reatribui vendas da nova data', ()
   assert.equal(updated.name, 'Nome corrigido');
   assert.equal(updated.event_date, '2026-07-11');
   assert.equal(updated.assigned_sales, 1);
-  assert.equal(updated.assigned_revenue, 75);
-  assert.equal(db.prepare('SELECT event_id FROM sales WHERE id = ?').get(oldSaleId).event_id, null);
-  assert.equal(db.prepare('SELECT event_id FROM sales WHERE id = ?').get(newSaleId).event_id, event.id);
+  assert.equal(updated.assigned_revenue, 40);
+  assert.equal(db.prepare('SELECT event_id FROM sales WHERE id = ?').get(oldSaleId).event_id, event.id);
+  assert.equal(db.prepare('SELECT event_id FROM sales WHERE id = ?').get(newSaleId).event_id, null);
 });
 
 test('nova venda e atribuida automaticamente ao evento do dia', () => {
