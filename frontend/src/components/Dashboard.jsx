@@ -7,7 +7,9 @@ import {
   ExternalLink,
   LineChart,
   PackagePlus,
+  Pencil,
   ReceiptText,
+  Save,
   TrendingUp,
   X
 } from 'lucide-react'
@@ -128,6 +130,11 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
   const [eventSaving, setEventSaving] = useState(false)
   const [eventMessage, setEventMessage] = useState('')
   const [registeredEvent, setRegisteredEvent] = useState(null)
+  const [events, setEvents] = useState([])
+  const [eventsLoading, setEventsLoading] = useState(false)
+  const [editingEventId, setEditingEventId] = useState('')
+  const [eventEditDraft, setEventEditDraft] = useState(createEmptyEventDraft)
+  const [eventUpdatingId, setEventUpdatingId] = useState('')
   const [pendingPaymentMethods, setPendingPaymentMethods] = useState({})
   const [pendingPaymentConfirming, setPendingPaymentConfirming] = useState('')
   const [pendingPaymentMessage, setPendingPaymentMessage] = useState('')
@@ -174,11 +181,25 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
     onNavigateToProducts?.(intent)
   }
 
+  async function loadEvents() {
+    setEventsLoading(true)
+    try {
+      const eventData = await api.events()
+      setEvents(eventData)
+    } catch (err) {
+      setEventMessage(err.message)
+    } finally {
+      setEventsLoading(false)
+    }
+  }
+
   function openEventModal() {
     setEventDraft(createEmptyEventDraft())
     setEventMessage('')
     setRegisteredEvent(null)
+    setEditingEventId('')
     setActiveModal('event')
+    loadEvents()
   }
 
   async function registerEvent(event) {
@@ -190,11 +211,42 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
     try {
       const created = await api.createEvent(eventDraft)
       setRegisteredEvent(created)
+      await loadEvents()
       setReloadKey((key) => key + 1)
     } catch (err) {
       setEventMessage(err.message)
     } finally {
       setEventSaving(false)
+    }
+  }
+
+  function startEditingEvent(item) {
+    setEventMessage('')
+    setRegisteredEvent(null)
+    setEditingEventId(String(item.id))
+    setEventEditDraft({
+      name: item.name,
+      event_date: item.event_date,
+      notes: item.notes || ''
+    })
+  }
+
+  async function saveEventEdit(formEvent) {
+    formEvent.preventDefault()
+    setEventUpdatingId(editingEventId)
+    setEventMessage('')
+    setRegisteredEvent(null)
+
+    try {
+      const updated = await api.updateEvent(editingEventId, eventEditDraft)
+      setRegisteredEvent(updated)
+      setEditingEventId('')
+      await loadEvents()
+      setReloadKey((key) => key + 1)
+    } catch (err) {
+      setEventMessage(err.message)
+    } finally {
+      setEventUpdatingId('')
     }
   }
 
@@ -250,6 +302,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
   const eventRevenue = data.event_revenue || []
   const pendingPayments = data.pending_payments || []
   const canOpenTelegramGroup = user?.role === 'finance' && data.telegram_group_url
+  const eventNameOptions = Array.from(new Set(events.map((event) => event.name).filter(Boolean))).sort((a, b) => a.localeCompare(b))
 
   return (
     <div className="space-y-5">
@@ -480,6 +533,19 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
         >
           <form className="space-y-4" onSubmit={registerEvent}>
             <label className="block text-sm font-medium">
+              Usar nome existente
+              <select
+                className="mission-input mt-2 w-full px-3 py-2.5"
+                value={eventNameOptions.includes(eventDraft.name) ? eventDraft.name : ''}
+                onChange={(event) => setEventDraft((current) => ({ ...current, name: event.target.value }))}
+              >
+                <option value="">Novo nome</option>
+                {eventNameOptions.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-sm font-medium">
               Nome do evento
               <input
                 className="mission-input mt-2 w-full px-3 py-2.5"
@@ -512,10 +578,13 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
 
             {registeredEvent ? (
               <div className="rounded-xl bg-shalom-mist/70 p-3 text-sm dark:bg-white/10">
-                <p className="font-semibold">Evento registrado para {formatDate(registeredEvent.event_date)}.</p>
+                <p className="font-semibold">Evento {registeredEvent.reassigned_sales !== undefined ? 'atualizado' : 'registrado'} para {formatDate(registeredEvent.event_date)}.</p>
                 <p className="mission-muted mt-1">
-                  {registeredEvent.assigned_sales} vendas existentes atribuidas, totalizando {money.format(registeredEvent.assigned_revenue)}.
+                  {registeredEvent.assigned_sales} vendas vinculadas, totalizando {money.format(registeredEvent.assigned_revenue)}.
                 </p>
+                {registeredEvent.unassigned_sales ? (
+                  <p className="mission-muted mt-1">{registeredEvent.unassigned_sales} vendas da data anterior foram desvinculadas.</p>
+                ) : null}
               </div>
             ) : null}
 
@@ -524,6 +593,91 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
               {eventSaving ? 'Registrando...' : 'Registrar evento'}
             </button>
           </form>
+
+          <div className="mt-5 border-t border-line/80 pt-4 dark:border-shalom-gold/10">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 className="font-display text-base font-semibold">Eventos cadastrados</h3>
+              <button type="button" className="mission-btn border border-line/80 px-3 py-2 text-sm font-semibold hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={loadEvents} disabled={eventsLoading}>
+                Atualizar
+              </button>
+            </div>
+
+            {eventsLoading ? (
+              <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
+                Carregando eventos...
+              </div>
+            ) : events.length ? (
+              <div className="space-y-3">
+                {events.map((item) => (
+                  editingEventId === String(item.id) ? (
+                    <form key={item.id} className="mission-card space-y-3 p-3" onSubmit={saveEventEdit}>
+                      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
+                        <label className="text-sm font-medium">
+                          Nome
+                          <input
+                            className="mission-input mt-1 w-full px-3 py-2"
+                            value={eventEditDraft.name}
+                            onChange={(event) => setEventEditDraft((current) => ({ ...current, name: event.target.value }))}
+                            required
+                          />
+                        </label>
+                        <label className="text-sm font-medium">
+                          Data
+                          <input
+                            className="mission-input mt-1 w-full px-3 py-2"
+                            type="date"
+                            value={eventEditDraft.event_date}
+                            onChange={(event) => setEventEditDraft((current) => ({ ...current, event_date: event.target.value }))}
+                            required
+                          />
+                        </label>
+                      </div>
+                      <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+                        <button
+                          type="button"
+                          className="mission-btn border border-line/80 px-3 py-2 text-sm font-semibold hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10"
+                          onClick={() => setEditingEventId('')}
+                          disabled={eventUpdatingId === String(item.id)}
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="submit"
+                          className="mission-btn mission-btn-primary flex items-center justify-center gap-2 px-3 py-2 text-sm font-semibold"
+                          disabled={eventUpdatingId === String(item.id)}
+                        >
+                          <Save size={16} />
+                          {eventUpdatingId === String(item.id) ? 'Salvando...' : 'Salvar'}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <article key={item.id} className="mission-card p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold">{item.name}</p>
+                          <p className="mission-muted text-sm">{formatDate(item.event_date)} - {item.assigned_sales || 0} vendas - {money.format(item.assigned_revenue || 0)}</p>
+                        </div>
+                        <button
+                          type="button"
+                          className="mission-btn shrink-0 border border-line/80 p-2 hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10"
+                          onClick={() => startEditingEvent(item)}
+                          title="Editar evento"
+                          aria-label={`Editar evento ${item.name}`}
+                        >
+                          <Pencil size={16} />
+                        </button>
+                      </div>
+                    </article>
+                  )
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
+                Nenhum evento registrado.
+              </div>
+            )}
+          </div>
         </DashboardModal>
       ) : null}
 

@@ -160,6 +160,7 @@ export function SalesTerminal({ onSaleComplete }) {
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
   const [showComboCreator, setShowComboCreator] = useState(false)
+  const [deletingComboId, setDeletingComboId] = useState('')
 
   const loadData = useCallback(async () => {
     const [productData, comboData] = await Promise.all([
@@ -199,6 +200,27 @@ export function SalesTerminal({ onSaleComplete }) {
     setCart((current) => current
       .map((item) => item.key === key ? { ...item, quantity: item.quantity + delta } : item)
       .filter((item) => item.quantity > 0))
+  }
+
+  async function deleteCombo(combo) {
+    const comboType = combo.is_promotion ? 'promocao' : 'combo'
+    if (!window.confirm(`Excluir ${comboType} "${combo.name}" do PDV?`)) return
+
+    setDeletingComboId(String(combo.id))
+    setMessage('')
+
+    try {
+      const result = await api.deleteCombo(combo.id)
+      setCombos((current) => current.filter((item) => item.id !== combo.id))
+      setCart((current) => current.filter((item) => item.type !== 'combo' || item.id !== combo.id))
+      await loadData()
+      onSaleComplete?.()
+      setMessage(`${combo.is_promotion ? 'Promocao' : 'Combo'} ${combo.name} excluido do PDV.${result.sales_count ? ' Historico de vendas preservado.' : ''}`)
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setDeletingComboId('')
+    }
   }
 
   async function finishSale() {
@@ -253,20 +275,38 @@ export function SalesTerminal({ onSaleComplete }) {
           </div>
           {combos.length ? (
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {combos.map((combo) => (
-                <button
-                  key={combo.id}
-                  className="mission-card p-4 text-left disabled:cursor-not-allowed"
-                  onClick={() => addItem(combo, 'combo')}
-                  disabled={combo.max_available < 1}
-                >
-                  <span className="text-sm font-semibold uppercase tracking-[0.14em] text-shalom-orange dark:text-shalom-gold">{combo.is_promotion ? 'Promocao' : 'Combo'}</span>
-                  <strong className="mt-1 block font-display text-lg">{combo.name}</strong>
-                  <span className="mt-3 block text-xl font-semibold text-shalom-blue dark:text-shalom-gold">{money.format(combo.sale_price)}</span>
-                  {combo.savings > 0 ? <span className="mt-1 block text-xs font-semibold text-shalom-orange dark:text-shalom-gold">Economize {money.format(combo.savings)}</span> : null}
-                  <span className="mission-muted mt-2 block text-xs">{combo.max_available} disponiveis{combo.is_promotion ? ' - expira hoje' : ''}</span>
-                </button>
-              ))}
+              {combos.map((combo) => {
+                const isDeleting = deletingComboId === String(combo.id)
+
+                return (
+                  <article key={combo.id} className="mission-card p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 text-left disabled:cursor-not-allowed disabled:opacity-60"
+                        onClick={() => addItem(combo, 'combo')}
+                        disabled={combo.max_available < 1 || isDeleting}
+                      >
+                        <span className="text-sm font-semibold uppercase tracking-[0.14em] text-shalom-orange dark:text-shalom-gold">{combo.is_promotion ? 'Promocao' : 'Combo'}</span>
+                        <strong className="mt-1 block truncate font-display text-lg">{combo.name}</strong>
+                        <span className="mt-3 block text-xl font-semibold text-shalom-blue dark:text-shalom-gold">{money.format(combo.sale_price)}</span>
+                        {combo.savings > 0 ? <span className="mt-1 block text-xs font-semibold text-shalom-orange dark:text-shalom-gold">Economize {money.format(combo.savings)}</span> : null}
+                        <span className="mission-muted mt-2 block text-xs">{combo.max_available} disponiveis{combo.is_promotion ? ' - expira hoje' : ''}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="mission-btn shrink-0 border border-shalom-wine/35 p-2 text-shalom-wine hover:bg-shalom-wine/10 disabled:cursor-not-allowed disabled:opacity-45 dark:border-rose-200/20 dark:text-rose-100 dark:hover:bg-rose-400/10"
+                        onClick={() => deleteCombo(combo)}
+                        disabled={isDeleting}
+                        title={`Excluir ${combo.is_promotion ? 'promocao' : 'combo'}`}
+                        aria-label={`Excluir ${combo.is_promotion ? 'promocao' : 'combo'} ${combo.name}`}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-shalom-gold/50 p-6 text-center mission-muted">Nenhum combo ativo.</div>

@@ -90,7 +90,32 @@ function createCombo(payload, userId) {
   return createComboTransaction(payload, userId);
 }
 
+const deleteComboTransaction = db.transaction((id) => {
+  const comboId = Number(id);
+  if (!Number.isInteger(comboId) || comboId <= 0) {
+    throw createHttpError('Combo invalido.', 400);
+  }
+
+  const combo = db.prepare('SELECT * FROM combos WHERE id = ? AND active = 1').get(comboId);
+  if (!combo) {
+    throw createHttpError('Combo ativo nao encontrado.', 404);
+  }
+
+  const sales = db.prepare('SELECT COUNT(*) AS total FROM sale_items WHERE combo_id = ?').get(comboId);
+  db.prepare('UPDATE combos SET active = 0 WHERE id = ?').run(comboId);
+
+  return {
+    combo: enrichCombo(combo),
+    sales_count: Number(sales?.total || 0)
+  };
+});
+
+function deleteComboSafely(id) {
+  return deleteComboTransaction(id);
+}
+
 module.exports = {
   createCombo,
+  deleteComboSafely,
   listActiveCombos
 };

@@ -2,7 +2,7 @@ const express = require('express');
 const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
-const { createCombo, listActiveCombos } = require('../services/comboService');
+const { createCombo, deleteComboSafely, listActiveCombos } = require('../services/comboService');
 const { recordAudit } = require('../services/auditService');
 
 const router = express.Router();
@@ -39,6 +39,23 @@ router.post('/', (req, res, next) => {
       metadata: combo
     });
     return res.status(201).json(combo);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.delete('/:id', (req, res, next) => {
+  try {
+    const result = deleteComboSafely(req.params.id);
+    recordAudit({
+      req,
+      action: 'combo.delete',
+      entityType: 'combo',
+      entityId: result.combo.id,
+      summary: `Combo excluido: ${result.combo.name}`,
+      metadata: result
+    });
+    return res.json(result);
   } catch (error) {
     return next(error);
   }

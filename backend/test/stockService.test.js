@@ -9,8 +9,8 @@ process.env.DB_PATH = path.join(tempDir, 'test.sqlite');
 
 const { db, initDatabase } = require('../src/db');
 const { getDashboardAnalytics } = require('../src/services/analyticsService');
-const { createCombo, listActiveCombos } = require('../src/services/comboService');
-const { createEvent } = require('../src/services/eventsService');
+const { createCombo, deleteComboSafely, listActiveCombos } = require('../src/services/comboService');
+const { createEvent, updateEvent } = require('../src/services/eventsService');
 const { deleteProductSafely } = require('../src/services/productService');
 const { confirmSalePayment, createSale, deleteSale, getCashClosing, getSaleById, listPendingPayments } = require('../src/services/salesService');
 const { addStock, getProductStock, updateBatch } = require('../src/services/stockService');
@@ -476,6 +476,34 @@ test('registro de evento atribui vendas existentes realizadas na mesma data', ()
   assert.equal(event.assigned_revenue, 150);
 });
 
+test('edicao de evento atualiza nome e data e reatribui vendas da nova data', () => {
+  const oldSaleId = db.prepare(`
+    INSERT INTO sales (total, estimated_profit, payment_method, sold_by, created_at)
+    VALUES (40, 20, 'pix', ?, '2026-07-10 12:00:00')
+  `).run(userId).lastInsertRowid;
+  const newSaleId = db.prepare(`
+    INSERT INTO sales (total, estimated_profit, payment_method, sold_by, created_at)
+    VALUES (75, 30, 'pix', ?, '2026-07-11 12:00:00')
+  `).run(userId).lastInsertRowid;
+
+  const event = createEvent({
+    name: 'Nome errado',
+    event_date: '2026-07-10'
+  });
+
+  const updated = updateEvent(event.id, {
+    name: 'Nome corrigido',
+    event_date: '2026-07-11'
+  });
+
+  assert.equal(updated.name, 'Nome corrigido');
+  assert.equal(updated.event_date, '2026-07-11');
+  assert.equal(updated.assigned_sales, 1);
+  assert.equal(updated.assigned_revenue, 75);
+  assert.equal(db.prepare('SELECT event_id FROM sales WHERE id = ?').get(oldSaleId).event_id, null);
+  assert.equal(db.prepare('SELECT event_id FROM sales WHERE id = ?').get(newSaleId).event_id, event.id);
+});
+
 test('nova venda e atribuida automaticamente ao evento do dia', () => {
   const today = db.prepare("SELECT date('now', 'localtime') AS date").get().date;
   const event = createEvent({
@@ -537,6 +565,32 @@ test('promocao expirada nao aparece no PDV', () => {
   }, userId);
 
   assert.equal(listActiveCombos().length, 0);
+});
+
+test('exclusao de combo inativa oferta e preserva historico de vendas', () => {
+  const product = createProduct({ name: 'Combo Excluido', sale_price: 10, cost_price: 4 });
+  addStock({ productId: product.id, quantity: 3, expirationDate: '2026-12-20', userId });
+
+  const combo = createCombo({
+    name: 'Oferta por engano',
+    sale_price: 8,
+    is_promotion: true,
+    expires_at: '2099-12-31T23:59:59.000Z',
+    items: [{ product_id: product.id, quantity: 1 }]
+  }, userId);
+
+  createSale({
+    payment_method: 'pix',
+    items: [{ combo_id: combo.id, quantity: 1 }]
+  }, { id: userId });
+
+  const result = deleteComboSafely(combo.id);
+
+  assert.equal(result.combo.id, combo.id);
+  assert.equal(result.sales_count, 1);
+  assert.equal(db.prepare('SELECT active FROM combos WHERE id = ?').get(combo.id).active, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS total FROM sale_items WHERE combo_id = ?').get(combo.id).total, 1);
+  assert.equal(listActiveCombos().some((item) => item.id === combo.id), false);
 });
 
 test('exclusao segura de produto exige confirmacao exata', () => {

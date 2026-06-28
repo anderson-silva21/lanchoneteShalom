@@ -3,7 +3,7 @@ const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
 const { db } = require('../db');
-const { createEvent } = require('../services/eventsService');
+const { createEvent, listEvents, updateEvent } = require('../services/eventsService');
 const { confirmSalePayment, createSale, getCashClosing, getSaleById, listPendingPayments, saveCashClosing } = require('../services/salesService');
 const { recordAudit } = require('../services/auditService');
 
@@ -45,14 +45,7 @@ const closingSchema = z.object({
 router.use(authenticate, requireScreen('sales'));
 
 router.get('/events', (req, res) => {
-  const events = db.prepare(`
-    SELECT id, name, event_date
-    FROM events
-    WHERE date(event_date) >= date('now', '-3 hours', 'start of year')
-    ORDER BY date(event_date) DESC, name ASC
-  `).all();
-
-  return res.json(events);
+  return res.json(listEvents());
 });
 
 router.post('/events', requireScreen('dashboard'), (req, res, next) => {
@@ -67,6 +60,23 @@ router.post('/events', requireScreen('dashboard'), (req, res, next) => {
       metadata: event
     });
     return res.status(201).json(event);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.patch('/events/:id', requireScreen('dashboard'), (req, res, next) => {
+  try {
+    const event = updateEvent(req.params.id, eventSchema.parse(req.body));
+    recordAudit({
+      req,
+      action: 'event.update',
+      entityType: 'event',
+      entityId: event.id,
+      summary: `Evento atualizado: ${event.name}`,
+      metadata: event
+    });
+    return res.json(event);
   } catch (error) {
     return next(error);
   }
