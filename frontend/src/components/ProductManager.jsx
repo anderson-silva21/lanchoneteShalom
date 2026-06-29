@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from '../services/api'
 import { decimal, formatDate, formatDateTime, formatQuantityWithUnit, money } from '../utils/formatters'
+import { PaginationControls } from './PaginationControls'
 import { StatusPill } from './StatusPill'
 
 function createEmptyProduct(category = '') {
@@ -22,6 +23,7 @@ function createEmptyProduct(category = '') {
 
 const nonnegativeProductFields = ['cost_price', 'sale_price', 'stock_quantity', 'min_stock']
 const numericProductSortFields = new Set(['is_donation', 'cost_price', 'sale_price', 'stock_quantity', 'min_stock'])
+const PAGE_SIZE = 10
 
 function createEmptyAdjustment(productId = '') {
   return {
@@ -42,6 +44,11 @@ function getMovementMode(adjustment) {
   if (adjustment.type === 'purchase') return 'purchase'
   if (adjustment.type === 'waste') return 'waste'
   return adjustment.operation === 'out' ? 'adjustment_out' : 'adjustment_in'
+}
+
+function clampPage(page, totalItems) {
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE))
+  return Math.min(Math.max(1, page), totalPages)
 }
 
 function getBatchStatusClass(status) {
@@ -158,6 +165,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   const [productToDelete, setProductToDelete] = useState(null)
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
   const [deletingProduct, setDeletingProduct] = useState(false)
+  const [productPage, setProductPage] = useState(1)
   const movementFormRef = useRef(null)
   const movementProductRef = useRef(null)
   const productTableTopScrollRef = useRef(null)
@@ -277,6 +285,12 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       })
       .map(({ product }) => product)
   }, [filtered, sortConfig])
+
+  const paginatedProducts = sortedProducts.slice((productPage - 1) * PAGE_SIZE, productPage * PAGE_SIZE)
+
+  useEffect(() => {
+    setProductPage((current) => clampPage(current, sortedProducts.length))
+  }, [sortedProducts.length])
 
   async function importProducts(event) {
     event.preventDefault()
@@ -491,6 +505,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   }, [products])
 
   function toggleSort(sortKey) {
+    setProductPage(1)
     setSortConfig((current) => {
       if (current.key === sortKey) {
         return { key: sortKey, direction: current.direction === 'asc' ? 'desc' : 'asc' }
@@ -577,10 +592,16 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                   className="mission-input w-full py-2 pl-9 pr-3 sm:w-64"
                   placeholder="Buscar"
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    setQuery(event.target.value)
+                    setProductPage(1)
+                  }}
                 />
               </div>
-              <select className="mission-input px-3 py-2" value={status} onChange={(event) => setStatus(event.target.value)}>
+              <select className="mission-input px-3 py-2" value={status} onChange={(event) => {
+                setStatus(event.target.value)
+                setProductPage(1)
+              }}>
                 <option value="">Todos</option>
                 <option value="low">Baixo</option>
                 <option value="critical">Critico</option>
@@ -618,7 +639,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 </tr>
               </thead>
               <tbody>
-                {sortedProducts.map((product) => (
+                {paginatedProducts.map((product) => (
                   <tr key={product.id} className="border-b border-line/80 dark:border-shalom-gold/10">
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
                       <input className="w-44 rounded-lg border border-transparent bg-transparent px-2 py-1 focus:border-shalom-gold/60" value={product.name} onChange={(event) => updateRow(product.id, 'name', event.target.value)} />
@@ -674,6 +695,14 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
               </tbody>
             </table>
           </div>
+
+          <PaginationControls
+            page={productPage}
+            pageSize={PAGE_SIZE}
+            totalItems={sortedProducts.length}
+            itemLabel="produtos"
+            onPageChange={(page) => setProductPage(clampPage(page, sortedProducts.length))}
+          />
         </div>
 
         <div className="space-y-5">

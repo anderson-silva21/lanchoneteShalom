@@ -9,9 +9,11 @@ import {
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../services/api'
-import { formatDate, formatDateTime, money } from '../utils/formatters'
+import { decimal, formatDate, formatDateTime, money } from '../utils/formatters'
+import { PaginationControls } from './PaginationControls'
 
 const confirmedPaymentMethods = ['pix', 'cartao', 'dinheiro']
+const PAGE_SIZE = 10
 
 const paymentLabels = {
   pix: 'Pix',
@@ -37,6 +39,11 @@ function getPaymentLabel(value) {
 
 function getStatusLabel(value) {
   return statusLabels[value] || value || '-'
+}
+
+function clampPage(page, totalItems) {
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE))
+  return Math.min(Math.max(1, page), totalPages)
 }
 
 function SummaryCard({ icon: Icon, label, value, detail, tone = 'blue' }) {
@@ -73,6 +80,29 @@ function PaymentMethodSelect({ value, onChange }) {
   )
 }
 
+function SaleItemsList({ items }) {
+  return (
+    <div className="mt-3 rounded-xl bg-shalom-cream/70 p-3 text-sm dark:bg-white/10">
+      <p className="mission-muted font-medium">Produtos vendidos</p>
+      {items?.length ? (
+        <ul className="mt-2 space-y-2">
+          {items.map((item) => (
+            <li key={item.id} className="flex flex-col gap-1 border-b border-line/60 pb-2 last:border-0 last:pb-0 dark:border-shalom-gold/10 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-semibold">{item.item_name}</p>
+                <p className="mission-muted text-xs">{decimal.format(item.quantity)} x {money.format(item.unit_price)}</p>
+              </div>
+              <strong className="text-shalom-blue dark:text-shalom-gold">{money.format(item.line_total)}</strong>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 mission-muted">Sem itens detalhados.</p>
+      )}
+    </div>
+  )
+}
+
 export function PaymentsView({ refreshKey, onChanged }) {
   const [pendingPayments, setPendingPayments] = useState([])
   const [closing, setClosing] = useState(null)
@@ -85,6 +115,8 @@ export function PaymentsView({ refreshKey, onChanged }) {
   const [confirmingId, setConfirmingId] = useState('')
   const [savingClosing, setSavingClosing] = useState(false)
   const [message, setMessage] = useState('')
+  const [pendingPage, setPendingPage] = useState(1)
+  const [salesPage, setSalesPage] = useState(1)
 
   const closingParams = useMemo(() => {
     const params = { date: closingDate }
@@ -170,6 +202,16 @@ export function PaymentsView({ refreshKey, onChanged }) {
   }
   const paymentMethods = closing?.payment_methods || []
   const sales = closing?.sales || []
+  const paginatedPendingPayments = pendingPayments.slice((pendingPage - 1) * PAGE_SIZE, pendingPage * PAGE_SIZE)
+  const paginatedSales = sales.slice((salesPage - 1) * PAGE_SIZE, salesPage * PAGE_SIZE)
+
+  useEffect(() => {
+    setPendingPage((current) => clampPage(current, pendingPayments.length))
+  }, [pendingPayments.length])
+
+  useEffect(() => {
+    setSalesPage((current) => clampPage(current, sales.length))
+  }, [sales.length])
 
   return (
     <div className="space-y-5">
@@ -189,11 +231,17 @@ export function PaymentsView({ refreshKey, onChanged }) {
           <div className="grid gap-2 sm:grid-cols-[160px_minmax(190px,1fr)_auto] sm:items-end">
             <label className="block text-sm font-medium">
               Data
-              <input className="mission-input mt-1 w-full px-3 py-2.5" type="date" value={closingDate} onChange={(event) => setClosingDate(event.target.value)} />
+              <input className="mission-input mt-1 w-full px-3 py-2.5" type="date" value={closingDate} onChange={(event) => {
+                setClosingDate(event.target.value)
+                setSalesPage(1)
+              }} />
             </label>
             <label className="block text-sm font-medium">
               Evento
-              <select className="mission-input mt-1 w-full px-3 py-2.5" value={eventId} onChange={(event) => setEventId(event.target.value)}>
+              <select className="mission-input mt-1 w-full px-3 py-2.5" value={eventId} onChange={(event) => {
+                setEventId(event.target.value)
+                setSalesPage(1)
+              }}>
                 <option value="">Todos</option>
                 {events.map((event) => (
                   <option key={event.id} value={event.id}>{event.name} - {formatDate(event.event_date)}</option>
@@ -265,7 +313,7 @@ export function PaymentsView({ refreshKey, onChanged }) {
           <div className="mt-4 space-y-3">
             {loading ? (
               <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">Carregando pendencias...</div>
-            ) : pendingPayments.length ? pendingPayments.map((item) => (
+            ) : pendingPayments.length ? paginatedPendingPayments.map((item) => (
               <article key={item.id} className="mission-card p-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -293,6 +341,8 @@ export function PaymentsView({ refreshKey, onChanged }) {
                   </div>
                 ) : null}
 
+                <SaleItemsList items={item.items} />
+
                 <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                   <PaymentMethodSelect
                     value={selectedMethods[item.id]}
@@ -315,6 +365,14 @@ export function PaymentsView({ refreshKey, onChanged }) {
               </div>
             )}
           </div>
+
+          <PaginationControls
+            page={pendingPage}
+            pageSize={PAGE_SIZE}
+            totalItems={pendingPayments.length}
+            itemLabel="pendencias"
+            onPageChange={(page) => setPendingPage(clampPage(page, pendingPayments.length))}
+          />
         </div>
 
         <div className="mission-panel p-4">
@@ -329,7 +387,7 @@ export function PaymentsView({ refreshKey, onChanged }) {
           <div className="mt-4 space-y-3">
             {loading ? (
               <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">Carregando vendas...</div>
-            ) : sales.length ? sales.map((sale) => (
+            ) : sales.length ? paginatedSales.map((sale) => (
               <article key={sale.id} className="mission-card p-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -357,6 +415,7 @@ export function PaymentsView({ refreshKey, onChanged }) {
                     {[sale.customer_name, sale.notes].filter(Boolean).join(' - ')}
                   </p>
                 ) : null}
+                <SaleItemsList items={sale.items} />
               </article>
             )) : (
               <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
@@ -364,6 +423,14 @@ export function PaymentsView({ refreshKey, onChanged }) {
               </div>
             )}
           </div>
+
+          <PaginationControls
+            page={salesPage}
+            pageSize={PAGE_SIZE}
+            totalItems={sales.length}
+            itemLabel="vendas"
+            onPageChange={(page) => setSalesPage(clampPage(page, sales.length))}
+          />
         </div>
       </section>
     </div>

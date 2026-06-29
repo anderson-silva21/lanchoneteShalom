@@ -435,12 +435,17 @@ test('pagamento pendente aparece na dashboard e pode ser confirmado', () => {
   assert.equal(pendingPayments.length, 1);
   assert.equal(pendingPayments[0].customer_name, 'Maria');
   assert.equal(pendingPayments[0].total, 8);
+  assert.equal(pendingPayments[0].items.length, 1);
+  assert.equal(pendingPayments[0].items[0].item_name, 'Cafe');
+  assert.equal(pendingPayments[0].items[0].quantity, 1);
 
   const closingBefore = getCashClosing({ date: String(sale.created_at).slice(0, 10) });
   assert.equal(closingBefore.summary.sales_count, 1);
   assert.equal(closingBefore.summary.pending_total, 8);
   assert.equal(closingBefore.summary.paid_total, 0);
   assert.equal(closingBefore.pending_payments.length, 1);
+  assert.equal(closingBefore.pending_payments[0].items[0].line_total, 8);
+  assert.equal(closingBefore.sales[0].items[0].item_name, 'Cafe');
 
   const confirmed = confirmSalePayment(sale.id, 'pix', userId);
   assert.equal(confirmed.payment_method, 'pix');

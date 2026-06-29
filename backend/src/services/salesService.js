@@ -144,11 +144,7 @@ function getSaleById(id) {
 
   if (!sale) return null;
 
-  sale.items = db.prepare(`
-    SELECT id, product_id, combo_id, item_name, quantity, unit_price, unit_cost, line_total, line_profit
-    FROM sale_items
-    WHERE sale_id = ?
-  `).all(id);
+  sale.items = listSaleItemsBySaleIds([sale.id])[sale.id] || [];
 
   return sale;
 }
@@ -255,7 +251,7 @@ function deleteSale(id, userId) {
 }
 
 function listPendingPayments({ limit = 500 } = {}) {
-  return db.prepare(`
+  const sales = db.prepare(`
     SELECT
       s.id,
       s.created_at,
@@ -279,6 +275,8 @@ function listPendingPayments({ limit = 500 } = {}) {
     ...sale,
     total: money(sale.total)
   }));
+
+  return attachSaleItems(sales);
 }
 
 function normalizeClosingDate(value) {
@@ -304,6 +302,46 @@ function normalizeOptionalEventId(value) {
 
 function money(value) {
   return Number(Number(value || 0).toFixed(2));
+}
+
+function listSaleItemsBySaleIds(saleIds = []) {
+  const uniqueSaleIds = [...new Set(saleIds
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0))];
+
+  if (!uniqueSaleIds.length) return {};
+
+  const itemsBySaleId = {};
+  for (let index = 0; index < uniqueSaleIds.length; index += 900) {
+    const chunk = uniqueSaleIds.slice(index, index + 900);
+    const placeholders = chunk.map(() => '?').join(', ');
+    db.prepare(`
+      SELECT sale_id, id, product_id, combo_id, item_name, quantity, unit_price, unit_cost, line_total, line_profit
+      FROM sale_items
+      WHERE sale_id IN (${placeholders})
+      ORDER BY sale_id ASC, id ASC
+    `).all(...chunk).forEach((item) => {
+      if (!itemsBySaleId[item.sale_id]) itemsBySaleId[item.sale_id] = [];
+      itemsBySaleId[item.sale_id].push({
+        ...item,
+        quantity: roundQuantity(item.quantity),
+        unit_price: money(item.unit_price),
+        unit_cost: money(item.unit_cost),
+        line_total: money(item.line_total),
+        line_profit: money(item.line_profit)
+      });
+    });
+  }
+
+  return itemsBySaleId;
+}
+
+function attachSaleItems(sales = []) {
+  const itemsBySaleId = listSaleItemsBySaleIds(sales.map((sale) => sale.id));
+  return sales.map((sale) => ({
+    ...sale,
+    items: itemsBySaleId[sale.id] || []
+  }));
 }
 
 function buildClosingFilter({ date, eventId }) {
@@ -368,7 +406,7 @@ function getCashClosing(filters = {}) {
     estimated_profit: money(row.estimated_profit)
   }));
 
-  const sales = db.prepare(`
+  const sales = attachSaleItems(db.prepare(`
     SELECT
       s.id,
       s.created_at,
@@ -391,9 +429,9 @@ function getCashClosing(filters = {}) {
     ...sale,
     total: money(sale.total),
     estimated_profit: money(sale.estimated_profit)
-  }));
+  })));
 
-  const pendingPayments = db.prepare(`
+  const pendingPayments = attachSaleItems(db.prepare(`
     SELECT
       s.id,
       s.created_at,
@@ -415,7 +453,7 @@ function getCashClosing(filters = {}) {
   `).all(pendingPaymentMethod, ...params).map((sale) => ({
     ...sale,
     total: money(sale.total)
-  }));
+  })));
 
   const event = eventId
     ? db.prepare('SELECT id, name, event_date FROM events WHERE id = ?').get(eventId)
