@@ -515,7 +515,10 @@ function getTelegramAlertStatus() {
 
 function updateTelegramAlertSettings(settings) {
   if (settings.enabled !== undefined) setAppSetting('telegram_alerts_enabled', settings.enabled ? '1' : '0');
-  if (settings.chat_id !== undefined) setAppSetting('telegram_chat_id', String(settings.chat_id || '').trim());
+  if (settings.chat_id !== undefined) {
+    const chatId = String(settings.chat_id || '').trim();
+    if (chatId) setAppSetting('telegram_chat_id', chatId);
+  }
   if (settings.group_url !== undefined) setAppSetting('telegram_group_url', String(settings.group_url || '').trim());
   if (settings.interval_minutes !== undefined) setAppSetting('telegram_alert_interval_minutes', String(settings.interval_minutes));
   if (settings.max_items !== undefined) setAppSetting('telegram_alert_max_items', String(settings.max_items));

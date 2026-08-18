@@ -11,8 +11,8 @@ export function StatusPill({ status }) {
   const Icon = normalized === 'critical' ? Flame : normalized === 'warning' ? AlertTriangle : CheckCircle2
 
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${styles[normalized] || styles.normal}`}>
-      <Icon size={13} />
+    <span className={`inline-flex max-w-full shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${styles[normalized] || styles.normal}`}>
+      <Icon className="shrink-0" size={13} />
       {stockLabel(status)}
     </span>
   )

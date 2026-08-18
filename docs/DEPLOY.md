@@ -40,6 +40,7 @@ No `backend/.env`, ajuste ao menos:
 
 - `JWT_SECRET` com um valor forte.
 - `CORS_ORIGINS` com todas as URLs do frontend, por exemplo `http://100.82.234.51:4173`.
+- `TRUST_PROXY=true` somente quando o backend estiver atras de um proxy confiavel.
 - `AUTO_BACKUP_ENABLED=true` para manter backup diario ativo.
 
 Recomendado em servidor:

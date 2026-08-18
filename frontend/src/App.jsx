@@ -159,13 +159,14 @@ function App() {
   }
 
   const currentView = canAccessView(user.role, activeView, { setupEnabled }) ? activeView : defaultViewForRole(user.role, { setupEnabled })
+  const canRegisterInventoryEvent = canAccessView(user.role, 'dashboard', { setupEnabled })
   const views = {
     dashboard: <Dashboard refreshKey={refreshKey} onNavigateToProducts={navigateToProducts} user={user} />,
     setup: <InitialLoadView refreshKey={refreshKey} onChanged={refresh} />,
     sales: <SalesTerminal onSaleComplete={refresh} />,
     payments: <PaymentsView refreshKey={refreshKey} onChanged={refresh} />,
     products: <ProductManager refreshKey={refreshKey} onChanged={refresh} intent={productIntent} user={user} />,
-    inventory: <PostEventInventory refreshKey={refreshKey} onChanged={refresh} />,
+    inventory: <PostEventInventory refreshKey={refreshKey} onChanged={refresh} onRegisterEvent={canRegisterInventoryEvent ? () => setActiveView('dashboard') : undefined} />,
     sheet: <SpreadsheetView refreshKey={refreshKey} onChanged={refresh} user={user} />,
     reports: <ReportsView user={user} />,
     settings: <SettingsView user={user} darkMode={darkMode} setDarkMode={setDarkMode} setupEnabled={setupEnabled} onSetupEnabledChange={setSetupEnabled} onChanged={refresh} />

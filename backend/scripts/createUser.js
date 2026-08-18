@@ -1,11 +1,11 @@
 const bcrypt = require('bcryptjs');
 const { db, initDatabase } = require('../src/db');
 
-const roles = new Set(['admin', 'manager', 'cashier']);
+const roles = new Set(['admin', 'manager', 'cashier', 'finance']);
 
 function usage() {
   console.log('Uso: npm run user:create -- <username> <senha> <role> <nome completo>');
-  console.log('Roles: admin, manager, cashier');
+  console.log('Roles: admin, manager, cashier, finance');
   console.log('Exemplo: npm run user:create -- joao MinhaSenha123 manager "Joao Silva"');
 }
 

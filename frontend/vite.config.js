@@ -11,8 +11,7 @@ export default defineConfig({
       'intranet.lanchoneteshalom',
       'intranet.lanchoneteshalom.local',
       '100.82.234.51',
-      '192.168.15.9',
-      'https://containing-hydrogen-involves-quilt.trycloudflare.com'
+      '192.168.15.9'
     ]
   },
   preview: {
@@ -22,8 +21,7 @@ export default defineConfig({
       'intranet.lanchoneteshalom',
       'intranet.lanchoneteshalom.local',
       '100.82.234.51',
-      '192.168.15.9',
-      'https://containing-hydrogen-involves-quilt.trycloudflare.com'
+      '192.168.15.9'
     ]
   }
 })

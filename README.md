@@ -127,7 +127,8 @@ Crie `backend/.env` se quiser customizar:
 ```env
 PORT=4000
 CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-JWT_SECRET=troque-este-segredo
+JWT_SECRET=troque-este-segredo-com-valor-forte-em-producao
+TRUST_PROXY=false
 DB_PATH=../database/lanchonete.sqlite
 LOGIN_RATE_LIMIT_WINDOW_MINUTES=15
 LOGIN_RATE_LIMIT_MAX_PER_IP=30
@@ -170,7 +171,7 @@ VITE_API_URL=http://localhost:4000/api
 1. Rode `npm run build --prefix frontend`.
 2. Sirva `frontend/dist` em Nginx, Vercel, Netlify ou outro host estatico.
 3. Rode `npm start --prefix backend` em um servidor Node.
-4. Configure `CORS_ORIGIN` com o dominio do frontend.
+4. Configure `CORS_ORIGINS` com todos os dominios do frontend e use um `JWT_SECRET` forte.
 5. Persista a pasta `database/` em volume permanente.
 
-Veja [docs/DEPLOY.md](/home/user/Documents/anderson/personalProjects/docs/DEPLOY.md) para detalhes.
+Veja [docs/DEPLOY.md](docs/DEPLOY.md) para detalhes.

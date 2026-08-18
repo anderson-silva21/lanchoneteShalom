@@ -46,10 +46,10 @@ function resetDatabase() {
   `).run(bcrypt.hashSync('admin123', 4));
 }
 
-async function postLogin(username, password) {
+async function postLogin(username, password, headers = {}) {
   const response = await fetch(`${baseUrl}/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify({ username, password })
   });
 
@@ -169,4 +169,17 @@ test('rate limit de login bloqueia excesso de tentativas por usuario', async () 
     WHERE action = 'auth.login.rate_limited'
   `).get().total;
   assert.equal(rateLimitAuditCount, 1);
+});
+
+test('rate limit por ip ignora x-forwarded-for sem proxy confiavel', async () => {
+  process.env.LOGIN_RATE_LIMIT_MAX_PER_IP = '1';
+  process.env.LOGIN_RATE_LIMIT_MAX_PER_USER = '100';
+  process.env.LOGIN_LOCK_FAILED_ATTEMPTS = '99';
+  resetLoginSecurityMemory();
+
+  assert.equal((await postLogin('desconhecido-a', 'senha', { 'x-forwarded-for': '10.10.10.10' })).response.status, 401);
+
+  const limited = await postLogin('desconhecido-b', 'senha', { 'x-forwarded-for': '10.10.10.11' });
+  assert.equal(limited.response.status, 429);
+  assert.match(limited.body.message, /Muitas tentativas/);
 });

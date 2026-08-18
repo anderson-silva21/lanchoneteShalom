@@ -527,6 +527,30 @@ test('nova venda e atribuida automaticamente ao evento do dia', () => {
   assert.equal(sale.event_name, 'Evento de Hoje');
 });
 
+test('event_id explicito prevalece sobre evento automatico do dia', () => {
+  const today = db.prepare("SELECT date('now', 'localtime') AS date").get().date;
+  const tomorrow = db.prepare("SELECT date(?, '+1 day') AS date").get(today).date;
+  createEvent({
+    name: 'Evento de Hoje',
+    event_date: today
+  });
+  const selectedEvent = createEvent({
+    name: 'Evento Selecionado',
+    event_date: tomorrow
+  });
+  const product = createProduct({ name: 'Cafe Selecionado' });
+  addStock({ productId: product.id, quantity: 2, expirationDate: '2026-12-20', userId });
+
+  const sale = createSale({
+    payment_method: 'pix',
+    event_id: selectedEvent.id,
+    items: [{ product_id: product.id, quantity: 1 }]
+  }, { id: userId });
+
+  assert.equal(sale.event_id, selectedEvent.id);
+  assert.equal(sale.event_name, 'Evento Selecionado');
+});
+
 test('caixa cria promocao e venda desconta o estoque dos produtos do combo', () => {
   const pastel = createProduct({ name: 'Pastel', sale_price: 8, cost_price: 3 });
   const coxinha = createProduct({ name: 'Coxinha', sale_price: 7, cost_price: 2.5 });

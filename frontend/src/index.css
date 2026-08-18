@@ -88,7 +88,7 @@ button:disabled {
 
   .mission-panel {
     position: relative;
-    overflow: hidden;
+    overflow: visible;
     border-radius: 18px;
     border: 1px solid rgba(231, 223, 205, 0.86);
     background: rgba(255, 255, 255, 0.78);
@@ -127,6 +127,8 @@ button:disabled {
   }
 
   .mission-card {
+    width: 100%;
+    min-width: 0;
     border-radius: 16px;
     border: 1px solid rgba(231, 223, 205, 0.88);
     background: rgba(255, 255, 255, 0.74);

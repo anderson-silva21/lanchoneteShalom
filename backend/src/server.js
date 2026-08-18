@@ -8,6 +8,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const { initDatabase, dbPath } = require('./db');
+const { isCorsOriginAllowed, parseCorsOrigins, parseTrustProxy } = require('./config/security');
 const errorHandler = require('./middleware/errorHandler');
 const { assignRequestId, httpLogger } = require('./middleware/requestLogger');
 const { startAutomaticBackupScheduler } = require('./services/backupService');
@@ -31,50 +32,11 @@ const port = Number(process.env.PORT || 4000);
 
 initDatabase();
 
-const configuredOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY));
 
-const defaultDevOrigins = [
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://localhost:4173',
-  'http://127.0.0.1:5173',
-  'http://127.0.0.1:5174',
-  'http://127.0.0.1:4173',
-  'http://192.168.15.9:4173',
-  'http://100.82.234.51:4173',
-  'http://intranet.lanchoneteshalom',
-  'http://intranet.lanchoneteshalom.local',
-  'https://intranet.lanchoneteshalom.local',
-  'https://containing-hydrogen-involves-quilt.trycloudflare.com'
-];
-
-function isPrivateNetworkHost(hostname) {
-  return (
-    hostname === 'localhost'
-    || hostname === '127.0.0.1'
-    || hostname.startsWith('192.168.')
-    || hostname.startsWith('10.')
-    || /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
-  );
-}
-
+const configuredOrigins = parseCorsOrigins(process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '');
 function isAllowedOrigin(origin) {
-  if (!origin) return true;
-
-  const allowedOrigins = configuredOrigins.length ? configuredOrigins : defaultDevOrigins;
-  if (allowedOrigins.includes(origin)) return true;
-
-  if (process.env.NODE_ENV === 'production') return false;
-
-  try {
-    const url = new URL(origin);
-    return url.protocol === 'http:' && isPrivateNetworkHost(url.hostname) && ['5173', '5174'].includes(url.port);
-  } catch (error) {
-    return false;
-  }
+  return isCorsOriginAllowed(origin, { configuredOrigins, nodeEnv: process.env.NODE_ENV });
 }
 
 app.use(assignRequestId);

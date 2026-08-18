@@ -257,14 +257,18 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
     setMessage('')
     setSavingTelegram(true)
     try {
-      const nextStatus = await api.updateTelegramAlerts({
+      const chatId = telegramDraft.chat_id.trim()
+      const payload = {
         enabled: telegramDraft.enabled,
-        chat_id: telegramDraft.chat_id,
         group_url: telegramDraft.group_url,
         interval_minutes: telegramDraft.interval_minutes,
         max_items: telegramDraft.max_items,
         ignored_missing_expiration_categories: telegramDraft.ignored_missing_expiration_categories
-      })
+      }
+
+      if (chatId) payload.chat_id = chatId
+
+      const nextStatus = await api.updateTelegramAlerts(payload)
       setTelegramStatus(nextStatus)
       setTelegramDraft((current) => ({ ...current, chat_id: '' }))
       loadAuditLogs()

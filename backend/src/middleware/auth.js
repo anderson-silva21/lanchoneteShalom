@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
 const { db } = require('../db');
+const { getJwtSecret } = require('../config/security');
 
-const jwtSecret = process.env.JWT_SECRET || 'dev-secret-change-me';
+const jwtSecret = getJwtSecret();
 
 function isPasswordChangeAllowed(req) {
   return req.method === 'GET' && req.originalUrl === '/api/auth/me'

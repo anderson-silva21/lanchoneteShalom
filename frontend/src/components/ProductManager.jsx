@@ -1,10 +1,13 @@
-import { ArrowDown, ArrowUp, ArrowUpDown, Boxes, FileClock, PackagePlus, Save, Search, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Boxes, PackagePlus, Save, Search, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from '../services/api'
-import { decimal, formatDate, formatDateTime, formatQuantityWithUnit, money } from '../utils/formatters'
+import { formatDate, formatQuantityWithUnit, money } from '../utils/formatters'
 import { PaginationControls } from './PaginationControls'
 import { StatusPill } from './StatusPill'
+import { ProductHistoryPanel } from './products/ProductHistoryPanel'
+import { ProductMobileList } from './products/ProductMobileList'
+import { ProductStockLots } from './products/ProductStockLots'
 
 function createEmptyProduct(category = '') {
   return {
@@ -49,23 +52,6 @@ function getMovementMode(adjustment) {
 function clampPage(page, totalItems) {
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE))
   return Math.min(Math.max(1, page), totalPages)
-}
-
-function getBatchStatusClass(status) {
-  if (status === 'expired') return 'bg-shalom-wine/10 text-shalom-wine ring-shalom-wine/25 dark:bg-shalom-wine/25 dark:text-rose-100'
-  if (status === 'critical') return 'bg-shalom-orange/15 text-shalom-wine ring-shalom-orange/25 dark:bg-shalom-orange/20 dark:text-shalom-gold'
-  if (status === 'warning') return 'bg-shalom-gold/35 text-shalom-deep ring-shalom-orange/20 dark:bg-shalom-gold/20 dark:text-shalom-gold'
-  if (status === 'missing') return 'bg-shalom-mist text-shalom-blue ring-shalom-blue/10 dark:bg-white/10 dark:text-slate-200'
-  return 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-100 dark:ring-emerald-400/20'
-}
-
-function getBatchStatusLabel(batch) {
-  if (batch.expiration_status === 'expired') return `Vencido ha ${Math.abs(Number(batch.days_to_expire || 0))} dias`
-  if (batch.expiration_status === 'critical' && Number(batch.days_to_expire) === 0) return 'Vence hoje'
-  if (batch.expiration_status === 'critical' || batch.expiration_status === 'warning') return `Vence em ${decimal.format(batch.days_to_expire)} dias`
-  if (batch.expiration_status === 'missing') return 'Sem validade'
-  if (batch.expiration_status === 'empty') return 'Esgotado'
-  return 'Ok'
 }
 
 function compareProductValues(leftProduct, rightProduct, sortKey) {
@@ -504,6 +490,32 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
     }
   }, [products])
 
+  function selectProductForDetails(productId) {
+    setSelectedProductId(String(productId))
+    window.setTimeout(() => {
+      document.getElementById('product-lots-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 80)
+  }
+
+  function startStockMovement(productId) {
+    const prices = getProductPriceValues(productId)
+    setSelectedProductId(String(productId))
+    setAdjustment((current) => ({
+      ...current,
+      product_id: String(productId),
+      type: 'purchase',
+      operation: 'in',
+      batch_id: '',
+      is_donation: prices.is_donation,
+      cost_price: prices.cost_price,
+      sale_price: prices.sale_price
+    }))
+    window.setTimeout(() => {
+      movementFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      movementProductRef.current?.focus({ preventScroll: true })
+    }, 80)
+  }
+
   function toggleSort(sortKey) {
     setProductPage(1)
     setSortConfig((current) => {
@@ -546,9 +558,6 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   const movementBatches = movementStock?.batches || []
   const selectedBatches = selectedStock?.batches || []
   const selectedProduct = products.find((product) => String(product.id) === String(selectedProductId)) || selectedStock?.product
-  const historyMovements = productHistory?.movements || []
-  const historySales = productHistory?.sales || []
-  const historyAudit = productHistory?.audit || []
   const needsMovementBatch = movementMode === 'adjustment_out' || movementMode === 'waste'
   const showsMovementExpiration = movementMode === 'purchase' || (movementMode === 'adjustment_in' && !adjustment.batch_id)
   const canDeleteProducts = user?.role === 'admin' && !setupMode
@@ -577,18 +586,19 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   }, [adjustment.cost_price, adjustment.product_id, adjustment.sale_price, getProductPriceValues, movementMode])
 
   return (
-    <div className="space-y-5">
-      <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
-        <div className="mission-panel p-4">
+    <div className="min-w-0 space-y-5">
+      <section className="grid min-w-0 gap-5 min-[2100px]:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="mission-panel min-w-0 p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="font-display text-lg font-semibold">{setupMode ? 'Itens do inventario' : 'Cadastro de produtos'}</h2>
               <p className="mission-muted text-sm">{filtered.length} itens ativos</p>
             </div>
-            <div className="flex gap-2">
-              <div className="relative">
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+              <div className="relative min-w-0">
                 <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-shalom-orange/70" size={16} />
                 <input
+                  type="search"
                   className="mission-input w-full py-2 pl-9 pr-3 sm:w-64"
                   placeholder="Buscar"
                   value={query}
@@ -598,7 +608,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                   }}
                 />
               </div>
-              <select className="mission-input px-3 py-2" value={status} onChange={(event) => {
+              <select className="mission-input w-full px-3 py-2 sm:w-auto" value={status} onChange={(event) => {
                 setStatus(event.target.value)
                 setProductPage(1)
               }}>
@@ -611,19 +621,33 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
 
           <div
             ref={productTableTopScrollRef}
-            className="mt-4 overflow-x-auto scrollbar-thin"
+            className="mt-4 hidden overflow-x-auto scrollbar-thin min-[1600px]:block"
             onScroll={() => syncProductTableScroll(productTableTopScrollRef, productTableScrollRef)}
             aria-label="Rolagem superior da tabela de produtos"
           >
-            <div className="h-px min-w-[1080px]" />
+            <div className="h-px min-w-[980px]" />
+          </div>
+
+          <div className="mt-4 min-[1600px]:hidden">
+            <ProductMobileList
+              products={paginatedProducts}
+              categories={categories}
+              selectedProductId={selectedProductId}
+              canDeleteProducts={canDeleteProducts}
+              onChangeProduct={updateRow}
+              onDeleteProduct={openDeleteProduct}
+              onSaveProduct={saveProduct}
+              onSelectProduct={selectProductForDetails}
+              onStartStockMovement={startStockMovement}
+            />
           </div>
 
           <div
             ref={productTableScrollRef}
-            className="mt-1 overflow-x-auto scrollbar-thin"
+            className="mt-1 hidden overflow-x-auto scrollbar-thin min-[1600px]:block"
             onScroll={() => syncProductTableScroll(productTableScrollRef, productTableTopScrollRef)}
           >
-            <table className="min-w-[1080px] w-full border-separate border-spacing-0 text-left text-sm">
+            <table className="min-w-[980px] w-full border-separate border-spacing-0 text-left text-sm">
               <thead>
                 <tr className="text-xs uppercase tracking-[0.12em] text-shalom-blue/70 dark:text-shalom-gold/80">
                   {renderSortableHeader('name', 'Produto')}
@@ -658,19 +682,19 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{product.is_donation ? 'Doacao' : money.format(product.cost_price)}</td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                      <input type="number" min="0" step="0.01" className="mission-input w-24 px-2 py-1" value={product.sale_price} onChange={(event) => updateRow(product.id, 'sale_price', Number(event.target.value))} />
+                      <input type="number" inputMode="decimal" min="0" step="0.01" className="mission-input w-24 px-2 py-1" value={product.sale_price} onChange={(event) => updateRow(product.id, 'sale_price', Number(event.target.value))} />
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
                       {formatQuantityWithUnit(product.stock_quantity, product.unit)}
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                      <input type="number" min="0" step="1" className="mission-input w-20 px-2 py-1" value={product.min_stock} onChange={(event) => updateRow(product.id, 'min_stock', Number(event.target.value))} />
+                      <input type="number" inputMode="decimal" min="0" step="0.001" className="mission-input w-20 px-2 py-1" value={product.min_stock} onChange={(event) => updateRow(product.id, 'min_stock', Number(event.target.value))} />
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{formatDate(product.expiration_date)}</td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10"><StatusPill status={product.stock_status} /></td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
                       <div className="flex items-center gap-1.5">
-                        <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => setSelectedProductId(String(product.id))} title="Ver lotes">
+                        <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => selectProductForDetails(product.id)} title="Ver lotes">
                           <Boxes size={16} />
                         </button>
                         <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => saveProduct(product)} title="Salvar">
@@ -705,14 +729,14 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
           />
         </div>
 
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
           {setupMode ? (
             <form className="mission-panel p-4" onSubmit={importProducts}>
               <div className="mb-4 flex items-center gap-2">
                 <Upload size={20} />
                 <h2 className="font-display text-lg font-semibold">Importar planilha</h2>
               </div>
-              <div className="grid gap-3">
+              <div className="grid min-w-0 grid-cols-1 gap-3">
                 <label className="text-sm font-medium">
                   Arquivo CSV
                   <input
@@ -748,7 +772,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
               <PackagePlus size={20} />
               <h2 className="font-display text-lg font-semibold">{setupMode ? 'Adicionar item real' : 'Novo produto'}</h2>
             </div>
-            <div className="grid gap-3">
+              <div className="grid min-w-0 grid-cols-1 gap-3">
               <label className="text-sm font-medium">
                 Nome
                 <input className="mission-input mt-1 w-full px-3 py-2" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
@@ -776,7 +800,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 Validade
                 <input type="date" className="mission-input mt-1 w-full px-3 py-2" value={draft.expiration_date} onChange={(event) => setDraft({ ...draft, expiration_date: event.target.value })} />
               </label>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid min-w-0 grid-cols-1 gap-3 min-[380px]:grid-cols-2">
                 {[
                   ['cost_price', 'Custo', '0.01'],
                   ['sale_price', 'Venda', '0.01'],
@@ -785,7 +809,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 ].map(([field, label, step]) => (
                   <label key={field} className="text-sm font-medium">
                     {label}
-                    <input type="number" min="0" step={step} className="mission-input mt-1 w-full px-3 py-2 disabled:opacity-60" value={field === 'cost_price' && draft.is_donation ? 0 : draft[field]} disabled={field === 'cost_price' && draft.is_donation} onChange={(event) => setDraft({ ...draft, [field]: Number(event.target.value) })} />
+                    <input type="number" inputMode="decimal" min="0" step={step} className="mission-input mt-1 w-full px-3 py-2 disabled:opacity-60" value={field === 'cost_price' && draft.is_donation ? 0 : draft[field]} disabled={field === 'cost_price' && draft.is_donation} onChange={(event) => setDraft({ ...draft, [field]: Number(event.target.value) })} />
                   </label>
                 ))}
               </div>
@@ -824,7 +848,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
               </select>
             </label>
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="mt-3 grid min-w-0 grid-cols-1 gap-3 min-[380px]:grid-cols-2">
               <label className="text-sm font-medium">
                 Tipo
                 <select
@@ -851,7 +875,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
               </label>
               <label className="text-sm font-medium">
                 Quantidade
-                <input type="number" min="0.001" step="0.001" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.quantity} onChange={(event) => setAdjustment({ ...adjustment, quantity: Number(event.target.value) })} />
+                <input type="number" inputMode="decimal" min="0.001" step="0.001" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.quantity} onChange={(event) => setAdjustment({ ...adjustment, quantity: Number(event.target.value) })} />
               </label>
             </div>
             {movementMode === 'purchase' ? (
@@ -860,15 +884,15 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                   <span>Entrada recebida por doacao</span>
                   <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={Boolean(adjustment.is_donation)} onChange={(event) => setAdjustment({ ...adjustment, is_donation: event.target.checked, cost_price: event.target.checked ? 0 : adjustment.cost_price })} />
                 </label>
-                <div className="grid grid-cols-2 gap-3">
-                <label className="text-sm font-medium">
-                  Custo do produto
-                  <input type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2 disabled:opacity-60" value={adjustment.is_donation ? 0 : (adjustment.cost_price ?? '')} disabled={Boolean(adjustment.is_donation)} onChange={(event) => setAdjustment({ ...adjustment, cost_price: event.target.value })} />
-                </label>
-                <label className="text-sm font-medium">
-                  Valor de venda
-                  <input type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.sale_price ?? ''} onChange={(event) => setAdjustment({ ...adjustment, sale_price: event.target.value })} />
-                </label>
+                <div className="grid min-w-0 grid-cols-1 gap-3 min-[380px]:grid-cols-2">
+                  <label className="text-sm font-medium">
+                    Custo do produto
+                    <input type="number" inputMode="decimal" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2 disabled:opacity-60" value={adjustment.is_donation ? 0 : (adjustment.cost_price ?? '')} disabled={Boolean(adjustment.is_donation)} onChange={(event) => setAdjustment({ ...adjustment, cost_price: event.target.value })} />
+                  </label>
+                  <label className="text-sm font-medium">
+                    Valor de venda
+                    <input type="number" inputMode="decimal" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.sale_price ?? ''} onChange={(event) => setAdjustment({ ...adjustment, sale_price: event.target.value })} />
+                  </label>
                 </div>
               </div>
             ) : null}
@@ -903,145 +927,22 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
         </div>
       </section>
 
-      <section className="mission-panel p-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-2">
-            <Boxes size={20} />
-            <div>
-              <h2 className="font-display text-lg font-semibold">Lotes de estoque</h2>
-              <p className="mission-muted text-sm">
-                {selectedProduct ? `${selectedProduct.name} - ${formatQuantityWithUnit(selectedStock?.totalQuantity || selectedProduct.stock_quantity || 0, selectedProduct.unit)}` : 'Selecione um produto'}
-              </p>
-            </div>
-          </div>
-          <select className="mission-input px-3 py-2" value={selectedProductId} onChange={(event) => setSelectedProductId(event.target.value)}>
-            <option value="">Produto</option>
-            {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
-          </select>
-        </div>
+      <ProductStockLots
+        products={products}
+        selectedBatches={selectedBatches}
+        selectedProduct={selectedProduct}
+        selectedProductId={selectedProductId}
+        selectedStock={selectedStock}
+        onBatchChange={updateSelectedBatch}
+        onProductChange={setSelectedProductId}
+        onSaveBatch={saveBatch}
+      />
 
-        <div className="mt-4 overflow-x-auto scrollbar-thin">
-          <table className="min-w-[860px] w-full border-separate border-spacing-0 text-left text-sm">
-            <thead>
-              <tr className="text-xs uppercase tracking-[0.12em] text-shalom-blue/70 dark:text-shalom-gold/80">
-                <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Lote</th>
-                <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Validade</th>
-                <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Quantidade</th>
-                <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Dias</th>
-                <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Alerta</th>
-                <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {selectedProductId && selectedStock === null ? (
-                <tr>
-                  <td className="border-b border-line/80 px-3 py-3 dark:border-shalom-gold/10" colSpan={6}>Carregando lotes...</td>
-                </tr>
-              ) : selectedBatches.length ? selectedBatches.map((batch) => (
-                <tr key={batch.id} className="border-b border-line/80 dark:border-shalom-gold/10">
-                  <td className="border-b border-line/80 px-3 py-2 font-mono text-xs dark:border-shalom-gold/10">#{batch.id}</td>
-                  <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                    <input
-                      type="date"
-                      className="mission-input w-40 px-2 py-1"
-                      value={batch.expiration_date || ''}
-                      onChange={(event) => updateSelectedBatch(batch.id, 'expiration_date', event.target.value)}
-                    />
-                  </td>
-                  <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.001"
-                        className="mission-input w-28 px-2 py-1"
-                        value={batch.quantity_available ?? ''}
-                        onChange={(event) => updateSelectedBatch(batch.id, 'quantity_available', event.target.value)}
-                      />
-                      <span className="mission-muted text-xs">{batch.unit}</span>
-                    </div>
-                  </td>
-                  <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                    {batch.days_to_expire === null || batch.days_to_expire === undefined ? '-' : decimal.format(batch.days_to_expire)}
-                  </td>
-                  <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${getBatchStatusClass(batch.expiration_status)}`}>
-                      {getBatchStatusLabel(batch)}
-                    </span>
-                  </td>
-                  <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                    <button className="mission-btn border border-line/80 p-2 hover:bg-shalom-cream/70 dark:border-shalom-gold/10 dark:hover:bg-white/10" onClick={() => saveBatch(batch)} title="Salvar lote">
-                      <Save size={16} />
-                    </button>
-                  </td>
-                </tr>
-              )) : (
-                <tr>
-                  <td className="border-b border-line/80 px-3 py-3 mission-muted dark:border-shalom-gold/10" colSpan={6}>
-                    Nenhum lote para este produto.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="mission-panel p-4">
-        <div className="flex items-center gap-2">
-          <FileClock size={20} />
-          <div>
-            <h2 className="font-display text-lg font-semibold">Historico do produto</h2>
-            <p className="mission-muted text-sm">{selectedProduct ? selectedProduct.name : 'Selecione um produto'}</p>
-          </div>
-        </div>
-        {selectedProductId && productHistory === null ? (
-          <p className="mt-4 rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">Carregando historico...</p>
-        ) : selectedProduct ? (
-          <div className="mt-4 grid gap-4 xl:grid-cols-3">
-            <div className="mission-card p-4">
-              <h3 className="font-semibold">Movimentacoes</h3>
-              <div className="mt-3 max-h-64 overflow-y-auto scrollbar-thin">
-                {historyMovements.slice(0, 12).map((movement) => (
-                  <div key={movement.id} className="border-b border-line/70 py-2 text-sm dark:border-shalom-gold/10">
-                    <p className="font-semibold">{movement.type} {formatQuantityWithUnit(movement.quantity_change, selectedProduct.unit)}</p>
-                    <p className="mission-muted">{formatDateTime(movement.created_at)} - {movement.created_by_name || '-'}</p>
-                    {movement.notes ? <p className="mission-muted mt-1">{movement.notes}</p> : null}
-                  </div>
-                ))}
-                {!historyMovements.length ? <p className="mission-muted text-sm">Sem movimentacoes.</p> : null}
-              </div>
-            </div>
-            <div className="mission-card p-4">
-              <h3 className="font-semibold">Vendas</h3>
-              <div className="mt-3 max-h-64 overflow-y-auto scrollbar-thin">
-                {historySales.slice(0, 12).map((sale) => (
-                  <div key={sale.id} className="border-b border-line/70 py-2 text-sm dark:border-shalom-gold/10">
-                    <p className="font-semibold">Venda #{sale.sale_id} - {money.format(sale.line_total)}</p>
-                    <p className="mission-muted">{formatDateTime(sale.created_at)} - {formatQuantityWithUnit(sale.quantity, selectedProduct.unit)}</p>
-                    {sale.event_name ? <p className="mission-muted mt-1">{sale.event_name}</p> : null}
-                  </div>
-                ))}
-                {!historySales.length ? <p className="mission-muted text-sm">Sem vendas.</p> : null}
-              </div>
-            </div>
-            <div className="mission-card p-4">
-              <h3 className="font-semibold">Auditoria</h3>
-              <div className="mt-3 max-h-64 overflow-y-auto scrollbar-thin">
-                {historyAudit.slice(0, 12).map((log) => (
-                  <div key={log.id} className="border-b border-line/70 py-2 text-sm dark:border-shalom-gold/10">
-                    <p className="font-semibold">{log.summary}</p>
-                    <p className="mission-muted">{formatDateTime(log.created_at)} - {log.username || '-'}</p>
-                  </div>
-                ))}
-                {!historyAudit.length ? <p className="mission-muted text-sm">Sem auditoria.</p> : null}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <p className="mt-4 rounded-2xl border border-line/80 bg-white/70 p-4 text-sm mission-muted dark:border-shalom-gold/10 dark:bg-white/10">Selecione um produto para ver o historico.</p>
-        )}
-      </section>
+      <ProductHistoryPanel
+        productHistory={productHistory}
+        selectedProduct={selectedProduct}
+        selectedProductId={selectedProductId}
+      />
 
       {message ? <p className="rounded-2xl bg-shalom-cream/70 px-4 py-3 text-sm text-shalom-deep shadow-sm dark:bg-white/10 dark:text-shalom-gold">{message}</p> : null}
 

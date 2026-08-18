@@ -4,6 +4,7 @@ import {
   ClipboardCheck,
   FileText,
   History,
+  PlusCircle,
   RefreshCcw,
   Save,
   Search
@@ -43,7 +44,7 @@ function formatSignedQuantity(value, unit) {
   return `${quantity > 0 ? '+' : ''}${formatQuantityWithUnit(quantity, unit)}`
 }
 
-export function PostEventInventory({ refreshKey, onChanged }) {
+export function PostEventInventory({ refreshKey, onChanged, onRegisterEvent }) {
   const [products, setProducts] = useState([])
   const [events, setEvents] = useState([])
   const [history, setHistory] = useState([])
@@ -265,10 +266,10 @@ export function PostEventInventory({ refreshKey, onChanged }) {
   }
 
   return (
-    <div className="space-y-5">
-      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <form className="space-y-5" onSubmit={generateReport}>
-          <section className="mission-panel p-4">
+    <div className="min-w-0 space-y-5">
+      <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <form className="min-w-0 space-y-5" onSubmit={generateReport}>
+          <section className="mission-panel min-w-0 p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <div className="flex items-center gap-2">
@@ -302,7 +303,19 @@ export function PostEventInventory({ refreshKey, onChanged }) {
                 <input type="date" className="mission-input mt-1 w-full px-3 py-2" value={eventDraft.event_date} readOnly />
               </label>
               {!events.length ? (
-                <p className="mission-muted text-sm lg:col-span-2">Nenhum evento registrado no Dashboard.</p>
+                <div className="rounded-xl border border-line/80 bg-white/70 p-3 text-sm dark:border-shalom-gold/10 dark:bg-white/10 lg:col-span-2">
+                  <p className="mission-muted">Nenhum evento disponivel para inventario. Registre um evento antes de iniciar a contagem.</p>
+                  {onRegisterEvent ? (
+                    <button
+                      type="button"
+                      className="mission-btn mission-btn-gold mt-3 flex min-h-11 w-full items-center justify-center gap-2 px-4 py-2 font-semibold sm:w-auto"
+                      onClick={onRegisterEvent}
+                    >
+                      <PlusCircle size={17} />
+                      Registrar evento
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
               <label className="text-sm font-medium lg:col-span-2">
                 Observacoes
@@ -311,14 +324,14 @@ export function PostEventInventory({ refreshKey, onChanged }) {
             </div>
           </section>
 
-          <section className="mission-panel p-4">
+          <section className="mission-panel min-w-0 p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h2 className="font-display text-lg font-semibold">Produtos</h2>
                 <p className="mission-muted text-sm">{filledCount} itens com quantidade informada</p>
               </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <div className="relative">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+                <div className="relative min-w-0">
                   <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-shalom-orange/70" size={16} />
                   <input className="mission-input w-full py-2 pl-9 pr-3 sm:w-64" placeholder="Filtrar" value={query} onChange={(event) => setQuery(event.target.value)} />
                 </div>
@@ -329,18 +342,18 @@ export function PostEventInventory({ refreshKey, onChanged }) {
               </div>
             </div>
 
-            <div className="mt-4 space-y-3 md:hidden">
+            <div className="mt-4 space-y-3 lg:hidden">
               {loading ? (
                 <div className="rounded-xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">Carregando produtos...</div>
               ) : filteredProducts.length ? filteredProducts.map((product) => (
-                <article key={product.id} className="mission-card p-3">
-                  <div className="flex items-start justify-between gap-3">
+                <article key={product.id} className="mission-card min-w-0 p-3">
+                  <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                       <p className="break-words font-semibold">{product.name}</p>
                       <p className="mission-muted text-xs">{product.category} - {product.internal_code}</p>
                       <p className="mission-muted mt-1 text-xs">{product.supplier || '-'}</p>
                     </div>
-                    <span className="shrink-0 rounded-xl bg-shalom-mist/70 px-2.5 py-1 text-xs font-semibold dark:bg-white/10">
+                    <span className="self-start rounded-xl bg-shalom-mist/70 px-2.5 py-1 text-xs font-semibold dark:bg-white/10">
                       {formatQuantityWithUnit(product.stock_quantity, product.unit)}
                     </span>
                   </div>
@@ -348,8 +361,9 @@ export function PostEventInventory({ refreshKey, onChanged }) {
                     Quantidade no inventario
                     <input
                       type="number"
+                      inputMode="decimal"
                       min="0"
-                      step="1"
+                      step="0.001"
                       className="mission-input mt-1 w-full px-3 py-2"
                       value={quantities[product.id] ?? ''}
                       onChange={(event) => updateQuantity(product.id, event.target.value)}
@@ -362,7 +376,7 @@ export function PostEventInventory({ refreshKey, onChanged }) {
               )}
             </div>
 
-            <div className="mt-4 hidden max-h-[58vh] overflow-auto rounded-2xl border border-line/80 scrollbar-thin dark:border-shalom-gold/10 md:block">
+            <div className="mt-4 hidden max-h-[58vh] min-w-0 overflow-auto rounded-2xl border border-line/80 scrollbar-thin dark:border-shalom-gold/10 lg:block">
               <table className="min-w-[860px] w-full border-separate border-spacing-0 text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-shalom-cream/95 backdrop-blur dark:bg-shalom-deep/95">
                   <tr>
@@ -390,8 +404,9 @@ export function PostEventInventory({ refreshKey, onChanged }) {
                       <td className="border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">
                         <input
                           type="number"
+                          inputMode="decimal"
                           min="0"
-                          step="1"
+                          step="0.001"
                           className="mission-input w-32 px-3 py-2"
                           value={quantities[product.id] ?? ''}
                           onChange={(event) => updateQuantity(product.id, event.target.value)}
@@ -427,7 +442,7 @@ export function PostEventInventory({ refreshKey, onChanged }) {
           </section>
         </form>
 
-        <aside className="mission-panel p-4">
+        <aside className="mission-panel min-w-0 p-4">
           <div className="mb-4 flex items-center gap-2">
             <History size={20} />
             <h2 className="font-display text-lg font-semibold">Ultimos inventarios</h2>
@@ -456,7 +471,7 @@ export function PostEventInventory({ refreshKey, onChanged }) {
       </section>
 
       {activeReport ? (
-        <section className="mission-panel p-4">
+        <section className="mission-panel min-w-0 p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <div className="flex items-center gap-2">
@@ -484,14 +499,14 @@ export function PostEventInventory({ refreshKey, onChanged }) {
             </div>
           </div>
 
-          <div className="mt-4 space-y-3 md:hidden">
+          <div className="mt-4 space-y-3 lg:hidden">
             {reportItems.map((item) => (
-              <article key={`${item.product_id}-${item.internal_code}`} className="mission-card p-3">
+              <article key={`${item.product_id}-${item.internal_code}`} className="mission-card min-w-0 p-3">
                 <div>
                   <p className="break-words font-semibold">{item.product_name}</p>
                   <p className="mission-muted text-xs">{item.category} - {item.internal_code}</p>
                 </div>
-                <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                <dl className="mt-3 grid min-w-0 grid-cols-1 gap-2 text-sm min-[380px]:grid-cols-2">
                   <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
                     <dt className="mission-muted text-xs">Sistema</dt>
                     <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.quantity_before, item.unit)}</dd>
@@ -515,7 +530,7 @@ export function PostEventInventory({ refreshKey, onChanged }) {
             ))}
           </div>
 
-          <div className="mt-4 hidden overflow-x-auto rounded-2xl border border-line/80 scrollbar-thin dark:border-shalom-gold/10 md:block">
+          <div className="mt-4 hidden min-w-0 overflow-x-auto rounded-2xl border border-line/80 scrollbar-thin dark:border-shalom-gold/10 lg:block">
             <table className="min-w-[980px] w-full border-separate border-spacing-0 text-left text-sm">
               <thead className="bg-shalom-cream/95 dark:bg-shalom-deep/95">
                 <tr>
@@ -563,7 +578,7 @@ export function PostEventInventory({ refreshKey, onChanged }) {
       ) : null}
 
       {conflictDetails.length ? (
-        <section className="mission-panel p-4 text-shalom-wine dark:text-rose-100">
+        <section className="mission-panel min-w-0 p-4 text-shalom-wine dark:text-rose-100">
           <div className="mb-3 flex items-center gap-2">
             <AlertTriangle size={20} />
             <h2 className="font-display text-lg font-semibold">Estoque alterado</h2>

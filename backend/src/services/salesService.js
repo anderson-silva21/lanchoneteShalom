@@ -40,7 +40,8 @@ const createSaleTransaction = db.transaction((payload, user) => {
     throw createHttpError('Informe a pessoa ou cliente do pagamento pendente.', 400);
   }
 
-  const eventId = findEventForToday()?.id || payload.event_id || payload.eventId || null;
+  const explicitEventId = payload.event_id || payload.eventId;
+  const eventId = explicitEventId || findEventForToday()?.id || null;
   if (eventId && !db.prepare('SELECT id FROM events WHERE id = ?').get(eventId)) {
     throw createHttpError('Evento nao encontrado.', 404);
   }

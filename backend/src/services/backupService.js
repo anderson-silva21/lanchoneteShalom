@@ -123,24 +123,6 @@ async function restoreBackup(file) {
   };
 }
 
-async function restoreBackup(file) {
-  const source = validateBackupFile(file);
-  const safetyBackup = await createBackup({ label: 'pre-restore' });
-
-  db.pragma('wal_checkpoint(TRUNCATE)');
-  db.close();
-
-  fs.copyFileSync(source, dbPath);
-  fs.rmSync(`${dbPath}-wal`, { force: true });
-  fs.rmSync(`${dbPath}-shm`, { force: true });
-
-  return {
-    restored_file: path.basename(source),
-    safety_backup: safetyBackup.file,
-    restart_required: true
-  };
-}
-
 function pruneOldBackups(retentionCount) {
   const retention = positiveInteger(retentionCount, 14);
   const backups = listBackups()
