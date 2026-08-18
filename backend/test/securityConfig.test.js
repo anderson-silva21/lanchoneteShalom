@@ -31,6 +31,12 @@ test('JWT_SECRET e obrigatorio e forte em producao', () => {
 test('CORS nao usa origens default em producao', () => {
   assert.equal(isCorsOriginAllowed('http://localhost:5173', { configuredOrigins: [], nodeEnv: 'production' }), false);
   assert.equal(isCorsOriginAllowed('https://containing-hydrogen-involves-quilt.trycloudflare.com', { configuredOrigins: [], nodeEnv: 'development' }), false);
+  assert.equal(isCorsOriginAllowed('http://100.82.234.51:4173', { configuredOrigins: [], nodeEnv: 'production' }), true);
+  assert.equal(isCorsOriginAllowed('http://100.82.234.51:4173', {
+    configuredOrigins: [],
+    nodeEnv: 'production',
+    allowPrivateNetworkOrigins: false
+  }), false);
 
   const configuredOrigins = parseCorsOrigins('https://app.exemplo.com, http://localhost:5173');
   assert.equal(isCorsOriginAllowed('https://app.exemplo.com', { configuredOrigins, nodeEnv: 'production' }), true);

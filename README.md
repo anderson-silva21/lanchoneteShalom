@@ -127,6 +127,7 @@ Crie `backend/.env` se quiser customizar:
 ```env
 PORT=4000
 CORS_ORIGINS=http://100.82.234.51:4173,http://intranet.lanchoneteshalom.local,http://localhost:5173,http://127.0.0.1:5173
+CORS_ALLOW_PRIVATE_NETWORK_ORIGINS=true
 JWT_SECRET=troque-este-segredo-com-valor-forte-em-producao
 TRUST_PROXY=false
 DB_PATH=../database/lanchonete.sqlite
@@ -149,6 +150,7 @@ TELEGRAM_IGNORE_MISSING_EXPIRATION_CATEGORIES=Descartaveis
 ```
 
 Em producao, inclua em `CORS_ORIGINS` a origem exata exibida no navegador antes de `/`, por exemplo `http://100.82.234.51:4173`. Apos alterar `backend/.env` em deploy com PM2, reinicie com `pm2 restart lanchonete-backend --update-env`.
+Por padrao, `CORS_ALLOW_PRIVATE_NETWORK_ORIGINS=true` tambem libera frontends em IPs privados/Tailscale nas portas `4173`, `5173` e `5174`; use `false` se quiser aceitar somente a lista exata de `CORS_ORIGINS`.
 
 Para ativar o robo do Telegram, crie um bot com o BotFather, envie uma mensagem para o bot ou adicione-o ao grupo desejado, preencha `TELEGRAM_BOT_TOKEN`, reinicie o backend e configure os demais campos em `Sistema > Alertas Telegram`.
 O `TELEGRAM_ALERT_MAX_ITEMS` controla quantos itens entram em cada mensagem de detalhe; quando houver mais itens, o sistema envia mensagens adicionais em vez de cortar o alerta. A lista `TELEGRAM_IGNORE_MISSING_EXPIRATION_CATEGORIES` evita alertas de validade para categorias sem vencimento real, como descartaveis.

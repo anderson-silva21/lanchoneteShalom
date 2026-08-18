@@ -35,8 +35,16 @@ initDatabase();
 app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY));
 
 const configuredOrigins = parseCorsOrigins(process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '');
+const allowPrivateNetworkOrigins = !['0', 'false', 'no', 'off'].includes(
+  String(process.env.CORS_ALLOW_PRIVATE_NETWORK_ORIGINS || 'true').trim().toLowerCase()
+);
+
 function isAllowedOrigin(origin) {
-  return isCorsOriginAllowed(origin, { configuredOrigins, nodeEnv: process.env.NODE_ENV });
+  return isCorsOriginAllowed(origin, {
+    configuredOrigins,
+    nodeEnv: process.env.NODE_ENV,
+    allowPrivateNetworkOrigins
+  });
 }
 
 app.use(assignRequestId);

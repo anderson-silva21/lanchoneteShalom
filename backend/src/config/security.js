@@ -17,6 +17,8 @@ const defaultDevelopmentCorsOrigins = [
   'https://intranet.lanchoneteshalom.local'
 ];
 
+const frontendCorsPorts = new Set(['4173', '5173', '5174']);
+
 function parseCorsOrigins(value = '') {
   return String(value || '')
     .split(',')
@@ -36,10 +38,13 @@ function normalizeCorsOrigin(origin = '') {
   }
 }
 
-function isPrivateNetworkHost(hostname = '') {
+function isLoopbackHost(hostname = '') {
+  return hostname === 'localhost' || hostname === '127.0.0.1';
+}
+
+function isPrivateNetworkHost(hostname = '', { includeLoopback = true } = {}) {
   return (
-    hostname === 'localhost'
-    || hostname === '127.0.0.1'
+    (includeLoopback && isLoopbackHost(hostname))
     || hostname.startsWith('192.168.')
     || hostname.startsWith('10.')
     || /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
@@ -47,7 +52,22 @@ function isPrivateNetworkHost(hostname = '') {
   );
 }
 
-function isCorsOriginAllowed(origin, { configuredOrigins = [], nodeEnv = process.env.NODE_ENV } = {}) {
+function isPrivateFrontendOrigin(origin, options = {}) {
+  try {
+    const url = new URL(origin);
+    return url.protocol === 'http:'
+      && isPrivateNetworkHost(url.hostname, options)
+      && frontendCorsPorts.has(url.port);
+  } catch (error) {
+    return false;
+  }
+}
+
+function isCorsOriginAllowed(origin, {
+  configuredOrigins = [],
+  nodeEnv = process.env.NODE_ENV,
+  allowPrivateNetworkOrigins = true
+} = {}) {
   const normalizedOrigin = normalizeCorsOrigin(origin);
   if (!normalizedOrigin) return true;
 
@@ -56,14 +76,11 @@ function isCorsOriginAllowed(origin, { configuredOrigins = [], nodeEnv = process
     : defaultDevelopmentCorsOrigins;
 
   if (allowedOrigins.includes(normalizedOrigin)) return true;
-  if (nodeEnv === 'production') return false;
-
-  try {
-    const url = new URL(normalizedOrigin);
-    return url.protocol === 'http:' && isPrivateNetworkHost(url.hostname) && ['4173', '5173', '5174'].includes(url.port);
-  } catch (error) {
-    return false;
+  if (nodeEnv === 'production') {
+    return allowPrivateNetworkOrigins && isPrivateFrontendOrigin(normalizedOrigin, { includeLoopback: false });
   }
+
+  return isPrivateFrontendOrigin(normalizedOrigin);
 }
 
 function getJwtSecret({ env = process.env, nodeEnv = env.NODE_ENV } = {}) {
