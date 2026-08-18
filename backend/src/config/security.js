@@ -20,8 +20,20 @@ const defaultDevelopmentCorsOrigins = [
 function parseCorsOrigins(value = '') {
   return String(value || '')
     .split(',')
-    .map((origin) => origin.trim())
+    .map(normalizeCorsOrigin)
     .filter(Boolean);
+}
+
+function normalizeCorsOrigin(origin = '') {
+  const trimmedOrigin = String(origin || '').trim();
+  if (!trimmedOrigin) return '';
+
+  try {
+    const url = new URL(trimmedOrigin);
+    return `${url.protocol}//${url.host}`;
+  } catch (error) {
+    return trimmedOrigin.replace(/\/+$/, '');
+  }
 }
 
 function isPrivateNetworkHost(hostname = '') {
@@ -36,17 +48,18 @@ function isPrivateNetworkHost(hostname = '') {
 }
 
 function isCorsOriginAllowed(origin, { configuredOrigins = [], nodeEnv = process.env.NODE_ENV } = {}) {
-  if (!origin) return true;
+  const normalizedOrigin = normalizeCorsOrigin(origin);
+  if (!normalizedOrigin) return true;
 
   const allowedOrigins = configuredOrigins.length || nodeEnv === 'production'
     ? configuredOrigins
     : defaultDevelopmentCorsOrigins;
 
-  if (allowedOrigins.includes(origin)) return true;
+  if (allowedOrigins.includes(normalizedOrigin)) return true;
   if (nodeEnv === 'production') return false;
 
   try {
-    const url = new URL(origin);
+    const url = new URL(normalizedOrigin);
     return url.protocol === 'http:' && isPrivateNetworkHost(url.hostname) && ['4173', '5173', '5174'].includes(url.port);
   } catch (error) {
     return false;
@@ -88,6 +101,7 @@ module.exports = {
   defaultDevelopmentCorsOrigins,
   getJwtSecret,
   isCorsOriginAllowed,
+  normalizeCorsOrigin,
   parseCorsOrigins,
   parseTrustProxy
 };

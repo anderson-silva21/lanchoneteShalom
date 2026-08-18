@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const {
   getJwtSecret,
   isCorsOriginAllowed,
+  normalizeCorsOrigin,
   parseCorsOrigins,
   parseTrustProxy
 } = require('../src/config/security');
@@ -34,6 +35,16 @@ test('CORS nao usa origens default em producao', () => {
   const configuredOrigins = parseCorsOrigins('https://app.exemplo.com, http://localhost:5173');
   assert.equal(isCorsOriginAllowed('https://app.exemplo.com', { configuredOrigins, nodeEnv: 'production' }), true);
   assert.equal(isCorsOriginAllowed('https://outro.exemplo.com', { configuredOrigins, nodeEnv: 'production' }), false);
+});
+
+test('CORS normaliza origens configuradas antes de comparar', () => {
+  assert.equal(normalizeCorsOrigin(' http://100.82.234.51:4173/ '), 'http://100.82.234.51:4173');
+  assert.equal(normalizeCorsOrigin('https://app.exemplo.com/painel'), 'https://app.exemplo.com');
+
+  const configuredOrigins = parseCorsOrigins('http://100.82.234.51:4173/, https://app.exemplo.com/painel');
+  assert.deepEqual(configuredOrigins, ['http://100.82.234.51:4173', 'https://app.exemplo.com']);
+  assert.equal(isCorsOriginAllowed('http://100.82.234.51:4173', { configuredOrigins, nodeEnv: 'production' }), true);
+  assert.equal(isCorsOriginAllowed('https://app.exemplo.com', { configuredOrigins, nodeEnv: 'production' }), true);
 });
 
 test('TRUST_PROXY e opt-in explicito', () => {

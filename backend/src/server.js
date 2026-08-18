@@ -45,7 +45,9 @@ app.use(helmet());
 app.use(cors({
   origin(origin, callback) {
     if (isAllowedOrigin(origin)) return callback(null, true);
-    return callback(new Error(`Origem nao permitida pelo CORS: ${origin}`));
+    const error = new Error(`Origem nao permitida pelo CORS: ${origin}`);
+    error.status = 403;
+    return callback(error);
   },
   credentials: true
 }));
