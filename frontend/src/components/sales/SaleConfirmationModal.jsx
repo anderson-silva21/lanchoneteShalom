@@ -3,7 +3,6 @@ import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { money } from '../../utils/formatters'
 
-
 const paymentLabels = {
   pix: 'Pix',
   cartao: 'Cartao',
@@ -23,26 +22,88 @@ export function SaleConfirmationModal({
   onClose,
   onConfirm
 }) {
+  const modalRef = useRef(null)
   const confirmButtonRef = useRef(null)
+  const previousFocusRef = useRef(null)
+
+  const loadingRef = useRef(loading)
+  const onCloseRef = useRef(onClose)
+
+  loadingRef.current = loading
+  onCloseRef.current = onClose
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
+
+    previousFocusRef.current = document.activeElement
     document.body.style.overflow = 'hidden'
 
+    confirmButtonRef.current?.focus()
+
     function handleKeyDown(event) {
-      if (event.key === 'Escape' && !loading) {
-        onClose()
+      if (event.key === 'Escape') {
+        if (!loadingRef.current) {
+          onCloseRef.current()
+        }
+
+        return
+      }
+
+      if (event.key !== 'Tab') {
+        return
+      }
+
+      const modal = modalRef.current
+
+      if (!modal) {
+        return
+      }
+
+      const focusableElements = Array.from(
+        modal.querySelectorAll(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      )
+
+      if (!focusableElements.length) {
+        event.preventDefault()
+        modal.focus()
+        return
+      }
+
+      const firstElement = focusableElements[0]
+      const lastElement = focusableElements[focusableElements.length - 1]
+      const activeElement = document.activeElement
+
+      if (event.shiftKey) {
+        if (activeElement === firstElement || !modal.contains(activeElement)) {
+          event.preventDefault()
+          lastElement.focus()
+        }
+      } else if (activeElement === lastElement || !modal.contains(activeElement)) {
+        event.preventDefault()
+        firstElement.focus()
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
-    confirmButtonRef.current?.focus()
 
     return () => {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKeyDown)
+
+      const previousFocus = previousFocusRef.current
+
+      if (
+        previousFocus &&
+        document.contains(previousFocus) &&
+        typeof previousFocus.focus === 'function' &&
+        !previousFocus.disabled
+      ) {
+        previousFocus.focus()
+      }
     }
-  }, [loading, onClose])
+  }, [])
 
   function handleOverlayMouseDown(event) {
     if (event.target === event.currentTarget && !loading) {
@@ -57,11 +118,13 @@ export function SaleConfirmationModal({
       onMouseDown={handleOverlayMouseDown}
     >
       <section
+        ref={modalRef}
         className="dashboard-modal-panel mission-panel text-ink shadow-blue dark:text-slate-50"
         role="dialog"
         aria-modal="true"
         aria-labelledby="sale-confirmation-title"
         aria-describedby="sale-confirmation-description"
+        tabIndex={-1}
       >
         <div className="flex min-w-0 items-start justify-between gap-3 border-b border-line/80 p-4 dark:border-shalom-gold/10 sm:p-5">
           <div className="flex min-w-0 items-start gap-3">

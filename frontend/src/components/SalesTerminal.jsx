@@ -1,5 +1,5 @@
 import { BadgePercent, Minus, PackagePlus, Plus, ReceiptText, ShoppingCart, Trash2, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from '../services/api'
 import { formatQuantityWithUnit, money } from '../utils/formatters'
@@ -165,6 +165,7 @@ export function SalesTerminal({ onSaleComplete }) {
   const [deletingComboId, setDeletingComboId] = useState('')
   const [showSaleConfirmation, setShowSaleConfirmation] = useState(false)
   const [confirmationError, setConfirmationError] = useState('')
+  const saleSubmissionRef = useRef(false)
 
   const loadData = useCallback(async () => {
     const [productData, comboData] = await Promise.all([
@@ -308,27 +309,10 @@ function closeSaleConfirmation() {
   setConfirmationError('')
 }
   async function finishSale() {
-    /*
-    setLoading(true)
-    setMessage('')
-    if (!cart.length) {
-      setMessage('Adicione ao menos um item para finalizar a venda.')
-      setLoading(false)
+    if (saleSubmissionRef.current) {
       return
     }
 
-    const exceededItem = cart.find((item) => item.quantity > item.stockLimit)
-    if (exceededItem) {
-      setMessage(`${exceededItem.name} passou do limite disponivel (${getCartLimitLabel(exceededItem)}).`)
-      setLoading(false)
-      return
-    }
-
-    if (payment === 'pagamento_pendente' && !customerName.trim()) {
-      setMessage('Informe a pessoa ou cliente do pagamento pendente.')
-      setLoading(false)
-      return
-    }*/
     const validationError = validateSale()
 
     if (validationError) {
@@ -336,6 +320,7 @@ function closeSaleConfirmation() {
       return
     }
 
+    saleSubmissionRef.current = true
     setLoading(true)
     setConfirmationError('')
 
@@ -348,14 +333,15 @@ function closeSaleConfirmation() {
           ? { combo_id: item.id, quantity: item.quantity }
           : { product_id: item.id, quantity: item.quantity })
       }
+
       const sale = await api.createSale(payload)
 
       setShowSaleConfirmation(false)
-
       setCart([])
       setNotes('')
       setCustomerName('')
       setMessage(`Venda #${sale.id} registrada: ${money.format(sale.total)}`)
+
       try {
         await loadData()
         onSaleComplete()
@@ -363,9 +349,9 @@ function closeSaleConfirmation() {
         setMessage(`Venda #${sale.id} registrada: ${money.format(sale.total)}. Nao foi possivel atualizar a tela: ${refreshError.message}`)
       }
     } catch (err) {
-      //setMessage(err.message)
       setConfirmationError(err.message)
     } finally {
+      saleSubmissionRef.current = false
       setLoading(false)
     }
   }
