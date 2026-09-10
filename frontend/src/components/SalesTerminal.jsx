@@ -1,9 +1,10 @@
 import { BadgePercent, Minus, PackagePlus, Plus, ReceiptText, ShoppingCart, Trash2, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from '../services/api'
 import { formatQuantityWithUnit, money } from '../utils/formatters'
 import { StatusPill } from './StatusPill'
+import { SaleConfirmationModal } from './sales/SaleConfirmationModal'
 
 function createEmptyComboDraft() {
   return {
@@ -162,6 +163,9 @@ export function SalesTerminal({ onSaleComplete }) {
   const [message, setMessage] = useState('')
   const [showComboCreator, setShowComboCreator] = useState(false)
   const [deletingComboId, setDeletingComboId] = useState('')
+  const [showSaleConfirmation, setShowSaleConfirmation] = useState(false)
+  const [confirmationError, setConfirmationError] = useState('')
+  const saleSubmissionRef = useRef(false)
 
   const loadData = useCallback(async () => {
     const [productData, comboData] = await Promise.all([
@@ -267,28 +271,58 @@ export function SalesTerminal({ onSaleComplete }) {
       setDeletingComboId('')
     }
   }
+function validateSale() {
+  if (!cart.length) {
+    return 'Adicione ao menos um item para finalizar a venda.'
+  }
 
+  const exceededItem = cart.find((item) => item.quantity > item.stockLimit)
+
+  if (exceededItem) {
+    return `${exceededItem.name} passou do limite disponivel (${getCartLimitLabel(exceededItem)}).`
+  }
+
+  if (payment === 'pagamento_pendente' && !customerName.trim()) {
+    return 'Informe a pessoa ou cliente do pagamento pendente.'
+  }
+
+  return ''
+}
+
+function openSaleConfirmation() {
+  const validationError = validateSale()
+
+  if (validationError) {
+    setMessage(validationError)
+    return
+  }
+
+  setMessage('')
+  setConfirmationError('')
+  setShowSaleConfirmation(true)
+}
+
+function closeSaleConfirmation() {
+  if (loading) return
+
+  setShowSaleConfirmation(false)
+  setConfirmationError('')
+}
   async function finishSale() {
+    if (saleSubmissionRef.current) {
+      return
+    }
+
+    const validationError = validateSale()
+
+    if (validationError) {
+      setConfirmationError(validationError)
+      return
+    }
+
+    saleSubmissionRef.current = true
     setLoading(true)
-    setMessage('')
-    if (!cart.length) {
-      setMessage('Adicione ao menos um item para finalizar a venda.')
-      setLoading(false)
-      return
-    }
-
-    const exceededItem = cart.find((item) => item.quantity > item.stockLimit)
-    if (exceededItem) {
-      setMessage(`${exceededItem.name} passou do limite disponivel (${getCartLimitLabel(exceededItem)}).`)
-      setLoading(false)
-      return
-    }
-
-    if (payment === 'pagamento_pendente' && !customerName.trim()) {
-      setMessage('Informe a pessoa ou cliente do pagamento pendente.')
-      setLoading(false)
-      return
-    }
+    setConfirmationError('')
 
     try {
       const payload = {
@@ -299,11 +333,15 @@ export function SalesTerminal({ onSaleComplete }) {
           ? { combo_id: item.id, quantity: item.quantity }
           : { product_id: item.id, quantity: item.quantity })
       }
+
       const sale = await api.createSale(payload)
+
+      setShowSaleConfirmation(false)
       setCart([])
       setNotes('')
       setCustomerName('')
       setMessage(`Venda #${sale.id} registrada: ${money.format(sale.total)}`)
+
       try {
         await loadData()
         onSaleComplete()
@@ -311,8 +349,9 @@ export function SalesTerminal({ onSaleComplete }) {
         setMessage(`Venda #${sale.id} registrada: ${money.format(sale.total)}. Nao foi possivel atualizar a tela: ${refreshError.message}`)
       }
     } catch (err) {
-      setMessage(err.message)
+      setConfirmationError(err.message)
     } finally {
+      saleSubmissionRef.current = false
       setLoading(false)
     }
   }
@@ -514,7 +553,7 @@ export function SalesTerminal({ onSaleComplete }) {
         <button
           className="mission-btn mission-btn-primary mt-4 flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold"
           disabled={!cart.length || loading}
-          onClick={finishSale}
+          onClick={openSaleConfirmation}
         >
           <ReceiptText size={18} />
           {loading ? 'Registrando...' : 'Finalizar venda'}
@@ -547,6 +586,20 @@ export function SalesTerminal({ onSaleComplete }) {
           }}
         />
       ) : null}
-    </div>
+      {showSaleConfirmation ? (
+        <SaleConfirmationModal
+          cart={cart}
+          total={total}
+          itemCount={cartItemCount}
+          payment={payment}
+          customerName={customerName}
+          notes={notes}
+          loading={loading}
+          error={confirmationError}
+          onClose={closeSaleConfirmation}
+          onConfirm={finishSale}
+        />
+      ) : null}
+  </div>
   )
 }
