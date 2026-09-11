@@ -326,6 +326,24 @@ function getDashboardAnalytics() {
   const purchaseSuggestions = alerts.filter((item) => item.suggested_purchase > 0);
   const expiredCount = expirationAlerts.filter((item) => item.expiration_status === 'expired').length;
   const pendingPaymentTotal = pendingPayments.reduce((sum, item) => sum + Number(item.total || 0), 0);
+  const libraryFinancial = db.prepare(`
+    SELECT
+      COUNT(*) AS sales,
+      COALESCE(SUM(total), 0) AS revenue,
+      COALESCE(SUM(total_cost), 0) AS cost,
+      COALESCE(SUM(gross_profit), 0) AS profit
+    FROM library_sales
+    WHERE created_at >= ?
+  `).get(thirtyDaysAgo);
+
+  const snackBarFinancial = db.prepare(`
+    SELECT
+      COUNT(*) AS sales,
+      COALESCE(SUM(total), 0) AS revenue,
+      COALESCE(SUM(estimated_profit), 0) AS profit
+    FROM sales
+    WHERE created_at >= ?
+  `).get(thirtyDaysAgo);
 
   return {
     kpis: {
@@ -354,7 +372,29 @@ function getDashboardAnalytics() {
     purchase_suggestions: purchaseSuggestions,
     pending_payments: pendingPayments,
     event_revenue: eventRevenue,
-    profitable_products: profitableProducts
+    profitable_products: profitableProducts,
+    production_sector: {
+      period_days: 30,
+      total_revenue: money(Number(snackBarFinancial.revenue || 0) + Number(libraryFinancial.revenue || 0)),
+      total_profit: money(Number(snackBarFinancial.profit || 0) + Number(libraryFinancial.profit || 0)),
+      units: [
+        {
+          key: 'snack_bar',
+          label: 'Lanchonete',
+          sales: Number(snackBarFinancial.sales || 0),
+          revenue: money(snackBarFinancial.revenue),
+          profit: money(snackBarFinancial.profit)
+        },
+        {
+          key: 'library',
+          label: 'Livraria',
+          sales: Number(libraryFinancial.sales || 0),
+          revenue: money(libraryFinancial.revenue),
+          cost: money(libraryFinancial.cost),
+          profit: money(libraryFinancial.profit)
+        }
+      ]
+    }
   };
 }
 

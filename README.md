@@ -1,6 +1,6 @@
 # SH82
 
-Aplicacao web para controle de estoque e vendas de uma pequena lanchonete, com operacao de PDV rapida e uma base central tratada como planilha inteligente.
+Aplicacao web para controle de estoque, vendas e operacao do setor de producao Shalom. A plataforma atende a Lanchonete e tambem a Livraria/Shalom Store, mantendo estoques e dados de negocio separados.
 
 ## Stack
 
@@ -76,6 +76,9 @@ Travas de seguranca do seed demo:
 ## Funcionalidades
 
 - Base inicia sem produtos, vendas, combos, eventos ou estoque ficticio.
+- Modulo Livraria/Shalom Store com catalogo publico, produtos, categorias, imagens, publicacao, estoque separado, vendas assistidas e indicadores financeiros.
+- Vitrine publica em `/livraria`, sem login, exibindo somente produtos ativos e publicados da Livraria.
+- CTA "Tenho interesse" abre WhatsApp com mensagem contextual; a compra nao e concluida automaticamente no site publico.
 - Menu Carga inicial desabilitado por padrao; o admin pode habilitar em Sistema para cadastrar os itens reais do inventario e seus lotes.
 - Dashboard com faturamento do dia, vendas, lucro estimado, estoque baixo, produtos mais vendidos, produtos parados, horarios de pico e sugestoes de compra.
 - PDV com botoes grandes para venda simples, venda multipla e combos.
@@ -83,7 +86,7 @@ Travas de seguranca do seed demo:
 - Cadastro de produtos com custo, preco, quantidade, estoque minimo, fornecedor, codigo, unidade e marcacao de doacao sem custo.
 - Planilha central com abas de produtos, vendas, itens vendidos, movimentacoes e indicadores.
 - Relatorios exportaveis em CSV, Excel e PDF.
-- Login com niveis `admin`, `manager`, `finance` e `cashier`.
+- Login com niveis `admin`, `manager`, `finance`, `cashier` e `library`.
 - Login protegido com rate limit, bloqueio temporario apos falhas repetidas e auditoria de tentativas invalidas.
 - Administrador cria usuarios ativos, gera senha inicial aleatoria, reseta senhas e exclui acessos ativos.
 - Primeiro acesso com senha temporaria exige troca de senha antes de abrir o sistema.
@@ -147,6 +150,8 @@ TELEGRAM_ALERTS_ENABLED=true
 TELEGRAM_ALERT_INTERVAL_MINUTES=360
 TELEGRAM_ALERT_MAX_ITEMS=8
 TELEGRAM_IGNORE_MISSING_EXPIRATION_CATEGORIES=Descartaveis
+LIBRARY_WHATSAPP_PHONE=5581999999999
+PUBLIC_STOREFRONT_URL=https://seudominio.example
 ```
 
 Em producao, inclua em `CORS_ORIGINS` a origem exata exibida no navegador antes de `/`, por exemplo `http://100.82.234.51:4173`. Apos alterar `backend/.env` em deploy com PM2, reinicie com `pm2 restart lanchonete-backend --update-env`.
@@ -155,6 +160,21 @@ Por padrao, `CORS_ALLOW_PRIVATE_NETWORK_ORIGINS=true` tambem libera frontends em
 Para ativar o robo do Telegram, crie um bot com o BotFather, envie uma mensagem para o bot ou adicione-o ao grupo desejado, preencha `TELEGRAM_BOT_TOKEN`, reinicie o backend e configure os demais campos em `Sistema > Alertas Telegram`.
 O `TELEGRAM_ALERT_MAX_ITEMS` controla quantos itens entram em cada mensagem de detalhe; quando houver mais itens, o sistema envia mensagens adicionais em vez de cortar o alerta. A lista `TELEGRAM_IGNORE_MISSING_EXPIRATION_CATEGORIES` evita alertas de validade para categorias sem vencimento real, como descartaveis.
 Se o grupo do Telegram virar supergrupo, o `TELEGRAM_CHAT_ID` muda e normalmente passa a comecar com `-100`. Em deploy com PM2, apos alterar `backend/.env`, reinicie com `pm2 restart lanchonete-backend --update-env` e confira em `Sistema > Alertas Telegram` se o chat id carregado termina com os mesmos digitos do valor novo.
+
+### Livraria / Shalom Store
+
+- `LIBRARY_WHATSAPP_PHONE`: telefone da Livraria no formato internacional somente com numeros. Exemplo: `5581999999999`.
+- `PUBLIC_STOREFRONT_URL`: URL publica usada para montar links de produto nas mensagens do WhatsApp. Se nao for definida, o backend usa o host da requisicao.
+- A vitrine publica fica em `/livraria` e o detalhe em `/livraria/produto/:id`.
+- Produtos aparecem publicamente apenas quando `active=true`, `published=true` e possuem estoque disponivel, a menos que a API publica seja chamada com `include_unavailable=true`.
+- O fluxo publico nao possui carrinho, checkout, pagamento nem baixa automatica de estoque. A venda e registrada manualmente por `admin` ou `library` na area autenticada.
+
+## Permissoes principais
+
+- `admin`: acesso total a Lanchonete, Livraria, usuarios, configuracao e relatorios.
+- `finance`: visao financeira e operacional de Lanchonete e Livraria, sem criacao de usuarios e sem mutacoes operacionais da Livraria.
+- `library`: operacao da Livraria, incluindo catalogo, publicacao, estoque e vendas assistidas; sem acesso automatico a Lanchonete.
+- `manager` e `cashier`: comportamento preservado para a Lanchonete.
 
 ## Operacao segura
 

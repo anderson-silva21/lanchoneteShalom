@@ -43,6 +43,8 @@ No `backend/.env`, ajuste ao menos:
 - `CORS_ALLOW_PRIVATE_NETWORK_ORIGINS=true` para permitir frontends em IPs privados/Tailscale nas portas `4173`, `5173` e `5174`.
 - `TRUST_PROXY=true` somente quando o backend estiver atras de um proxy confiavel.
 - `AUTO_BACKUP_ENABLED=true` para manter backup diario ativo.
+- `LIBRARY_WHATSAPP_PHONE=5581999999999` para habilitar o CTA publico da Livraria.
+- `PUBLIC_STOREFRONT_URL=https://seudominio.example` para gerar links publicos corretos nos contatos por WhatsApp.
 
 Recomendado em servidor:
 
@@ -64,3 +66,14 @@ GET /api/backup
 Os arquivos ficam em `database/backups/`.
 
 O backend tambem cria backups automaticos quando `AUTO_BACKUP_ENABLED=true`. A frequencia vem de `AUTO_BACKUP_INTERVAL_HOURS` e a retencao de `AUTO_BACKUP_RETENTION`.
+
+## Livraria publica
+
+A vitrine publica fica em `/livraria`. Em Nginx/Caddy ou outro host estatico de SPA, configure fallback para `frontend/dist/index.html` tambem nessas rotas:
+
+```text
+/livraria
+/livraria/produto/*
+```
+
+Sem esse fallback, o acesso direto ao detalhe de produto pode retornar 404 no servidor estatico mesmo que funcione ao navegar pela SPA.

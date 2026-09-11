@@ -17,6 +17,7 @@ Este projeto é um monorepo simples com duas partes principais:
      - relatórios e exportação
      - backup, restauracao e auditoria operacional
      - planilha central
+     - Livraria/Shalom Store (/api/library e /api/public/library)
 
 O root package.json orquestra ambos:
 - npm run dev inicia backend e frontend em paralelo.
@@ -63,15 +64,43 @@ Padrões e separação de responsabilidades
 
 - backend/src/routes/*
   - Cada domínio tem sua própria rota, o que facilita manutenção.
+  - Rotas publicas e autenticadas da Livraria ficam separadas para evitar vazamento de campos internos.
 - backend/src/middleware/*
   - Logging, tratamento de erros e controle de requisições ficam centralizados.
   - backend/src/db.js
      - Inicialização do banco e configuração de caminho do arquivo SQLite.
      - Cria schema e usuarios iniciais, mas nao popula produtos, estoque, vendas, combos ou eventos ficticios.
      - Executa migracoes leves e cria backup pre-migracao antes de alteracoes destrutivas de schema.
+     - Cria entidades independentes para a Livraria: library_categories, library_products, library_product_images, library_inventory_movements, library_sales e library_sale_items.
   - frontend/src/components/*
      - UI modularizada em componentes reutilizáveis.
      - Sistema concentra saude, permissao, auditoria e configuracoes administrativas.
+     - LibraryManager concentra a operacao autenticada da Livraria.
+     - PublicLibraryStorefront renderiza a vitrine publica sem exigir login.
+
+---
+
+Dominio Livraria / Shalom Store
+
+- A Livraria nao reutiliza as tabelas products, stock_batches, sales e sale_items da Lanchonete.
+- O estoque da Livraria e mantido em library_products.stock_quantity e auditado em library_inventory_movements.
+- Vendas da Livraria sao gravadas em library_sales e library_sale_items.
+- A criacao de venda e transacional: se algum item nao tiver estoque suficiente, a venda e abortada e o estoque permanece inalterado.
+- A coluna library_sales.idempotency_key evita duplicidade quando o operador clica duas vezes ou reenvia uma requisicao.
+- O catalogo publico retorna somente campos de vitrine: nome, descricao, categoria, SKU, preco, disponibilidade, imagens e URL publica. Custo, lucro e historico nao sao expostos.
+- O contato publico usa WhatsApp com telefone centralizado em LIBRARY_WHATSAPP_PHONE.
+
+---
+
+Autorizacao
+
+- O backend continua sendo a fonte de verdade para autorizacao.
+- Regras de telas e permissoes ficam em backend/src/middleware/accessControl.js.
+- admin: tudo.
+- finance: leitura financeira/operacional nos dois dominios, sem gestao de usuarios e sem mutacoes operacionais da Livraria.
+- library: operacao da Livraria, sem acesso automatico a Lanchonete.
+- manager e cashier: permissoes existentes da Lanchonete preservadas.
+- O frontend tambem esconde menus conforme o perfil, mas isso e apenas UX; as rotas autenticadas continuam protegidas no backend.
 
 ---
 

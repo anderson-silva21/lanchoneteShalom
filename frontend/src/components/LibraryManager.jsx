@@ -1,4 +1,4 @@
-import { AlertTriangle, BookOpen, Boxes, CheckCircle2, Eye, PackagePlus, Plus, ReceiptText, Save, Search, TrendingUp } from 'lucide-react'
+import { AlertTriangle, BookOpen, Boxes, CheckCircle2, Eye, PackagePlus, Pencil, Plus, ReceiptText, Save, Search, TrendingUp, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../services/api'
 import { decimal, formatDateTime, money } from '../utils/formatters'
@@ -44,9 +44,11 @@ export function LibraryManager({ user }) {
   const [movements, setMovements] = useState([])
   const [filters, setFilters] = useState({ q: '', status: '' })
   const [productDraft, setProductDraft] = useState(emptyProduct)
+  const [editingProductId, setEditingProductId] = useState(null)
   const [categoryDraft, setCategoryDraft] = useState({ name: '', description: '' })
   const [stockDraft, setStockDraft] = useState({ product_id: '', type: 'replenishment', operation: 'in', quantity: 1, reason: '' })
   const [saleDraft, setSaleDraft] = useState({ customer_name: '', payment_method: 'manual', notes: '', items: [] })
+  const [saleKey, setSaleKey] = useState(newSaleKey)
   const [saleItem, setSaleItem] = useState({ product_id: '', quantity: 1 })
   const [reviewSale, setReviewSale] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -114,10 +116,15 @@ export function LibraryManager({ user }) {
         category_id: productDraft.category_id || null,
         images: productDraft.image_url ? [{ url: productDraft.image_url, alt_text: productDraft.name }] : []
       }
-      await api.createLibraryProduct(payload)
+      if (editingProductId) {
+        await api.updateLibraryProduct(editingProductId, payload)
+      } else {
+        await api.createLibraryProduct(payload)
+      }
       setProductDraft(emptyProduct)
+      setEditingProductId(null)
       await loadData()
-      setMessage('Produto da Livraria salvo.')
+      setMessage(editingProductId ? 'Produto da Livraria atualizado.' : 'Produto da Livraria salvo.')
     } catch (err) {
       setMessage(err.message)
     } finally {
@@ -141,6 +148,28 @@ export function LibraryManager({ user }) {
     } finally {
       setSaving(false)
     }
+  }
+
+  function startProductEdit(product) {
+    setEditingProductId(product.id)
+    setProductDraft({
+      name: product.name,
+      description: product.description || '',
+      category_id: product.category_id || '',
+      sku: product.sku,
+      price: product.price,
+      cost_price: product.cost_price,
+      stock_quantity: product.stock_quantity,
+      min_stock: product.min_stock,
+      active: Boolean(product.active),
+      published: Boolean(product.published),
+      image_url: product.images?.[0]?.url || ''
+    })
+  }
+
+  function cancelProductEdit() {
+    setEditingProductId(null)
+    setProductDraft(emptyProduct)
   }
 
   async function saveMovement(event) {
@@ -175,9 +204,10 @@ export function LibraryManager({ user }) {
     try {
       await api.createLibrarySale({
         ...saleDraft,
-        idempotency_key: newSaleKey()
+        idempotency_key: saleKey
       })
       setSaleDraft({ customer_name: '', payment_method: 'manual', notes: '', items: [] })
+      setSaleKey(newSaleKey())
       setReviewSale(false)
       await loadData()
       setMessage('Venda da Livraria registrada.')
@@ -266,10 +296,16 @@ export function LibraryManager({ user }) {
                       <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{decimal.format(product.stock_quantity)} / min {decimal.format(product.min_stock)}</td>
                       <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{product.published ? 'Publicado' : 'Interno'}</td>
                       <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                        <button type="button" className="mission-btn inline-flex items-center gap-2 border border-line/80 px-3 py-2 font-semibold disabled:opacity-55 dark:border-shalom-gold/10" onClick={() => togglePublication(product)} disabled={!writable || saving}>
-                          <Eye size={16} />
-                          {product.published ? 'Retirar' : 'Publicar'}
-                        </button>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" className="mission-btn inline-flex items-center gap-2 border border-line/80 px-3 py-2 font-semibold disabled:opacity-55 dark:border-shalom-gold/10" onClick={() => startProductEdit(product)} disabled={!writable || saving}>
+                            <Pencil size={16} />
+                            Editar
+                          </button>
+                          <button type="button" className="mission-btn inline-flex items-center gap-2 border border-line/80 px-3 py-2 font-semibold disabled:opacity-55 dark:border-shalom-gold/10" onClick={() => togglePublication(product)} disabled={!writable || saving}>
+                            <Eye size={16} />
+                            {product.published ? 'Retirar' : 'Publicar'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -290,9 +326,17 @@ export function LibraryManager({ user }) {
             </form>
 
             <form className="mission-panel p-4" onSubmit={saveProduct}>
-              <h3 className="font-display text-lg font-semibold">Novo produto</h3>
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-display text-lg font-semibold">{editingProductId ? 'Editar produto' : 'Novo produto'}</h3>
+                {editingProductId ? (
+                  <button type="button" className="mission-btn border border-line/80 p-2 dark:border-shalom-gold/10" onClick={cancelProductEdit} title="Cancelar edicao" aria-label="Cancelar edicao">
+                    <X size={16} />
+                  </button>
+                ) : null}
+              </div>
               <div className="mt-3 grid gap-3">
                 <input className="mission-input px-3 py-2" value={productDraft.name} onChange={(event) => setProductDraft({ ...productDraft, name: event.target.value })} placeholder="Nome" disabled={!writable} required />
+                <input className="mission-input px-3 py-2" value={productDraft.sku} onChange={(event) => setProductDraft({ ...productDraft, sku: event.target.value })} placeholder="SKU opcional" disabled={!writable} />
                 <select className="mission-input px-3 py-2" value={productDraft.category_id} onChange={(event) => setProductDraft({ ...productDraft, category_id: event.target.value })} disabled={!writable}>
                   <option value="">Sem categoria</option>
                   {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
@@ -309,10 +353,14 @@ export function LibraryManager({ user }) {
                   Publicar no catalogo
                   <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={productDraft.published} onChange={(event) => setProductDraft({ ...productDraft, published: event.target.checked })} disabled={!writable} />
                 </label>
+                <label className="flex items-center justify-between rounded-xl border border-line/80 px-3 py-2 text-sm font-semibold dark:border-shalom-gold/10">
+                  Produto ativo
+                  <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={productDraft.active} onChange={(event) => setProductDraft({ ...productDraft, active: event.target.checked })} disabled={!writable} />
+                </label>
               </div>
               <button type="submit" className="mission-btn mission-btn-primary mt-3 inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" disabled={!writable || saving}>
                 <Save size={17} />
-                Salvar produto
+                {editingProductId ? 'Atualizar produto' : 'Salvar produto'}
               </button>
             </form>
           </aside>
@@ -390,7 +438,10 @@ export function LibraryManager({ user }) {
                 </div>
               </div>
               <textarea className="mission-input px-3 py-2" value={saleDraft.notes} onChange={(event) => setSaleDraft({ ...saleDraft, notes: event.target.value })} placeholder="Observacoes do atendimento" rows={3} disabled={!writable} />
-              <button type="button" className="mission-btn mission-btn-primary inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" onClick={() => setReviewSale(true)} disabled={!writable || saving || !saleLines.length}>
+              <button type="button" className="mission-btn mission-btn-primary inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" onClick={() => {
+                setSaleKey((current) => current || newSaleKey())
+                setReviewSale(true)
+              }} disabled={!writable || saving || !saleLines.length}>
                 <CheckCircle2 size={17} />
                 Revisar venda
               </button>
