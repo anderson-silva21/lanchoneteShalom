@@ -1,4 +1,4 @@
-import { AlertTriangle, BookOpen, Boxes, CheckCircle2, Eye, PackagePlus, Pencil, Plus, ReceiptText, Save, Search, TrendingUp, X } from 'lucide-react'
+import { AlertTriangle, BookOpen, Boxes, CheckCircle2, Eye, Inbox, PackagePlus, Pencil, Plus, ReceiptText, Save, Search, TrendingUp, UserRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../services/api'
 import { decimal, formatDateTime, money } from '../utils/formatters'
@@ -20,9 +20,11 @@ const emptyProduct = {
 
 const tabs = [
   { key: 'overview', label: 'Visao geral', icon: TrendingUp },
+  { key: 'requests', label: 'Atendimentos', icon: Inbox },
   { key: 'products', label: 'Catalogo', icon: BookOpen },
   { key: 'inventory', label: 'Estoque', icon: Boxes },
-  { key: 'sales', label: 'Vendas', icon: ReceiptText }
+  { key: 'sales', label: 'Vendas', icon: ReceiptText },
+  { key: 'sellers', label: 'Vendedores', icon: UserRound }
 ]
 
 function newSaleKey() {
@@ -42,8 +44,15 @@ export function LibraryManager({ user }) {
   const [products, setProducts] = useState([])
   const [sales, setSales] = useState([])
   const [movements, setMovements] = useState([])
+  const [requests, setRequests] = useState([])
+  const [sellers, setSellers] = useState([])
+  const [monitoring, setMonitoring] = useState({ sellers: [], unassigned_pending: 0 })
   const [filters, setFilters] = useState({ q: '', status: '' })
+  const [requestFilters, setRequestFilters] = useState({ q: '', status: '' })
   const [productDraft, setProductDraft] = useState(emptyProduct)
+  const [sellerDraft, setSellerDraft] = useState({ display_name: '', whatsapp_phone: '', active: true, eligible: true, user_id: '' })
+  const [editingSellerId, setEditingSellerId] = useState(null)
+  const [requestSaleDraft, setRequestSaleDraft] = useState({ customer_name: '', payment_method: 'manual', notes: '' })
   const [editingProductId, setEditingProductId] = useState(null)
   const [categoryDraft, setCategoryDraft] = useState({ name: '', description: '' })
   const [stockDraft, setStockDraft] = useState({ product_id: '', type: 'replenishment', operation: 'in', quantity: 1, reason: '' })
@@ -69,22 +78,28 @@ export function LibraryManager({ user }) {
   const loadData = useCallback(async () => {
     setMessage('')
     try {
-      const [nextDashboard, nextCategories, nextProducts, nextSales, nextMovements] = await Promise.all([
+      const [nextDashboard, nextCategories, nextProducts, nextSales, nextMovements, nextRequests, nextSellers, nextMonitoring] = await Promise.all([
         api.libraryDashboard(),
         api.libraryCategories(),
         api.libraryProducts(filters),
         api.librarySales(),
-        api.libraryMovements()
+        api.libraryMovements(),
+        api.libraryRequests(requestFilters),
+        api.librarySellers(),
+        api.librarySellerMonitoring()
       ])
       setDashboard(nextDashboard)
       setCategories(nextCategories)
       setProducts(nextProducts)
       setSales(nextSales)
       setMovements(nextMovements)
+      setRequests(nextRequests)
+      setSellers(nextSellers)
+      setMonitoring(nextMonitoring)
     } catch (err) {
       setMessage(err.message)
     }
-  }, [filters])
+  }, [filters, requestFilters])
 
   useEffect(() => {
     loadData()
@@ -218,6 +233,98 @@ export function LibraryManager({ user }) {
     }
   }
 
+  async function saveSellerRecord(event) {
+    event.preventDefault()
+    setSaving(true)
+    setMessage('')
+    try {
+      const payload = { ...sellerDraft, user_id: sellerDraft.user_id || null }
+      if (editingSellerId) await api.updateLibrarySeller(editingSellerId, payload)
+      else await api.createLibrarySeller(payload)
+      setSellerDraft({ display_name: '', whatsapp_phone: '', active: true, eligible: true, user_id: '' })
+      setEditingSellerId(null)
+      await loadData()
+      setMessage(editingSellerId ? 'Vendedor atualizado.' : 'Vendedor criado.')
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function startSellerEdit(seller) {
+    setEditingSellerId(seller.id)
+    setSellerDraft({
+      display_name: seller.display_name,
+      whatsapp_phone: seller.whatsapp_phone,
+      active: Boolean(seller.active),
+      eligible: Boolean(seller.eligible),
+      user_id: seller.user_id || ''
+    })
+  }
+
+  async function convertRequest(request) {
+    setSaving(true)
+    setMessage('')
+    try {
+      await api.convertLibraryRequest(request.reference, requestSaleDraft)
+      setRequestSaleDraft({ customer_name: '', payment_method: 'manual', notes: '' })
+      await loadData()
+      setMessage(`Carrinho ${request.reference} convertido em venda.`)
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function cancelRequest(request) {
+    setSaving(true)
+    setMessage('')
+    try {
+      await api.cancelLibraryRequest(request.reference)
+      await loadData()
+      setMessage(`Carrinho ${request.reference} cancelado.`)
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function reassignRequest(request, sellerId) {
+    if (!sellerId) return
+    setSaving(true)
+    setMessage('')
+    try {
+      await api.reassignLibraryRequest(request.reference, { seller_id: sellerId, reason: 'Reatribuicao operacional pelo painel' })
+      await loadData()
+      setMessage(`Carrinho ${request.reference} reatribuido.`)
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function updateRequestQuantity(request, productId, quantity) {
+    const nextItems = request.items
+      .map((item) => Number(item.product_id) === Number(productId) ? { product_id: item.product_id, quantity: Number(quantity) } : { product_id: item.product_id, quantity: item.requested_quantity })
+      .filter((item) => Number(item.quantity) > 0)
+    if (!nextItems.length) return
+    setSaving(true)
+    setMessage('')
+    try {
+      await api.updateLibraryRequestItems(request.reference, { items: nextItems })
+      await loadData()
+      setMessage(`Carrinho ${request.reference} atualizado.`)
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="grid gap-5">
       <section className="mission-panel p-4">
@@ -256,6 +363,97 @@ export function LibraryManager({ user }) {
           <MetricCard icon={Boxes} label="Unidades em estoque" value={decimal.format(dashboard?.units_in_stock || 0)} detail={`${money.format(dashboard?.inventory_value || 0)} em custo`} />
           <MetricCard icon={AlertTriangle} label="Baixo estoque" value={decimal.format(dashboard?.low_stock_count || 0)} detail="Reposicao e ajustes" tone="amber" />
           <MetricCard icon={TrendingUp} label="Receita Livraria" value={money.format(dashboard?.revenue || 0)} detail={`${money.format(dashboard?.gross_profit || 0)} de lucro bruto`} tone="green" />
+        </section>
+      ) : null}
+
+      {activeTab === 'requests' ? (
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="mission-panel p-4">
+            <div className="grid gap-3 md:grid-cols-[1fr_180px]">
+              <label className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 translate-y-[-10%] text-shalom-blue/60" size={18} />
+                <input className="mission-input mt-1 w-full px-10 py-2" value={requestFilters.q} onChange={(event) => setRequestFilters({ ...requestFilters, q: event.target.value })} placeholder="Buscar referencia" />
+              </label>
+              <select className="mission-input mt-1 w-full px-3 py-2" value={requestFilters.status} onChange={(event) => setRequestFilters({ ...requestFilters, status: event.target.value })}>
+                <option value="">Todos</option>
+                <option value="pending">Pendentes</option>
+                <option value="in_progress">Em atendimento</option>
+                <option value="completed">Concluidos</option>
+                <option value="cancelled">Cancelados</option>
+              </select>
+            </div>
+            <div className="mt-4 grid gap-3">
+              {requests.map((request) => (
+                <article key={request.reference} className="rounded-xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <strong className="font-display text-lg">{request.reference}</strong>
+                        <span className="rounded-full border border-shalom-gold/40 px-2 py-1 text-xs font-semibold uppercase">{request.status}</span>
+                        {request.has_availability_changes ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Revisar disponibilidade</span> : null}
+                      </div>
+                      <p className="mission-muted mt-1">{formatDateTime(request.created_at)} - {request.seller?.display_name || 'Sem vendedor atribuido'}</p>
+                      <div className="mt-3 grid gap-2">
+                        {request.items.map((item) => (
+                          <div key={item.id || item.product_id} className="grid gap-2 rounded-lg border border-line/70 px-3 py-2 dark:border-shalom-gold/10 sm:grid-cols-[1fr_88px_120px] sm:items-center">
+                            <span className="font-medium">{item.product_name}</span>
+                            <input
+                              type="number"
+                              min="0.001"
+                              step="0.001"
+                              className="mission-input px-2 py-1"
+                              defaultValue={item.requested_quantity}
+                              onBlur={(event) => {
+                                if (Number(event.target.value) !== Number(item.requested_quantity)) updateRequestQuantity(request, item.product_id, event.target.value)
+                              }}
+                              disabled={!writable || saving || !['pending', 'in_progress'].includes(request.status)}
+                              aria-label={`Quantidade de ${item.product_name}`}
+                            />
+                            <span className="text-right font-semibold">{money.format(item.line_total_current)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="text-left lg:text-right">
+                      <p className="text-lg font-semibold">{money.format(request.current_total)}</p>
+                      <p className="mission-muted text-xs">Estimado no pedido: {money.format(request.estimated_total)}</p>
+                    </div>
+                  </div>
+                  {writable && ['pending', 'in_progress'].includes(request.status) ? (
+                    <div className="mt-4 grid gap-2 lg:grid-cols-[1fr_150px_150px]">
+                      <input className="mission-input px-3 py-2" value={requestSaleDraft.customer_name} onChange={(event) => setRequestSaleDraft({ ...requestSaleDraft, customer_name: event.target.value })} placeholder="Nome do cliente para venda" />
+                      <button type="button" className="mission-btn mission-btn-primary px-3 py-2 font-semibold disabled:opacity-55" onClick={() => convertRequest(request)} disabled={saving}>Converter</button>
+                      <button type="button" className="mission-btn border border-line/80 px-3 py-2 font-semibold disabled:opacity-55 dark:border-shalom-gold/10" onClick={() => cancelRequest(request)} disabled={saving}>Cancelar</button>
+                    </div>
+                  ) : null}
+                  {user?.role === 'admin' && ['pending', 'in_progress'].includes(request.status) ? (
+                    <div className="mt-3">
+                      <select className="mission-input w-full px-3 py-2" value={request.assigned_seller_id || ''} onChange={(event) => reassignRequest(request, event.target.value)} disabled={saving}>
+                        <option value="">Reatribuir vendedor</option>
+                        {sellers.filter((seller) => seller.active).map((seller) => <option key={seller.id} value={seller.id}>{seller.display_name}</option>)}
+                      </select>
+                    </div>
+                  ) : null}
+                </article>
+              ))}
+              {!requests.length ? <p className="rounded-xl border border-line/80 bg-white/70 px-4 py-5 font-medium dark:border-shalom-gold/10 dark:bg-white/10">Nenhum carrinho assistido encontrado.</p> : null}
+            </div>
+          </div>
+          <aside className="mission-panel p-4">
+            <h3 className="font-display text-lg font-semibold">Monitoramento rapido</h3>
+            <p className="mission-muted mt-1 text-sm">{monitoring.unassigned_pending || 0} carrinho(s) sem vendedor.</p>
+            <div className="mt-4 grid gap-3">
+              {monitoring.sellers?.map((seller) => (
+                <article key={seller.id} className="rounded-xl border border-line/70 p-3 text-sm dark:border-shalom-gold/10">
+                  <div className="flex items-center justify-between gap-3">
+                    <strong>{seller.display_name}</strong>
+                    <span className={seller.active && seller.eligible ? 'text-emerald-700 dark:text-emerald-200' : 'text-shalom-wine dark:text-rose-100'}>{seller.active && seller.eligible ? 'Na rotacao' : 'Fora da rotacao'}</span>
+                  </div>
+                  <p className="mission-muted mt-2">Hoje {decimal.format(seller.assigned_today)} - Pend. {decimal.format(seller.pending)} - And. {decimal.format(seller.in_progress)} - Conc. {decimal.format(seller.completed)}</p>
+                </article>
+              ))}
+            </div>
+          </aside>
         </section>
       ) : null}
 
@@ -464,6 +662,76 @@ export function LibraryManager({ user }) {
                   </div>
                 </article>
               ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === 'sellers' ? (
+        <section className="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
+          <form className="mission-panel p-4" onSubmit={saveSellerRecord}>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="font-display text-lg font-semibold">{editingSellerId ? 'Editar vendedor' : 'Novo vendedor'}</h3>
+              {editingSellerId ? (
+                <button type="button" className="mission-btn border border-line/80 p-2 dark:border-shalom-gold/10" onClick={() => {
+                  setEditingSellerId(null)
+                  setSellerDraft({ display_name: '', whatsapp_phone: '', active: true, eligible: true, user_id: '' })
+                }} aria-label="Cancelar edicao">
+                  <X size={16} />
+                </button>
+              ) : null}
+            </div>
+            <div className="mt-3 grid gap-3">
+              <input className="mission-input px-3 py-2" value={sellerDraft.display_name} onChange={(event) => setSellerDraft({ ...sellerDraft, display_name: event.target.value })} placeholder="Nome exibido" disabled={user?.role !== 'admin'} required />
+              <input className="mission-input px-3 py-2" value={sellerDraft.whatsapp_phone} onChange={(event) => setSellerDraft({ ...sellerDraft, whatsapp_phone: event.target.value })} placeholder="WhatsApp com DDI e DDD" disabled={user?.role !== 'admin'} required />
+              <label className="flex items-center justify-between rounded-xl border border-line/80 px-3 py-2 text-sm font-semibold dark:border-shalom-gold/10">
+                Vendedor ativo
+                <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={sellerDraft.active} onChange={(event) => setSellerDraft({ ...sellerDraft, active: event.target.checked })} disabled={user?.role !== 'admin'} />
+              </label>
+              <label className="flex items-center justify-between rounded-xl border border-line/80 px-3 py-2 text-sm font-semibold dark:border-shalom-gold/10">
+                Participa da rotacao
+                <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={sellerDraft.eligible} onChange={(event) => setSellerDraft({ ...sellerDraft, eligible: event.target.checked })} disabled={user?.role !== 'admin'} />
+              </label>
+            </div>
+            <button type="submit" className="mission-btn mission-btn-primary mt-3 inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold disabled:opacity-55" disabled={user?.role !== 'admin' || saving}>
+              <Save size={17} />
+              {editingSellerId ? 'Atualizar vendedor' : 'Salvar vendedor'}
+            </button>
+          </form>
+          <div className="mission-panel p-4">
+            <h3 className="font-display text-lg font-semibold">Vendedores da Livraria</h3>
+            <div className="mt-4 overflow-x-auto scrollbar-thin">
+              <table className="min-w-[720px] w-full border-separate border-spacing-0 text-left text-sm">
+                <thead className="text-xs uppercase tracking-[0.12em] text-shalom-blue/70 dark:text-shalom-gold/80">
+                  <tr>
+                    <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Vendedor</th>
+                    <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">WhatsApp</th>
+                    <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Status</th>
+                    <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Metricas</th>
+                    <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Acoes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sellers.map((seller) => {
+                    const stats = monitoring.sellers?.find((item) => Number(item.id) === Number(seller.id))
+                    return (
+                      <tr key={seller.id}>
+                        <td className="border-b border-line/80 px-3 py-2 font-semibold dark:border-shalom-gold/10">{seller.display_name}</td>
+                        <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{seller.whatsapp_phone}</td>
+                        <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{seller.active ? 'Ativo' : 'Inativo'} / {seller.eligible ? 'na rotacao' : 'fora da rotacao'}</td>
+                        <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">Hoje {decimal.format(stats?.assigned_today || 0)} - Pend. {decimal.format(stats?.pending || 0)}</td>
+                        <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
+                          <button type="button" className="mission-btn inline-flex items-center gap-2 border border-line/80 px-3 py-2 font-semibold disabled:opacity-55 dark:border-shalom-gold/10" onClick={() => startSellerEdit(seller)} disabled={user?.role !== 'admin' || saving}>
+                            <Pencil size={16} />
+                            Editar
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              {!sellers.length ? <p className="mt-4 rounded-xl border border-line/80 bg-white/70 px-4 py-5 font-medium dark:border-shalom-gold/10 dark:bg-white/10">Nenhum vendedor configurado.</p> : null}
             </div>
           </div>
         </section>
