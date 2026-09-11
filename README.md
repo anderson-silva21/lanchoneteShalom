@@ -78,7 +78,7 @@ Travas de seguranca do seed demo:
 - Base inicia sem produtos, vendas, combos, eventos ou estoque ficticio.
 - Modulo Livraria/Shalom Store com catalogo publico, produtos, categorias, imagens, publicacao, estoque separado, vendas assistidas e indicadores financeiros.
 - Vitrine publica em `/livraria`, sem login, exibindo somente produtos ativos e publicados da Livraria.
-- CTA "Tenho interesse" abre WhatsApp com mensagem contextual; a compra nao e concluida automaticamente no site publico.
+- Carrinho publico em `/livraria` gera um atendimento assistido com referencia segura e abre WhatsApp do vendedor atribuido; a compra nao e concluida automaticamente no site publico.
 - Menu Carga inicial desabilitado por padrao; o admin pode habilitar em Sistema para cadastrar os itens reais do inventario e seus lotes.
 - Dashboard com faturamento do dia, vendas, lucro estimado, estoque baixo, produtos mais vendidos, produtos parados, horarios de pico e sugestoes de compra.
 - PDV com botoes grandes para venda simples, venda multipla e combos.
@@ -150,7 +150,6 @@ TELEGRAM_ALERTS_ENABLED=true
 TELEGRAM_ALERT_INTERVAL_MINUTES=360
 TELEGRAM_ALERT_MAX_ITEMS=8
 TELEGRAM_IGNORE_MISSING_EXPIRATION_CATEGORIES=Descartaveis
-LIBRARY_WHATSAPP_PHONE=5581999999999
 PUBLIC_STOREFRONT_URL=https://seudominio.example
 ```
 
@@ -163,8 +162,8 @@ Se o grupo do Telegram virar supergrupo, o `TELEGRAM_CHAT_ID` muda e normalmente
 
 ### Livraria / Shalom Store
 
-- `LIBRARY_WHATSAPP_PHONE`: telefone da Livraria no formato internacional somente com numeros. Exemplo: `5581999999999`.
-- `PUBLIC_STOREFRONT_URL`: URL publica usada para montar links de produto nas mensagens do WhatsApp. Se nao for definida, o backend usa o host da requisicao.
+- Vendedores da Livraria e seus WhatsApps sao configurados no painel administrativo da Livraria; o backend atribui carrinhos por round-robin.
+- `PUBLIC_STOREFRONT_URL`: URL publica usada para montar links publicos quando aplicavel. Se nao for definida, o backend usa o host da requisicao.
 - A vitrine publica fica em `/livraria` e o detalhe em `/livraria/produto/:id`.
 - Produtos aparecem publicamente apenas quando `active=true`, `published=true` e possuem estoque disponivel, a menos que a API publica seja chamada com `include_unavailable=true`.
 - O fluxo publico nao possui carrinho, checkout, pagamento nem baixa automatica de estoque. A venda e registrada manualmente por `admin` ou `library` na area autenticada.
@@ -173,7 +172,7 @@ Se o grupo do Telegram virar supergrupo, o `TELEGRAM_CHAT_ID` muda e normalmente
 
 - `admin`: acesso total a Lanchonete, Livraria, usuarios, configuracao e relatorios.
 - `finance`: visao financeira e operacional de Lanchonete e Livraria, sem criacao de usuarios e sem mutacoes operacionais da Livraria.
-- `library`: operacao da Livraria, incluindo catalogo, publicacao, estoque e vendas assistidas; sem acesso automatico a Lanchonete.
+- `library`: operacao da Livraria, incluindo catalogo, publicacao, estoque, carrinhos assistidos e vendas assistidas; sem acesso automatico a Lanchonete.
 - `manager` e `cashier`: comportamento preservado para a Lanchonete.
 
 ## Operacao segura

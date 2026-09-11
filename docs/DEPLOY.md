@@ -43,8 +43,8 @@ No `backend/.env`, ajuste ao menos:
 - `CORS_ALLOW_PRIVATE_NETWORK_ORIGINS=true` para permitir frontends em IPs privados/Tailscale nas portas `4173`, `5173` e `5174`.
 - `TRUST_PROXY=true` somente quando o backend estiver atras de um proxy confiavel.
 - `AUTO_BACKUP_ENABLED=true` para manter backup diario ativo.
-- `LIBRARY_WHATSAPP_PHONE=5581999999999` para habilitar o CTA publico da Livraria.
-- `PUBLIC_STOREFRONT_URL=https://seudominio.example` para gerar links publicos corretos nos contatos por WhatsApp.
+- Configure vendedores e WhatsApps da Livraria no painel administrativo; o backend usa essa lista para atribuir carrinhos por round-robin.
+- `PUBLIC_STOREFRONT_URL=https://seudominio.example` para gerar links publicos corretos quando aplicavel.
 
 Recomendado em servidor:
 

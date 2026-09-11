@@ -19,15 +19,15 @@ if (selectedDbPath === mainDbPath) {
 process.env.NODE_ENV = process.env.NODE_ENV || 'development';
 process.env.DB_PATH = selectedDbPath;
 process.env.BACKUP_BEFORE_MIGRATIONS = process.env.BACKUP_BEFORE_MIGRATIONS || 'false';
-process.env.LIBRARY_WHATSAPP_PHONE = process.env.LIBRARY_WHATSAPP_PHONE || '5581999999999';
 process.env.PUBLIC_STOREFRONT_URL = process.env.PUBLIC_STOREFRONT_URL || 'http://localhost:5173';
 
 const { compactDatabase, db, dbPath, initDatabase } = require('../src/db');
-const { createSale } = require('../src/services/libraryService');
+const { createAssistedRequest, createSale, saveSeller } = require('../src/services/libraryService');
 const { brazilDate } = require('../src/utils/time');
 
 const seedVersion = 'library-demo-v1';
 const demoSalePrefix = 'library-demo-sale-';
+const demoRequestPrefix = 'library-demo-request-';
 const demoSkuPrefix = 'DEMO-LIB-';
 
 function dateDaysAgo(days) {
@@ -72,6 +72,34 @@ function deletePreviousDemoSales() {
 
   db.prepare(`DELETE FROM library_sale_items WHERE sale_id IN (${placeholders})`).run(...saleIds);
   db.prepare(`DELETE FROM library_sales WHERE id IN (${placeholders})`).run(...saleIds);
+}
+
+function deletePreviousDemoRequests() {
+  const requestIds = db.prepare(`
+    SELECT id
+    FROM library_assisted_requests
+    WHERE idempotency_key LIKE ?
+  `).all(`${demoRequestPrefix}%`).map((request) => request.id);
+
+  if (!requestIds.length) return;
+  const placeholders = requestIds.map(() => '?').join(', ');
+  db.prepare(`DELETE FROM library_assignment_history WHERE request_id IN (${placeholders})`).run(...requestIds);
+  db.prepare(`DELETE FROM library_assisted_request_items WHERE request_id IN (${placeholders})`).run(...requestIds);
+  db.prepare(`DELETE FROM library_assisted_requests WHERE id IN (${placeholders})`).run(...requestIds);
+  db.prepare('UPDATE library_round_robin_state SET last_seller_id = NULL WHERE id = 1').run();
+}
+
+function seedSellers() {
+  const sellers = [
+    { display_name: 'Vendedora Demo Clara', whatsapp_phone: '5581999000001', active: true, eligible: true },
+    { display_name: 'Vendedor Demo Miguel', whatsapp_phone: '5581999000002', active: true, eligible: true },
+    { display_name: 'Apoio Demo Helena', whatsapp_phone: '5581999000003', active: true, eligible: false }
+  ];
+  return sellers.map((seller) => {
+    const existing = db.prepare('SELECT id FROM library_sellers WHERE display_name = ?').get(seller.display_name);
+    if (existing) return saveSeller(seller, existing.id);
+    return saveSeller(seller);
+  });
 }
 
 function replaceProductImages(productId, images) {
@@ -365,6 +393,32 @@ function seedSales(productIds) {
   });
 }
 
+function seedAssistedRequests(productIds) {
+  [
+    {
+      key: '001',
+      items: [['book_prayer', 1], ['rosary_wood', 2]]
+    },
+    {
+      key: '002',
+      items: [['shirt_blue', 1], ['bookmark', 3]]
+    },
+    {
+      key: '003',
+      items: [['notebook', 1], ['book_formation', 1]]
+    }
+  ].forEach((request) => {
+    createAssistedRequest({
+      idempotency_key: `${demoRequestPrefix}${request.key}`,
+      customer_note: 'Carrinho ficticio criado pelo seed demo da Livraria.',
+      items: request.items.map(([productKey, itemQuantity]) => ({
+        product_id: productIds[productKey],
+        quantity: itemQuantity
+      }))
+    });
+  });
+}
+
 function seedLibraryDemo() {
   initDatabase();
 
@@ -383,7 +437,9 @@ function seedLibraryDemo() {
   const categoryIds = Object.fromEntries(categories.map((category) => [category.key, ensureCategory(category)]));
 
   const transaction = db.transaction(() => {
+    deletePreviousDemoRequests();
     deletePreviousDemoSales();
+    seedSellers();
 
     const productIds = {};
     products.forEach((product) => {
@@ -391,6 +447,7 @@ function seedLibraryDemo() {
     });
 
     seedSales(productIds);
+    seedAssistedRequests(productIds);
 
     db.prepare(`
       INSERT INTO app_settings (key, value)
@@ -406,6 +463,8 @@ function seedLibraryDemo() {
     categories: db.prepare('SELECT COUNT(*) AS total FROM library_categories WHERE active = 1').get().total,
     demo_products: db.prepare('SELECT COUNT(*) AS total FROM library_products WHERE sku LIKE ?').get(`${demoSkuPrefix}%`).total,
     demo_sales: db.prepare('SELECT COUNT(*) AS total FROM library_sales WHERE idempotency_key LIKE ?').get(`${demoSalePrefix}%`).total,
+    demo_sellers: db.prepare("SELECT COUNT(*) AS total FROM library_sellers WHERE display_name LIKE '%Demo%'").get().total,
+    demo_requests: db.prepare('SELECT COUNT(*) AS total FROM library_assisted_requests WHERE idempotency_key LIKE ?').get(`${demoRequestPrefix}%`).total,
     public_products: db.prepare(`
       SELECT COUNT(*) AS total
       FROM library_products

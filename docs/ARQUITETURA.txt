@@ -88,7 +88,7 @@ Dominio Livraria / Shalom Store
 - A criacao de venda e transacional: se algum item nao tiver estoque suficiente, a venda e abortada e o estoque permanece inalterado.
 - A coluna library_sales.idempotency_key evita duplicidade quando o operador clica duas vezes ou reenvia uma requisicao.
 - O catalogo publico retorna somente campos de vitrine: nome, descricao, categoria, SKU, preco, disponibilidade, imagens e URL publica. Custo, lucro e historico nao sao expostos.
-- O contato publico usa WhatsApp com telefone centralizado em LIBRARY_WHATSAPP_PHONE.
+- O contato publico usa carrinhos assistidos com referencia segura; o backend atribui um vendedor da Livraria por round-robin persistido e monta o WhatsApp a partir do telefone configurado no cadastro desse vendedor.
 
 ---
 
