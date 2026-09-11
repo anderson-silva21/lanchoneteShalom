@@ -9,6 +9,7 @@ const dbPath = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.jo
 const backupDir = path.join(path.dirname(dbPath), 'backups');
 let migrationBackupCreated = false;
 const BRAZIL_TIMESTAMP_MIGRATION_KEY = 'timestamps_brazil_minus3_migrated_v1';
+const USER_ROLES = ['admin', 'manager', 'cashier', 'finance', 'library'];
 
 fs.mkdirSync(dataDir, { recursive: true });
 
@@ -136,6 +137,89 @@ function ensureAuditLogSchema() {
 
     CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id, created_at);
+  `);
+}
+
+function ensureLibrarySchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS library_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      description TEXT,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+    );
+
+    CREATE TABLE IF NOT EXISTS library_products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      description TEXT,
+      category_id INTEGER REFERENCES library_categories(id),
+      sku TEXT NOT NULL UNIQUE,
+      price REAL NOT NULL DEFAULT 0 CHECK (price >= 0),
+      cost_price REAL NOT NULL DEFAULT 0 CHECK (cost_price >= 0),
+      stock_quantity REAL NOT NULL DEFAULT 0 CHECK (stock_quantity >= 0),
+      min_stock REAL NOT NULL DEFAULT 0 CHECK (min_stock >= 0),
+      active INTEGER NOT NULL DEFAULT 1,
+      published INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+    );
+
+    CREATE TABLE IF NOT EXISTS library_product_images (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL REFERENCES library_products(id) ON DELETE CASCADE,
+      url TEXT NOT NULL,
+      alt_text TEXT,
+      position INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS library_inventory_movements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER NOT NULL REFERENCES library_products(id),
+      type TEXT NOT NULL CHECK (type IN ('replenishment', 'sale', 'adjustment')),
+      quantity_change REAL NOT NULL,
+      quantity_before REAL NOT NULL,
+      quantity_after REAL NOT NULL,
+      reference_type TEXT,
+      reference_id INTEGER,
+      reason TEXT,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+    );
+
+    CREATE TABLE IF NOT EXISTS library_sales (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      total REAL NOT NULL DEFAULT 0 CHECK (total >= 0),
+      total_cost REAL NOT NULL DEFAULT 0 CHECK (total_cost >= 0),
+      gross_profit REAL NOT NULL DEFAULT 0,
+      payment_method TEXT NOT NULL DEFAULT 'manual',
+      customer_name TEXT,
+      notes TEXT,
+      idempotency_key TEXT UNIQUE,
+      sold_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+    );
+
+    CREATE TABLE IF NOT EXISTS library_sale_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sale_id INTEGER NOT NULL REFERENCES library_sales(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES library_products(id),
+      item_name TEXT NOT NULL,
+      sku TEXT NOT NULL,
+      quantity REAL NOT NULL CHECK (quantity > 0),
+      unit_price REAL NOT NULL CHECK (unit_price >= 0),
+      unit_cost REAL NOT NULL CHECK (unit_cost >= 0),
+      line_total REAL NOT NULL CHECK (line_total >= 0),
+      line_profit REAL NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_library_products_catalog ON library_products(active, published, category_id, name);
+    CREATE INDEX IF NOT EXISTS idx_library_products_stock ON library_products(active, stock_quantity, min_stock);
+    CREATE INDEX IF NOT EXISTS idx_library_images_product ON library_product_images(product_id, position);
+    CREATE INDEX IF NOT EXISTS idx_library_movements_product_date ON library_inventory_movements(product_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_library_sales_created_at ON library_sales(created_at);
+    CREATE INDEX IF NOT EXISTS idx_library_sale_items_sale ON library_sale_items(sale_id);
   `);
 }
 
@@ -310,7 +394,11 @@ function dropTimestampTriggers() {
     'trg_post_event_inventories_created_at_local',
     'trg_events_created_at_local',
     'trg_cash_closings_created_at_local',
-    'trg_post_event_inventory_items_created_at_local'
+    'trg_post_event_inventory_items_created_at_local',
+    'trg_library_categories_created_at_local',
+    'trg_library_products_created_at_local',
+    'trg_library_inventory_movements_created_at_local',
+    'trg_library_sales_created_at_local'
   ];
 
   triggerNames.forEach((trigger) => {
@@ -346,7 +434,11 @@ function ensureBrazilTimestampTriggers() {
     'post_event_inventories',
     'events',
     'cash_closings',
-    'post_event_inventory_items'
+    'post_event_inventory_items',
+    'library_categories',
+    'library_products',
+    'library_inventory_movements',
+    'library_sales'
   ].forEach((table) => createLocalCreatedAtTrigger(table));
 
   if (tableExists('products') && columnExists('products', 'updated_at')) {
@@ -367,6 +459,17 @@ function ensureBrazilTimestampTriggers() {
       FOR EACH ROW
       BEGIN
         UPDATE stock_batches SET updated_at = ${BRAZIL_SQL_NOW} WHERE id = OLD.id;
+      END;
+    `);
+  }
+
+  if (tableExists('library_products') && columnExists('library_products', 'updated_at')) {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_library_products_updated_at
+      AFTER UPDATE ON library_products
+      FOR EACH ROW
+      BEGIN
+        UPDATE library_products SET updated_at = ${BRAZIL_SQL_NOW} WHERE id = OLD.id;
       END;
     `);
   }
@@ -406,7 +509,12 @@ function migrateExistingTimestampsToBrazilTime() {
       ['post_event_inventories', 'created_at'],
       ['events', 'created_at'],
       ['cash_closings', 'created_at'],
-      ['post_event_inventory_items', 'created_at']
+    ['post_event_inventory_items', 'created_at'],
+    ['library_categories', 'created_at'],
+    ['library_products', 'created_at'],
+    ['library_products', 'updated_at'],
+    ['library_inventory_movements', 'created_at'],
+    ['library_sales', 'created_at']
     ].forEach(([table, column]) => shiftTimestampColumn(table, column));
 
     setAppSetting(BRAZIL_TIMESTAMP_MIGRATION_KEY, '1');
@@ -419,9 +527,10 @@ function ensureUserRoleSchema() {
   if (!tableExists('users')) return;
 
   const table = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get();
-  if (String(table?.sql || '').includes("'finance'")) return;
+  const tableSql = String(table?.sql || '');
+  if (USER_ROLES.every((role) => tableSql.includes(`'${role}'`))) return;
 
-  createMigrationBackup('users.role finance');
+  createMigrationBackup('users.role library');
   const foreignKeysEnabled = Number(db.pragma('foreign_keys', { simple: true })) === 1;
   db.pragma('foreign_keys = OFF');
 
@@ -437,7 +546,7 @@ function ensureUserRoleSchema() {
         username TEXT NOT NULL UNIQUE,
         email TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
-        role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'cashier', 'finance')),
+        role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'cashier', 'finance', 'library')),
         active INTEGER NOT NULL DEFAULT 1,
         password_must_change INTEGER NOT NULL DEFAULT 0,
         login_failed_attempts INTEGER NOT NULL DEFAULT 0,
@@ -707,6 +816,7 @@ function runMigrations() {
   ensureAppSettingsSchema();
   ensureAuditLogSchema();
   ensureCashClosingSchema();
+  ensureLibrarySchema();
   addColumnIfMissing('users', 'username', 'TEXT');
   addColumnIfMissing('users', 'active', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing('users', 'password_must_change', 'INTEGER NOT NULL DEFAULT 0');
