@@ -4,6 +4,7 @@ import { AppShell } from './components/AppShell'
 import { ChangePasswordScreen } from './components/ChangePasswordScreen'
 import { Dashboard } from './components/Dashboard'
 import { InitialLoadView } from './components/InitialLoadView'
+import { LibraryManager } from './components/LibraryManager'
 import { LoginScreen } from './components/LoginScreen'
 import { PaymentsView } from './components/PaymentsView'
 import { PostEventInventory } from './components/PostEventInventory'
@@ -12,12 +13,14 @@ import { ReportsView } from './components/ReportsView'
 import { SalesTerminal } from './components/SalesTerminal'
 import { SettingsView } from './components/SettingsView'
 import { SpreadsheetView } from './components/SpreadsheetView'
+import { PublicLibraryStorefront } from './components/PublicLibraryStorefront'
 import { api, getToken, setToken } from './services/api'
 
 const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes
 const activityEvents = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'pointerdown']
 
 function App() {
+  const isPublicLibrary = typeof window !== 'undefined' && window.location.pathname.startsWith('/livraria')
   const [user, setUser] = useState(() => {
     const stored = localStorage.getItem('lanchonete_user')
     return stored ? JSON.parse(stored) : null
@@ -150,6 +153,10 @@ function App() {
     setActiveView('products')
   }
 
+  if (isPublicLibrary) {
+    return <PublicLibraryStorefront />
+  }
+
   if (!user) {
     return <LoginScreen onLogin={handleLogin} />
   }
@@ -169,6 +176,7 @@ function App() {
     inventory: <PostEventInventory refreshKey={refreshKey} onChanged={refresh} onRegisterEvent={canRegisterInventoryEvent ? () => setActiveView('dashboard') : undefined} />,
     sheet: <SpreadsheetView refreshKey={refreshKey} onChanged={refresh} user={user} />,
     reports: <ReportsView user={user} />,
+    library: <LibraryManager user={user} />,
     settings: <SettingsView user={user} darkMode={darkMode} setDarkMode={setDarkMode} setupEnabled={setupEnabled} onSetupEnabledChange={setSetupEnabled} onChanged={refresh} />
   }
 
