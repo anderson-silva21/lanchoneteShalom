@@ -5,19 +5,40 @@ const { requirePermission } = require('../middleware/accessControl');
 const { recordAudit } = require('../services/auditService');
 const {
   adjustStock,
+  cancelAssistedRequest,
+  convertAssistedRequest,
   createCategory,
   createSale,
+  getAssistedRequest,
   getDashboard,
   getProduct,
   getSaleById,
+  getSellerMonitoring,
   listCategories,
+  listAssistedRequests,
   listMovements,
   listProducts,
   listSales,
-  saveProduct
+  listSellers,
+  reassignAssistedRequest,
+  saveSeller,
+  saveProduct,
+  updateAssistedRequestItems
 } = require('../services/libraryService');
 
 const router = express.Router();
+
+function hideSellerPhonesForFinance(req, payload) {
+  if (req.user?.role !== 'finance') return payload;
+  const sanitizeRequest = (request) => ({
+    ...request,
+    seller: request.seller ? { ...request.seller, whatsapp_phone: undefined } : request.seller
+  });
+  if (Array.isArray(payload)) return payload.map(sanitizeRequest);
+  if (payload?.items && payload?.reference) return sanitizeRequest(payload);
+  if (Array.isArray(payload?.sellers)) return { ...payload, sellers: payload.sellers.map((seller) => ({ ...seller, whatsapp_phone: undefined })) };
+  return payload;
+}
 
 const imageSchema = z.object({
   url: z.string().trim().url(),
@@ -64,10 +85,135 @@ const saleSchema = z.object({
   })).min(1)
 });
 
+const sellerSchema = z.object({
+  display_name: z.string().trim().min(2),
+  whatsapp_phone: z.string().trim().min(10),
+  active: z.coerce.boolean().default(true),
+  eligible: z.coerce.boolean().default(true),
+  user_id: z.preprocess((value) => value === '' || value === undefined || value === null ? null : value, z.coerce.number().int().positive().nullable()).optional()
+});
+
+const assistedItemsSchema = z.object({
+  items: z.array(z.object({
+    product_id: z.coerce.number().int().positive(),
+    quantity: z.coerce.number().finite().positive()
+  })).min(1)
+});
+
+const convertRequestSchema = z.object({
+  payment_method: z.string().trim().min(2).default('manual'),
+  customer_name: z.string().trim().optional().nullable(),
+  notes: z.string().trim().optional().nullable()
+});
+
 router.use(authenticate, requirePermission('library:read'));
 
 router.get('/dashboard', (req, res) => {
   return res.json(getDashboard());
+});
+
+router.get('/sellers', (req, res) => {
+  const sellers = listSellers().map((seller) => req.user.role === 'finance' ? { ...seller, whatsapp_phone: undefined } : seller);
+  return res.json(sellers);
+});
+
+router.post('/sellers', requirePermission('library:sellers:manage'), (req, res) => {
+  const seller = saveSeller(sellerSchema.parse(req.body));
+  recordAudit({
+    req,
+    action: 'library.seller.create',
+    entityType: 'library_seller',
+    entityId: seller.id,
+    summary: `Vendedor da Livraria criado: ${seller.display_name}`,
+    metadata: seller
+  });
+  return res.status(201).json(seller);
+});
+
+router.patch('/sellers/:id', requirePermission('library:sellers:manage'), (req, res) => {
+  const seller = saveSeller(sellerSchema.partial().parse(req.body), req.params.id);
+  recordAudit({
+    req,
+    action: 'library.seller.update',
+    entityType: 'library_seller',
+    entityId: seller.id,
+    summary: `Vendedor da Livraria atualizado: ${seller.display_name}`,
+    metadata: seller
+  });
+  return res.json(seller);
+});
+
+router.get('/seller-monitoring', (req, res) => {
+  return res.json(hideSellerPhonesForFinance(req, getSellerMonitoring()));
+});
+
+router.get('/requests', (req, res) => {
+  return res.json(hideSellerPhonesForFinance(req, listAssistedRequests({
+    status: req.query.status,
+    sellerId: req.query.seller_id,
+    q: req.query.q,
+    limit: req.query.limit
+  })));
+});
+
+router.get('/requests/:reference', (req, res) => {
+  return res.json(hideSellerPhonesForFinance(req, getAssistedRequest(req.params.reference)));
+});
+
+router.patch('/requests/:reference/items', requirePermission('library:write'), (req, res) => {
+  const request = updateAssistedRequestItems(req.params.reference, assistedItemsSchema.parse(req.body).items);
+  recordAudit({
+    req,
+    action: 'library.request.items.update',
+    entityType: 'library_assisted_request',
+    entityId: request.id,
+    summary: `Carrinho assistido atualizado: ${request.reference}`,
+    metadata: { reference: request.reference, items: request.items.length }
+  });
+  return res.json(request);
+});
+
+router.patch('/requests/:reference/cancel', requirePermission('library:write'), (req, res) => {
+  const request = cancelAssistedRequest(req.params.reference);
+  recordAudit({
+    req,
+    action: 'library.request.cancel',
+    entityType: 'library_assisted_request',
+    entityId: request.id,
+    summary: `Carrinho assistido cancelado: ${request.reference}`,
+    metadata: { reference: request.reference }
+  });
+  return res.json(request);
+});
+
+router.patch('/requests/:reference/reassign', requirePermission('library:requests:reassign'), (req, res) => {
+  const payload = z.object({
+    seller_id: z.coerce.number().int().positive(),
+    reason: z.string().trim().optional().nullable()
+  }).parse(req.body);
+  const request = reassignAssistedRequest(req.params.reference, payload.seller_id, req.user.id, payload.reason);
+  recordAudit({
+    req,
+    action: 'library.request.reassign',
+    entityType: 'library_assisted_request',
+    entityId: request.id,
+    summary: `Carrinho assistido reatribuido: ${request.reference}`,
+    metadata: { reference: request.reference, seller_id: payload.seller_id }
+  });
+  return res.json(request);
+});
+
+router.post('/requests/:reference/convert', requirePermission('library:write'), (req, res) => {
+  const sale = convertAssistedRequest(req.params.reference, convertRequestSchema.parse(req.body), req.user);
+  recordAudit({
+    req,
+    action: 'library.request.convert',
+    entityType: 'library_sale',
+    entityId: sale.id,
+    summary: `Carrinho assistido convertido: ${req.params.reference}`,
+    metadata: { sale_id: sale.id, total: sale.total }
+  });
+  return res.status(201).json(sale);
 });
 
 router.get('/categories', (req, res) => {

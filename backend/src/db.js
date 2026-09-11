@@ -197,6 +197,8 @@ function ensureLibrarySchema() {
       customer_name TEXT,
       notes TEXT,
       idempotency_key TEXT UNIQUE,
+      assisted_request_id INTEGER,
+      seller_id INTEGER,
       sold_by INTEGER REFERENCES users(id),
       created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
     );
@@ -214,13 +216,74 @@ function ensureLibrarySchema() {
       line_profit REAL NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS library_sellers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      display_name TEXT NOT NULL,
+      whatsapp_phone TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      eligible INTEGER NOT NULL DEFAULT 1,
+      user_id INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+    );
+
+    CREATE TABLE IF NOT EXISTS library_round_robin_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      last_seller_id INTEGER REFERENCES library_sellers(id),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+    );
+
+    CREATE TABLE IF NOT EXISTS library_assisted_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      public_reference TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled', 'expired')),
+      assigned_seller_id INTEGER REFERENCES library_sellers(id),
+      assigned_at TEXT,
+      customer_note TEXT,
+      idempotency_key TEXT UNIQUE,
+      sale_id INTEGER REFERENCES library_sales(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+      completed_at TEXT,
+      cancelled_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS library_assisted_request_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER NOT NULL REFERENCES library_assisted_requests(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES library_products(id),
+      product_name TEXT NOT NULL,
+      sku TEXT NOT NULL,
+      requested_quantity REAL NOT NULL CHECK (requested_quantity > 0),
+      unit_price_snapshot REAL NOT NULL CHECK (unit_price_snapshot >= 0)
+    );
+
+    CREATE TABLE IF NOT EXISTS library_assignment_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id INTEGER NOT NULL REFERENCES library_assisted_requests(id) ON DELETE CASCADE,
+      previous_seller_id INTEGER REFERENCES library_sellers(id),
+      new_seller_id INTEGER REFERENCES library_sellers(id),
+      reason TEXT,
+      changed_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_library_products_catalog ON library_products(active, published, category_id, name);
     CREATE INDEX IF NOT EXISTS idx_library_products_stock ON library_products(active, stock_quantity, min_stock);
     CREATE INDEX IF NOT EXISTS idx_library_images_product ON library_product_images(product_id, position);
     CREATE INDEX IF NOT EXISTS idx_library_movements_product_date ON library_inventory_movements(product_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_library_sales_created_at ON library_sales(created_at);
     CREATE INDEX IF NOT EXISTS idx_library_sale_items_sale ON library_sale_items(sale_id);
+    CREATE INDEX IF NOT EXISTS idx_library_sellers_rotation ON library_sellers(active, eligible, id);
+    CREATE INDEX IF NOT EXISTS idx_library_sellers_user ON library_sellers(user_id);
+    CREATE INDEX IF NOT EXISTS idx_library_requests_status_created ON library_assisted_requests(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_library_requests_seller_status ON library_assisted_requests(assigned_seller_id, status);
+    CREATE INDEX IF NOT EXISTS idx_library_request_items_request ON library_assisted_request_items(request_id);
+    CREATE INDEX IF NOT EXISTS idx_library_assignment_history_request ON library_assignment_history(request_id, created_at);
   `);
+
+  addColumnIfMissing('library_sales', 'assisted_request_id', 'INTEGER REFERENCES library_assisted_requests(id)');
+  addColumnIfMissing('library_sales', 'seller_id', 'INTEGER REFERENCES library_sellers(id)');
 }
 
 function ensureCashClosingSchema() {
@@ -398,7 +461,10 @@ function dropTimestampTriggers() {
     'trg_library_categories_created_at_local',
     'trg_library_products_created_at_local',
     'trg_library_inventory_movements_created_at_local',
-    'trg_library_sales_created_at_local'
+    'trg_library_sales_created_at_local',
+    'trg_library_sellers_created_at_local',
+    'trg_library_assisted_requests_created_at_local',
+    'trg_library_assignment_history_created_at_local'
   ];
 
   triggerNames.forEach((trigger) => {
@@ -438,7 +504,10 @@ function ensureBrazilTimestampTriggers() {
     'library_categories',
     'library_products',
     'library_inventory_movements',
-    'library_sales'
+    'library_sales',
+    'library_sellers',
+    'library_assisted_requests',
+    'library_assignment_history'
   ].forEach((table) => createLocalCreatedAtTrigger(table));
 
   if (tableExists('products') && columnExists('products', 'updated_at')) {
@@ -470,6 +539,28 @@ function ensureBrazilTimestampTriggers() {
       FOR EACH ROW
       BEGIN
         UPDATE library_products SET updated_at = ${BRAZIL_SQL_NOW} WHERE id = OLD.id;
+      END;
+    `);
+  }
+
+  if (tableExists('library_sellers') && columnExists('library_sellers', 'updated_at')) {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_library_sellers_updated_at
+      AFTER UPDATE ON library_sellers
+      FOR EACH ROW
+      BEGIN
+        UPDATE library_sellers SET updated_at = ${BRAZIL_SQL_NOW} WHERE id = OLD.id;
+      END;
+    `);
+  }
+
+  if (tableExists('library_assisted_requests') && columnExists('library_assisted_requests', 'updated_at')) {
+    db.exec(`
+      CREATE TRIGGER IF NOT EXISTS trg_library_assisted_requests_updated_at
+      AFTER UPDATE ON library_assisted_requests
+      FOR EACH ROW
+      BEGIN
+        UPDATE library_assisted_requests SET updated_at = ${BRAZIL_SQL_NOW} WHERE id = OLD.id;
       END;
     `);
   }
@@ -509,12 +600,20 @@ function migrateExistingTimestampsToBrazilTime() {
       ['post_event_inventories', 'created_at'],
       ['events', 'created_at'],
       ['cash_closings', 'created_at'],
-    ['post_event_inventory_items', 'created_at'],
-    ['library_categories', 'created_at'],
-    ['library_products', 'created_at'],
-    ['library_products', 'updated_at'],
-    ['library_inventory_movements', 'created_at'],
-    ['library_sales', 'created_at']
+      ['post_event_inventory_items', 'created_at'],
+      ['library_categories', 'created_at'],
+      ['library_products', 'created_at'],
+      ['library_products', 'updated_at'],
+      ['library_inventory_movements', 'created_at'],
+      ['library_sales', 'created_at'],
+      ['library_sellers', 'created_at'],
+      ['library_sellers', 'updated_at'],
+      ['library_assisted_requests', 'created_at'],
+      ['library_assisted_requests', 'updated_at'],
+      ['library_assisted_requests', 'assigned_at'],
+      ['library_assisted_requests', 'completed_at'],
+      ['library_assisted_requests', 'cancelled_at'],
+      ['library_assignment_history', 'created_at']
     ].forEach(([table, column]) => shiftTimestampColumn(table, column));
 
     setAppSetting(BRAZIL_TIMESTAMP_MIGRATION_KEY, '1');

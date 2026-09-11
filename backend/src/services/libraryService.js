@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { db } = require('../db');
 
 const money = (value) => Number(Number(value || 0).toFixed(2));
@@ -23,6 +24,33 @@ function normalizeSku(value, fallbackName = 'PRODUTO') {
     .toUpperCase()
     .slice(0, 18);
   return normalized || 'PRODUTO';
+}
+
+function normalizePhone(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.length < 10 || digits.length > 15) {
+    throw createHttpError('Informe um WhatsApp valido com DDI e DDD.', 400);
+  }
+  return digits;
+}
+
+function randomReference() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.randomBytes(5);
+  return `LS-${Array.from(bytes).map((byte) => alphabet[byte % alphabet.length]).join('')}`;
+}
+
+function generatePublicReference() {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const reference = randomReference();
+    const existing = db.prepare('SELECT id FROM library_assisted_requests WHERE public_reference = ?').get(reference);
+    if (!existing) return reference;
+  }
+  throw createHttpError('Nao foi possivel gerar uma referencia publica.', 500);
+}
+
+function formatCurrency(value) {
+  return `R$ ${money(value).toFixed(2).replace('.', ',')}`;
 }
 
 function generateSku(name) {
@@ -384,6 +412,386 @@ function listMovements({ limit = 200 } = {}) {
   `).all(Math.min(Math.max(Number(limit) || 200, 1), 500));
 }
 
+function sellerDto(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    display_name: row.display_name,
+    whatsapp_phone: row.whatsapp_phone,
+    active: Boolean(row.active),
+    eligible: Boolean(row.eligible),
+    user_id: row.user_id,
+    user_name: row.user_name || null,
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+}
+
+function listSellers({ includeInactive = true } = {}) {
+  const where = includeInactive ? '' : 'WHERE s.active = 1';
+  return db.prepare(`
+    SELECT s.*, u.name AS user_name
+    FROM library_sellers s
+    LEFT JOIN users u ON u.id = s.user_id
+    ${where}
+    ORDER BY s.active DESC, s.eligible DESC, s.display_name COLLATE NOCASE ASC
+  `).all().map(sellerDto);
+}
+
+function getSeller(id) {
+  return sellerDto(db.prepare(`
+    SELECT s.*, u.name AS user_name
+    FROM library_sellers s
+    LEFT JOIN users u ON u.id = s.user_id
+    WHERE s.id = ?
+  `).get(id));
+}
+
+function saveSeller(payload, id = null) {
+  let sellerId = id ? Number(id) : null;
+  const current = sellerId ? getSeller(sellerId) : null;
+  if (sellerId && !current) throw createHttpError('Vendedor da Livraria nao encontrado.', 404);
+
+  const seller = {
+    display_name: String(payload.display_name ?? payload.displayName ?? current?.display_name ?? '').trim(),
+    whatsapp_phone: normalizePhone(payload.whatsapp_phone ?? payload.whatsappPhone ?? current?.whatsapp_phone),
+    active: payload.active === undefined ? (current?.active === false ? 0 : 1) : (payload.active === false || payload.active === 0 ? 0 : 1),
+    eligible: payload.eligible === undefined ? (current?.eligible === false ? 0 : 1) : (payload.eligible === false || payload.eligible === 0 ? 0 : 1),
+    user_id: payload.user_id ?? payload.userId ?? current?.user_id ?? null
+  };
+  if (seller.display_name.length < 2) throw createHttpError('Informe o nome do vendedor.', 400);
+
+  if (seller.user_id) {
+    const user = db.prepare('SELECT id FROM users WHERE id = ?').get(seller.user_id);
+    if (!user) throw createHttpError('Usuario associado nao encontrado.', 404);
+  }
+
+  if (sellerId) {
+    db.prepare(`
+      UPDATE library_sellers
+      SET display_name = @display_name,
+          whatsapp_phone = @whatsapp_phone,
+          active = @active,
+          eligible = @eligible,
+          user_id = @user_id
+      WHERE id = @id
+    `).run({ ...seller, id: sellerId });
+  } else {
+    sellerId = db.prepare(`
+      INSERT INTO library_sellers (display_name, whatsapp_phone, active, eligible, user_id)
+      VALUES (@display_name, @whatsapp_phone, @active, @eligible, @user_id)
+    `).run(seller).lastInsertRowid;
+  }
+  return getSeller(sellerId);
+}
+
+function selectNextSeller() {
+  const sellers = db.prepare(`
+    SELECT id, display_name, whatsapp_phone
+    FROM library_sellers
+    WHERE active = 1 AND eligible = 1
+    ORDER BY id ASC
+  `).all();
+  if (!sellers.length) return null;
+
+  db.prepare(`
+    INSERT INTO library_round_robin_state (id, last_seller_id)
+    VALUES (1, NULL)
+    ON CONFLICT(id) DO NOTHING
+  `).run();
+
+  const state = db.prepare('SELECT last_seller_id FROM library_round_robin_state WHERE id = 1').get();
+  const currentIndex = sellers.findIndex((seller) => Number(seller.id) === Number(state?.last_seller_id));
+  const nextSeller = sellers[(currentIndex + 1) % sellers.length];
+  db.prepare(`
+    UPDATE library_round_robin_state
+    SET last_seller_id = ?, updated_at = datetime('now', '-3 hours')
+    WHERE id = 1
+  `).run(nextSeller.id);
+  return nextSeller;
+}
+
+function loadRequestItems(requestIds = []) {
+  const ids = requestIds.map(Number).filter((id) => Number.isInteger(id) && id > 0);
+  if (!ids.length) return {};
+  const placeholders = ids.map(() => '?').join(', ');
+  const itemsByRequest = {};
+  db.prepare(`
+    SELECT i.*, p.price AS current_price, p.stock_quantity, p.active, p.published
+    FROM library_assisted_request_items i
+    LEFT JOIN library_products p ON p.id = i.product_id
+    WHERE i.request_id IN (${placeholders})
+    ORDER BY i.id ASC
+  `).all(...ids).forEach((item) => {
+    const mapped = {
+      id: item.id,
+      product_id: item.product_id,
+      product_name: item.product_name,
+      sku: item.sku,
+      requested_quantity: quantity(item.requested_quantity),
+      unit_price_snapshot: money(item.unit_price_snapshot),
+      current_price: money(item.current_price),
+      stock_quantity: quantity(item.stock_quantity),
+      active: Boolean(item.active),
+      published: Boolean(item.published),
+      line_total_snapshot: money(item.unit_price_snapshot * item.requested_quantity),
+      line_total_current: money((item.current_price || 0) * item.requested_quantity),
+      price_changed: money(item.current_price) !== money(item.unit_price_snapshot),
+      stock_available: quantity(item.stock_quantity) >= quantity(item.requested_quantity)
+    };
+    if (!itemsByRequest[item.request_id]) itemsByRequest[item.request_id] = [];
+    itemsByRequest[item.request_id].push(mapped);
+  });
+  return itemsByRequest;
+}
+
+function requestDto(row, { publicSafe = false } = {}) {
+  if (!row) return null;
+  const items = loadRequestItems([row.id])[row.id] || [];
+  const estimatedTotal = items.reduce((sum, item) => sum + item.line_total_snapshot, 0);
+  const currentTotal = items.reduce((sum, item) => sum + item.line_total_current, 0);
+  const seller = row.assigned_seller_id ? {
+    id: publicSafe ? undefined : row.assigned_seller_id,
+    display_name: row.assigned_seller_name,
+    whatsapp_phone: publicSafe ? undefined : row.assigned_seller_phone
+  } : null;
+  const base = {
+    reference: row.public_reference,
+    status: row.status,
+    assigned_at: row.assigned_at,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    completed_at: row.completed_at,
+    cancelled_at: row.cancelled_at,
+    seller: seller ? Object.fromEntries(Object.entries(seller).filter(([, value]) => value !== undefined)) : null,
+    items: items.map((item) => publicSafe ? {
+      product_id: item.product_id,
+      product_name: item.product_name,
+      sku: item.sku,
+      requested_quantity: item.requested_quantity,
+      unit_price_snapshot: item.unit_price_snapshot,
+      line_total_snapshot: item.line_total_snapshot
+    } : item),
+    estimated_total: money(estimatedTotal),
+    current_total: money(currentTotal),
+    has_availability_changes: items.some((item) => item.price_changed || !item.stock_available || !item.active)
+  };
+  if (!publicSafe) {
+    base.id = row.id;
+    base.assigned_seller_id = row.assigned_seller_id;
+    base.sale_id = row.sale_id;
+    base.customer_note = row.customer_note;
+  }
+  return base;
+}
+
+function findRequestByReference(reference) {
+  return db.prepare(`
+    SELECT r.*, s.display_name AS assigned_seller_name, s.whatsapp_phone AS assigned_seller_phone
+    FROM library_assisted_requests r
+    LEFT JOIN library_sellers s ON s.id = r.assigned_seller_id
+    WHERE r.public_reference = ?
+  `).get(String(reference || '').trim().toUpperCase());
+}
+
+function buildRequestWhatsAppUrl(request) {
+  const phone = request?.seller?.whatsapp_phone || request?.assigned_seller_phone || '';
+  const configuredPhone = String(phone).replace(/\D/g, '');
+  if (!configuredPhone) return null;
+  const items = (request.items || []).map((item) => `- ${item.product_name} x${decimalQuantity(item.requested_quantity)}`);
+  const message = [
+    'Ola! Montei um carrinho na Livraria Shalom e gostaria de continuar o atendimento.',
+    '',
+    `Codigo: ${request.reference || request.public_reference}`,
+    '',
+    'Itens:',
+    ...items,
+    '',
+    `Total estimado: ${formatCurrency(request.estimated_total)}`,
+    '',
+    'Poderia me ajudar?'
+  ].join('\n');
+  return `https://wa.me/${configuredPhone}?text=${encodeURIComponent(message)}`;
+}
+
+function decimalQuantity(value) {
+  const rounded = quantity(value);
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded).replace('.', ',');
+}
+
+const createAssistedRequestTransaction = db.transaction((payload = {}) => {
+  const idempotencyKey = normalizeText(payload.idempotency_key || payload.idempotencyKey);
+  if (idempotencyKey) {
+    const existing = db.prepare('SELECT public_reference FROM library_assisted_requests WHERE idempotency_key = ?').get(idempotencyKey);
+    if (existing) return existing.public_reference;
+  }
+
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  if (!items.length) throw createHttpError('Inclua ao menos um item no carrinho.', 400);
+
+  const normalizedItems = items.map((item) => ({
+    product_id: Number(item.product_id || item.productId),
+    quantity: quantity(item.quantity || 1)
+  }));
+  if (normalizedItems.some((item) => !Number.isInteger(item.product_id) || item.product_id <= 0 || item.quantity <= 0)) {
+    throw createHttpError('Carrinho contem item invalido.', 400);
+  }
+
+  const seller = selectNextSeller();
+  const reference = generatePublicReference();
+  const requestId = db.prepare(`
+    INSERT INTO library_assisted_requests
+      (public_reference, status, assigned_seller_id, assigned_at, customer_note, idempotency_key)
+    VALUES (?, 'pending', ?, ${seller ? "datetime('now', '-3 hours')" : 'NULL'}, ?, ?)
+  `).run(reference, seller?.id || null, normalizeText(payload.customer_note || payload.customerNote), idempotencyKey).lastInsertRowid;
+
+  const insertItem = db.prepare(`
+    INSERT INTO library_assisted_request_items
+      (request_id, product_id, product_name, sku, requested_quantity, unit_price_snapshot)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  normalizedItems.forEach((item) => {
+    const product = db.prepare(`
+      SELECT *
+      FROM library_products
+      WHERE id = ? AND active = 1 AND published = 1
+    `).get(item.product_id);
+    if (!product) throw createHttpError('Produto indisponivel no catalogo publico.', 400);
+    insertItem.run(requestId, product.id, product.name, product.sku, item.quantity, product.price);
+  });
+
+  if (seller) {
+    db.prepare(`
+      INSERT INTO library_assignment_history (request_id, previous_seller_id, new_seller_id, reason, changed_by)
+      VALUES (?, NULL, ?, 'round_robin', NULL)
+    `).run(requestId, seller.id);
+  }
+
+  return reference;
+});
+
+function createAssistedRequest(payload = {}) {
+  const reference = createAssistedRequestTransaction(payload);
+  const internalRequest = requestDto(findRequestByReference(reference));
+  const publicRequest = requestDto(findRequestByReference(reference), { publicSafe: true });
+  publicRequest.whatsapp_url = internalRequest?.seller ? buildRequestWhatsAppUrl(internalRequest) : null;
+  return publicRequest;
+}
+
+function getPublicAssistedRequest(reference) {
+  const internalRequest = requestDto(findRequestByReference(reference));
+  if (!internalRequest) return null;
+  const publicRequest = requestDto(findRequestByReference(reference), { publicSafe: true });
+  publicRequest.whatsapp_url = internalRequest.seller ? buildRequestWhatsAppUrl(internalRequest) : null;
+  return publicRequest;
+}
+
+function listAssistedRequests({ status = '', sellerId = '', q = '', limit = 100 } = {}) {
+  const where = [];
+  const params = [];
+  if (status) {
+    where.push('r.status = ?');
+    params.push(status);
+  }
+  if (sellerId) {
+    where.push('r.assigned_seller_id = ?');
+    params.push(Number(sellerId));
+  }
+  if (q) {
+    where.push('r.public_reference LIKE ?');
+    params.push(`%${String(q).trim().toUpperCase()}%`);
+  }
+  const rows = db.prepare(`
+    SELECT r.*, s.display_name AS assigned_seller_name, s.whatsapp_phone AS assigned_seller_phone
+    FROM library_assisted_requests r
+    LEFT JOIN library_sellers s ON s.id = r.assigned_seller_id
+    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+    ORDER BY datetime(r.created_at) DESC, r.id DESC
+    LIMIT ?
+  `).all(...params, Math.min(Math.max(Number(limit) || 100, 1), 300));
+  return rows.map((row) => requestDto(row));
+}
+
+function getAssistedRequest(reference) {
+  const request = requestDto(findRequestByReference(reference));
+  if (!request) throw createHttpError('Carrinho assistido nao encontrado.', 404);
+  request.assignment_history = db.prepare(`
+    SELECT h.*, prev.display_name AS previous_seller_name, next.display_name AS new_seller_name, u.name AS changed_by_name
+    FROM library_assignment_history h
+    LEFT JOIN library_sellers prev ON prev.id = h.previous_seller_id
+    LEFT JOIN library_sellers next ON next.id = h.new_seller_id
+    LEFT JOIN users u ON u.id = h.changed_by
+    WHERE h.request_id = ?
+    ORDER BY datetime(h.created_at) DESC, h.id DESC
+  `).all(request.id);
+  return request;
+}
+
+function updateAssistedRequestItems(reference, items = []) {
+  const request = getAssistedRequest(reference);
+  if (!['pending', 'in_progress'].includes(request.status)) {
+    throw createHttpError('Este carrinho nao pode mais ser alterado.', 400);
+  }
+  if (!Array.isArray(items) || !items.length) throw createHttpError('Inclua ao menos um item.', 400);
+
+  const transaction = db.transaction(() => {
+    db.prepare('DELETE FROM library_assisted_request_items WHERE request_id = ?').run(request.id);
+    const insert = db.prepare(`
+      INSERT INTO library_assisted_request_items
+        (request_id, product_id, product_name, sku, requested_quantity, unit_price_snapshot)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    items.forEach((item) => {
+      const productId = Number(item.product_id || item.productId);
+      const itemQuantity = quantity(item.quantity || item.requested_quantity || 1);
+      if (!Number.isInteger(productId) || productId <= 0 || itemQuantity <= 0) {
+        throw createHttpError('Item invalido.', 400);
+      }
+      const product = db.prepare('SELECT * FROM library_products WHERE id = ? AND active = 1').get(productId);
+      if (!product) throw createHttpError('Produto da Livraria nao encontrado.', 404);
+      insert.run(request.id, product.id, product.name, product.sku, itemQuantity, product.price);
+    });
+    db.prepare("UPDATE library_assisted_requests SET status = 'in_progress' WHERE id = ? AND status = 'pending'").run(request.id);
+  });
+  transaction();
+  return getAssistedRequest(reference);
+}
+
+function cancelAssistedRequest(reference) {
+  const request = getAssistedRequest(reference);
+  if (request.status === 'completed') throw createHttpError('Carrinho ja convertido em venda.', 400);
+  db.prepare(`
+    UPDATE library_assisted_requests
+    SET status = 'cancelled', cancelled_at = datetime('now', '-3 hours')
+    WHERE id = ? AND status != 'cancelled'
+  `).run(request.id);
+  return getAssistedRequest(reference);
+}
+
+function reassignAssistedRequest(reference, sellerId, userId, reason = 'manual_reassignment') {
+  const request = getAssistedRequest(reference);
+  if (!['pending', 'in_progress'].includes(request.status)) {
+    throw createHttpError('Somente carrinhos pendentes ou em atendimento podem ser reatribuídos.', 400);
+  }
+  const seller = db.prepare('SELECT * FROM library_sellers WHERE id = ? AND active = 1').get(Number(sellerId));
+  if (!seller) throw createHttpError('Vendedor ativo nao encontrado.', 404);
+
+  const transaction = db.transaction(() => {
+    db.prepare(`
+      UPDATE library_assisted_requests
+      SET assigned_seller_id = ?, assigned_at = datetime('now', '-3 hours'), status = 'in_progress'
+      WHERE id = ?
+    `).run(seller.id, request.id);
+    db.prepare(`
+      INSERT INTO library_assignment_history (request_id, previous_seller_id, new_seller_id, reason, changed_by)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(request.id, request.assigned_seller_id || null, seller.id, normalizeText(reason), userId || null);
+  });
+  transaction();
+  return getAssistedRequest(reference);
+}
+
 function listSaleItemsBySaleIds(saleIds = []) {
   const ids = saleIds.map(Number).filter((id) => Number.isInteger(id) && id > 0);
   if (!ids.length) return {};
@@ -411,9 +819,10 @@ function listSaleItemsBySaleIds(saleIds = []) {
 
 function getSaleById(id) {
   const sale = db.prepare(`
-    SELECT s.*, u.name AS sold_by_name
+    SELECT s.*, u.name AS sold_by_name, ls.display_name AS seller_name
     FROM library_sales s
     LEFT JOIN users u ON u.id = s.sold_by
+    LEFT JOIN library_sellers ls ON ls.id = s.seller_id
     WHERE s.id = ?
   `).get(id);
   if (!sale) return null;
@@ -435,13 +844,15 @@ const createSaleTransaction = db.transaction((payload, user) => {
   if (!items.length) throw createHttpError('Inclua ao menos um item na venda da Livraria.', 400);
 
   const saleId = db.prepare(`
-    INSERT INTO library_sales (payment_method, customer_name, notes, idempotency_key, sold_by)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO library_sales (payment_method, customer_name, notes, idempotency_key, assisted_request_id, seller_id, sold_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     String(payload.payment_method || 'manual').trim() || 'manual',
     normalizeText(payload.customer_name),
     normalizeText(payload.notes),
     idempotencyKey,
+    payload.assisted_request_id || payload.assistedRequestId || null,
+    payload.seller_id || payload.sellerId || null,
     user?.id || null
   ).lastInsertRowid;
 
@@ -510,9 +921,10 @@ function createSale(payload, user) {
 
 function listSales({ limit = 100 } = {}) {
   const sales = db.prepare(`
-    SELECT s.*, u.name AS sold_by_name
+    SELECT s.*, u.name AS sold_by_name, ls.display_name AS seller_name
     FROM library_sales s
     LEFT JOIN users u ON u.id = s.sold_by
+    LEFT JOIN library_sellers ls ON ls.id = s.seller_id
     ORDER BY datetime(s.created_at) DESC, s.id DESC
     LIMIT ?
   `).all(Math.min(Math.max(Number(limit) || 100, 1), 500)).map((sale) => ({
@@ -523,6 +935,79 @@ function listSales({ limit = 100 } = {}) {
   }));
   const itemsBySale = listSaleItemsBySaleIds(sales.map((sale) => sale.id));
   return sales.map((sale) => ({ ...sale, items: itemsBySale[sale.id] || [] }));
+}
+
+function convertAssistedRequest(reference, payload = {}, user) {
+  const transaction = db.transaction(() => {
+    const request = getAssistedRequest(reference);
+    if (request.status === 'completed' && request.sale_id) return request.sale_id;
+    if (['cancelled', 'expired'].includes(request.status)) {
+      throw createHttpError('Este carrinho nao pode ser convertido em venda.', 400);
+    }
+    if (!request.items.length) throw createHttpError('Carrinho sem itens.', 400);
+
+    const saleId = createSaleTransaction({
+      payment_method: payload.payment_method || 'manual',
+      customer_name: normalizeText(payload.customer_name) || `Atendimento ${request.reference}`,
+      notes: normalizeText(payload.notes) || `Pedido assistido ${request.reference}`,
+      idempotency_key: `library-assisted-${request.reference}`,
+      assisted_request_id: request.id,
+      seller_id: request.assigned_seller_id || null,
+      items: request.items.map((item) => ({
+        product_id: item.product_id,
+        quantity: item.requested_quantity
+      }))
+    }, user);
+
+    db.prepare(`
+      UPDATE library_assisted_requests
+      SET status = 'completed',
+          sale_id = ?,
+          completed_at = datetime('now', '-3 hours')
+      WHERE id = ?
+    `).run(saleId, request.id);
+
+    return saleId;
+  });
+
+  return getSaleById(transaction());
+}
+
+function getSellerMonitoring() {
+  const rows = db.prepare(`
+    SELECT
+      s.id,
+      s.display_name,
+      s.active,
+      s.eligible,
+      COALESCE(SUM(CASE WHEN date(r.assigned_at) = date('now', '-3 hours') THEN 1 ELSE 0 END), 0) AS assigned_today,
+      COALESCE(SUM(CASE WHEN r.status = 'pending' THEN 1 ELSE 0 END), 0) AS pending,
+      COALESCE(SUM(CASE WHEN r.status = 'in_progress' THEN 1 ELSE 0 END), 0) AS in_progress,
+      COALESCE(SUM(CASE WHEN r.status = 'completed' THEN 1 ELSE 0 END), 0) AS completed,
+      COALESCE(SUM(CASE WHEN r.status IN ('cancelled', 'expired') THEN 1 ELSE 0 END), 0) AS cancelled
+    FROM library_sellers s
+    LEFT JOIN library_assisted_requests r ON r.assigned_seller_id = s.id
+    GROUP BY s.id
+    ORDER BY s.active DESC, s.eligible DESC, s.display_name COLLATE NOCASE ASC
+  `).all();
+  const unassigned = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM library_assisted_requests
+    WHERE assigned_seller_id IS NULL AND status IN ('pending', 'in_progress')
+  `).get();
+  return {
+    sellers: rows.map((row) => ({
+      ...row,
+      active: Boolean(row.active),
+      eligible: Boolean(row.eligible),
+      assigned_today: Number(row.assigned_today || 0),
+      pending: Number(row.pending || 0),
+      in_progress: Number(row.in_progress || 0),
+      completed: Number(row.completed || 0),
+      cancelled: Number(row.cancelled || 0)
+    })),
+    unassigned_pending: Number(unassigned.total || 0)
+  };
 }
 
 function getDashboard() {
@@ -561,7 +1046,7 @@ function getDashboard() {
 }
 
 function buildWhatsAppUrl({ product, baseUrl = '', phone = '' }) {
-  const configuredPhone = String(phone || process.env.LIBRARY_WHATSAPP_PHONE || '').replace(/\D/g, '');
+  const configuredPhone = String(phone || '').replace(/\D/g, '');
   if (!configuredPhone) return null;
   const productUrl = product.url || (baseUrl ? `${baseUrl.replace(/\/$/, '')}/livraria/produto/${product.id}` : '');
   const message = [
@@ -576,16 +1061,29 @@ function buildWhatsAppUrl({ product, baseUrl = '', phone = '' }) {
 module.exports = {
   adjustStock,
   buildWhatsAppUrl,
+  buildRequestWhatsAppUrl,
+  cancelAssistedRequest,
+  convertAssistedRequest,
   createCategory,
+  createAssistedRequest,
   createSale,
+  getAssistedRequest,
   getDashboard,
   getProduct,
+  getPublicAssistedRequest,
   getPublicProduct,
   getSaleById,
+  getSeller,
+  getSellerMonitoring,
+  listAssistedRequests,
   listCategories,
   listMovements,
   listProducts,
   listPublicProducts,
   listSales,
-  saveProduct
+  listSellers,
+  reassignAssistedRequest,
+  saveSeller,
+  saveProduct,
+  updateAssistedRequestItems
 };

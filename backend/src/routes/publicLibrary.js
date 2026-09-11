@@ -1,12 +1,23 @@
 const express = require('express');
+const { z } = require('zod');
 const {
-  buildWhatsAppUrl,
+  createAssistedRequest,
+  getPublicAssistedRequest,
   getPublicProduct,
   listCategories,
   listPublicProducts
 } = require('../services/libraryService');
 
 const router = express.Router();
+
+const assistedRequestSchema = z.object({
+  idempotency_key: z.string().trim().min(8).max(120).optional().nullable(),
+  customer_note: z.string().trim().max(500).optional().nullable(),
+  items: z.array(z.object({
+    product_id: z.coerce.number().int().positive(),
+    quantity: z.coerce.number().finite().positive()
+  })).min(1).max(40)
+});
 
 function baseUrlFromRequest(req) {
   const configured = String(process.env.PUBLIC_STOREFRONT_URL || '').trim();
@@ -40,13 +51,18 @@ router.get('/products/:id', (req, res) => {
 router.get('/products/:id/whatsapp', (req, res) => {
   const product = getPublicProduct(req.params.id, baseUrlFromRequest(req));
   if (!product) return res.status(404).json({ message: 'Produto nao encontrado.' });
-  const whatsapp_url = buildWhatsAppUrl({
-    product,
-    baseUrl: baseUrlFromRequest(req),
-    phone: process.env.LIBRARY_WHATSAPP_PHONE
-  });
-  if (!whatsapp_url) return res.status(503).json({ message: 'Contato da Livraria nao configurado.' });
-  return res.json({ whatsapp_url });
+  return res.status(410).json({ message: 'Use o carrinho da Livraria para solicitar atendimento.' });
+});
+
+router.post('/requests', (req, res) => {
+  const request = createAssistedRequest(assistedRequestSchema.parse(req.body));
+  return res.status(201).json(request);
+});
+
+router.get('/requests/:reference', (req, res) => {
+  const request = getPublicAssistedRequest(req.params.reference);
+  if (!request) return res.status(404).json({ message: 'Carrinho nao encontrado.' });
+  return res.json(request);
 });
 
 module.exports = router;

@@ -263,6 +263,8 @@ CREATE TABLE IF NOT EXISTS library_sales (
   customer_name TEXT,
   notes TEXT,
   idempotency_key TEXT UNIQUE,
+  assisted_request_id INTEGER,
+  seller_id INTEGER,
   sold_by INTEGER REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
 );
@@ -287,6 +289,65 @@ CREATE INDEX IF NOT EXISTS idx_library_movements_product_date ON library_invento
 CREATE INDEX IF NOT EXISTS idx_library_sales_created_at ON library_sales(created_at);
 CREATE INDEX IF NOT EXISTS idx_library_sale_items_sale ON library_sale_items(sale_id);
 
+CREATE TABLE IF NOT EXISTS library_sellers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  display_name TEXT NOT NULL,
+  whatsapp_phone TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  eligible INTEGER NOT NULL DEFAULT 1,
+  user_id INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+);
+
+CREATE TABLE IF NOT EXISTS library_round_robin_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  last_seller_id INTEGER REFERENCES library_sellers(id),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+);
+
+CREATE TABLE IF NOT EXISTS library_assisted_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  public_reference TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled', 'expired')),
+  assigned_seller_id INTEGER REFERENCES library_sellers(id),
+  assigned_at TEXT,
+  customer_note TEXT,
+  idempotency_key TEXT UNIQUE,
+  sale_id INTEGER REFERENCES library_sales(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+  completed_at TEXT,
+  cancelled_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS library_assisted_request_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id INTEGER NOT NULL REFERENCES library_assisted_requests(id) ON DELETE CASCADE,
+  product_id INTEGER NOT NULL REFERENCES library_products(id),
+  product_name TEXT NOT NULL,
+  sku TEXT NOT NULL,
+  requested_quantity REAL NOT NULL CHECK (requested_quantity > 0),
+  unit_price_snapshot REAL NOT NULL CHECK (unit_price_snapshot >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS library_assignment_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id INTEGER NOT NULL REFERENCES library_assisted_requests(id) ON DELETE CASCADE,
+  previous_seller_id INTEGER REFERENCES library_sellers(id),
+  new_seller_id INTEGER REFERENCES library_sellers(id),
+  reason TEXT,
+  changed_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_library_sellers_rotation ON library_sellers(active, eligible, id);
+CREATE INDEX IF NOT EXISTS idx_library_sellers_user ON library_sellers(user_id);
+CREATE INDEX IF NOT EXISTS idx_library_requests_status_created ON library_assisted_requests(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_library_requests_seller_status ON library_assisted_requests(assigned_seller_id, status);
+CREATE INDEX IF NOT EXISTS idx_library_request_items_request ON library_assisted_request_items(request_id);
+CREATE INDEX IF NOT EXISTS idx_library_assignment_history_request ON library_assignment_history(request_id, created_at);
+
 DROP TRIGGER IF EXISTS trg_products_updated_at;
 DROP TRIGGER IF EXISTS trg_stock_batches_updated_at;
 
@@ -309,6 +370,20 @@ AFTER UPDATE ON library_products
 FOR EACH ROW
 BEGIN
   UPDATE library_products SET updated_at = datetime('now', '-3 hours') WHERE id = OLD.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_library_sellers_updated_at
+AFTER UPDATE ON library_sellers
+FOR EACH ROW
+BEGIN
+  UPDATE library_sellers SET updated_at = datetime('now', '-3 hours') WHERE id = OLD.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_library_assisted_requests_updated_at
+AFTER UPDATE ON library_assisted_requests
+FOR EACH ROW
+BEGIN
+  UPDATE library_assisted_requests SET updated_at = datetime('now', '-3 hours') WHERE id = OLD.id;
 END;
 
 DROP VIEW IF EXISTS v_products_sheet;

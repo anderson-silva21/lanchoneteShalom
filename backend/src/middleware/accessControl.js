@@ -17,6 +17,8 @@ const permissions = {
   'library:read': ['admin', 'finance', 'library'],
   'library:write': ['admin', 'library'],
   'library:finance': ['admin', 'finance'],
+  'library:sellers:manage': ['admin'],
+  'library:requests:reassign': ['admin'],
   'users:manage': ['admin']
 };
 
