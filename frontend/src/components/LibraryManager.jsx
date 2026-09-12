@@ -1,4 +1,4 @@
-import { AlertTriangle, BookOpen, Boxes, CheckCircle2, Eye, Inbox, PackagePlus, Pencil, Plus, ReceiptText, Save, Search, TrendingUp, UserRound, X } from 'lucide-react'
+import { AlertTriangle, BookOpen, Boxes, CheckCircle2, Eye, Inbox, MessageCircle, PackagePlus, Pencil, Plus, ReceiptText, Save, Search, TrendingUp, UserRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../services/api'
 import { decimal, formatDateTime, money } from '../utils/formatters'
@@ -34,6 +34,11 @@ function newSaleKey() {
 
 function canWrite(user) {
   return ['admin', 'library'].includes(user?.role)
+}
+
+function whatsappContactUrl(contact) {
+  const phone = String(contact || '').replace(/\D/g, '')
+  return phone ? `https://wa.me/${phone}` : ''
 }
 
 export function LibraryManager({ user }) {
@@ -372,7 +377,7 @@ export function LibraryManager({ user }) {
             <div className="grid gap-3 md:grid-cols-[1fr_180px]">
               <label className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 translate-y-[-10%] text-shalom-blue/60" size={18} />
-                <input className="mission-input mt-1 w-full px-10 py-2" value={requestFilters.q} onChange={(event) => setRequestFilters({ ...requestFilters, q: event.target.value })} placeholder="Buscar referencia" />
+                <input className="mission-input mt-1 w-full px-10 py-2" value={requestFilters.q} onChange={(event) => setRequestFilters({ ...requestFilters, q: event.target.value })} placeholder="Buscar referencia, cliente ou contato" />
               </label>
               <select className="mission-input mt-1 w-full px-3 py-2" value={requestFilters.status} onChange={(event) => setRequestFilters({ ...requestFilters, status: event.target.value })}>
                 <option value="">Todos</option>
@@ -392,7 +397,19 @@ export function LibraryManager({ user }) {
                         <span className="rounded-full border border-shalom-gold/40 px-2 py-1 text-xs font-semibold uppercase">{request.status}</span>
                         {request.has_availability_changes ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Revisar disponibilidade</span> : null}
                       </div>
-                      <p className="mission-muted mt-1">{formatDateTime(request.created_at)} - {request.seller?.display_name || 'Sem vendedor atribuido'}</p>
+                      <div className="mission-muted mt-1 grid gap-1 text-sm sm:grid-cols-2">
+                        <span>{formatDateTime(request.created_at)}</span>
+                        <span>{request.seller?.display_name || 'Sem vendedor atribuido'}</span>
+                        <span>{request.customer_name || 'Cliente nao informado'}</span>
+                        <span className="flex min-w-0 items-center gap-2">
+                          {request.customer_contact || 'Contato nao informado'}
+                          {request.customer_contact ? (
+                            <a className="mission-btn inline-flex shrink-0 items-center justify-center border border-line/80 p-1.5 text-shalom-blue dark:border-shalom-gold/10 dark:text-shalom-gold" href={whatsappContactUrl(request.customer_contact)} target="_blank" rel="noreferrer" aria-label="Abrir WhatsApp do cliente">
+                              <MessageCircle size={14} />
+                            </a>
+                          ) : null}
+                        </span>
+                      </div>
                       <div className="mt-3 grid gap-2">
                         {request.items.map((item) => (
                           <div key={item.id || item.product_id} className="grid gap-2 rounded-lg border border-line/70 px-3 py-2 dark:border-shalom-gold/10 sm:grid-cols-[1fr_88px_120px] sm:items-center">
@@ -421,7 +438,7 @@ export function LibraryManager({ user }) {
                   </div>
                   {writable && ['pending', 'in_progress'].includes(request.status) ? (
                     <div className="mt-4 grid gap-2 lg:grid-cols-[1fr_150px_150px]">
-                      <input className="mission-input px-3 py-2" value={requestSaleDraft.customer_name} onChange={(event) => setRequestSaleDraft({ ...requestSaleDraft, customer_name: event.target.value })} placeholder="Nome do cliente para venda" />
+                      <input className="mission-input px-3 py-2" value={requestSaleDraft.customer_name} onChange={(event) => setRequestSaleDraft({ ...requestSaleDraft, customer_name: event.target.value })} placeholder={request.customer_name || 'Nome do cliente para venda'} />
                       <button type="button" className="mission-btn mission-btn-primary px-3 py-2 font-semibold disabled:opacity-55" onClick={() => convertRequest(request)} disabled={saving}>Converter</button>
                       <button type="button" className="mission-btn border border-line/80 px-3 py-2 font-semibold disabled:opacity-55 dark:border-shalom-gold/10" onClick={() => cancelRequest(request)} disabled={saving}>Cancelar</button>
                     </div>
@@ -517,7 +534,7 @@ export function LibraryManager({ user }) {
               <h3 className="font-display text-lg font-semibold">Nova categoria</h3>
               <input className="mission-input mt-3 w-full px-3 py-2" value={categoryDraft.name} onChange={(event) => setCategoryDraft({ ...categoryDraft, name: event.target.value })} placeholder="Nome" disabled={!writable} required />
               <textarea className="mission-input mt-3 w-full px-3 py-2" value={categoryDraft.description} onChange={(event) => setCategoryDraft({ ...categoryDraft, description: event.target.value })} placeholder="Descricao" disabled={!writable} rows={3} />
-              <button type="submit" className="mission-btn mission-btn-gold mt-3 inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" disabled={!writable || saving}>
+              <button type="submit" className="mission-btn mission-btn-primary mt-3 inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" disabled={!writable || saving}>
                 <Plus size={17} />
                 Criar categoria
               </button>
@@ -581,7 +598,7 @@ export function LibraryManager({ user }) {
               <input type="number" min="0.001" step="0.001" className="mission-input px-3 py-2" value={stockDraft.quantity} onChange={(event) => setStockDraft({ ...stockDraft, quantity: event.target.value })} disabled={!writable} />
               <textarea className="mission-input px-3 py-2" value={stockDraft.reason} onChange={(event) => setStockDraft({ ...stockDraft, reason: event.target.value })} placeholder="Motivo do ajuste" rows={3} disabled={!writable} required />
             </div>
-            <button type="submit" className="mission-btn mission-btn-gold mt-3 inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" disabled={!writable || saving}>
+            <button type="submit" className="mission-btn mission-btn-primary mt-3 inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" disabled={!writable || saving}>
               <PackagePlus size={17} />
               Registrar
             </button>
@@ -609,24 +626,27 @@ export function LibraryManager({ user }) {
       ) : null}
 
       {activeTab === 'sales' ? (
-        <section className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
+        <section className="grid gap-5 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
           <div className="mission-panel p-4">
-            <h3 className="font-display text-lg font-semibold">Venda assistida</h3>
+            <div>
+              <h3 className="font-display text-lg font-semibold">Venda assistida manual</h3>
+              <p className="mission-muted mt-1 text-sm">Use esta area para vendas presenciais. Carrinhos vindos da vitrine ficam em Atendimentos.</p>
+            </div>
             <div className="mt-3 grid gap-3">
               <input className="mission-input px-3 py-2" value={saleDraft.customer_name} onChange={(event) => setSaleDraft({ ...saleDraft, customer_name: event.target.value })} placeholder="Cliente atendido" disabled={!writable} />
-              <form className="grid grid-cols-[1fr_90px_auto] gap-2" onSubmit={addSaleItem}>
+              <form className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_90px_48px]" onSubmit={addSaleItem}>
                 <select className="mission-input px-3 py-2" value={saleItem.product_id} onChange={(event) => setSaleItem({ ...saleItem, product_id: event.target.value })} disabled={!writable}>
                   <option value="">Produto</option>
                   {products.filter((product) => product.stock_quantity > 0).map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
                 </select>
                 <input type="number" min="0.001" step="0.001" className="mission-input px-3 py-2" value={saleItem.quantity} onChange={(event) => setSaleItem({ ...saleItem, quantity: event.target.value })} disabled={!writable} />
-                <button type="submit" className="mission-btn border border-line/80 px-3 py-2 dark:border-shalom-gold/10" disabled={!writable}><Plus size={17} /></button>
+                <button type="submit" className="mission-btn mission-btn-primary flex min-h-11 items-center justify-center px-3 py-2" disabled={!writable} aria-label="Adicionar item"><Plus size={17} /></button>
               </form>
               <div className="rounded-xl border border-line/80 p-3 dark:border-shalom-gold/10">
                 {saleLines.map((line, index) => (
-                  <div key={`${line.product_id}-${index}`} className="flex items-center justify-between gap-3 border-b border-line/60 py-2 last:border-0 dark:border-shalom-gold/10">
-                    <span className="text-sm font-semibold">{line.product?.name || 'Produto'} x {decimal.format(line.quantity)}</span>
-                    <strong>{money.format(line.line_total)}</strong>
+                  <div key={`${line.product_id}-${index}`} className="grid gap-1 border-b border-line/60 py-2 last:border-0 dark:border-shalom-gold/10 sm:grid-cols-[1fr_auto] sm:items-center">
+                    <span className="min-w-0 text-sm font-semibold">{line.product?.name || 'Produto'} x {decimal.format(line.quantity)}</span>
+                    <strong className="sm:text-right">{money.format(line.line_total)}</strong>
                   </div>
                 ))}
                 {!saleLines.length ? <p className="mission-muted text-sm">Nenhum item adicionado.</p> : null}
@@ -646,22 +666,31 @@ export function LibraryManager({ user }) {
             </div>
           </div>
           <div className="mission-panel p-4">
-            <h3 className="font-display text-lg font-semibold">Vendas recentes</h3>
-            <div className="mt-4 max-h-[520px] overflow-y-auto scrollbar-thin">
+            <div>
+              <h3 className="font-display text-lg font-semibold">Vendas recentes</h3>
+              <p className="mission-muted mt-1 text-sm">Historico com origem de atendimento, vendedor e totais.</p>
+            </div>
+            <div className="mt-4 max-h-[560px] overflow-y-auto scrollbar-thin">
               {sales.map((sale) => (
-                <article key={sale.id} className="border-b border-line/70 py-3 text-sm dark:border-shalom-gold/10">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
+                <article key={sale.id} className="rounded-xl border border-line/70 bg-white/65 p-3 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
+                  <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
+                    <div className="min-w-0">
                       <p className="font-semibold">Venda #{sale.id} {sale.customer_name ? `- ${sale.customer_name}` : ''}</p>
-                      <p className="mission-muted">{sale.items.map((item) => `${item.item_name} x ${decimal.format(item.quantity)}`).join(', ')}</p>
+                      <p className="mission-muted mt-1">{sale.items.map((item) => `${item.item_name} x ${decimal.format(item.quantity)}`).join(', ')}</p>
+                      <p className="mission-muted mt-2 text-xs">
+                        {sale.seller_name ? `Vendedor: ${sale.seller_name}` : 'Sem vendedor vinculado'}
+                        {sale.assisted_request_id ? ` - Atendimento #${sale.assisted_request_id}` : ''}
+                      </p>
+                      {sale.notes ? <p className="mission-muted mt-1 text-xs">{sale.notes}</p> : null}
                     </div>
-                    <div className="text-right">
+                    <div className="lg:text-right">
                       <p className="font-semibold">{money.format(sale.total)}</p>
                       <p className="mission-muted text-xs">{formatDateTime(sale.created_at)}</p>
                     </div>
                   </div>
                 </article>
               ))}
+              {!sales.length ? <p className="rounded-xl border border-line/80 bg-white/70 px-4 py-5 font-medium dark:border-shalom-gold/10 dark:bg-white/10">Nenhuma venda da Livraria registrada.</p> : null}
             </div>
           </div>
         </section>

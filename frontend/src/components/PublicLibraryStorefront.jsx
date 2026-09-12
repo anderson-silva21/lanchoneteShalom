@@ -1,4 +1,4 @@
-import { ArrowLeft, BookOpen, Minus, MessageCircle, Plus, Search, ShoppingCart, Store, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Minus, MessageCircle, Plus, Search, ShoppingCart, Store, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../services/api'
 import { money } from '../utils/formatters'
@@ -32,13 +32,17 @@ function readStoredCart() {
   }
 }
 
+const emptyCustomer = { customer_name: '', customer_contact: '' }
+
 export function PublicLibraryStorefront() {
   const [categories, setCategories] = useState([])
   const [products, setProducts] = useState([])
   const [selectedProduct, setSelectedProduct] = useState(null)
-  const [filters, setFilters] = useState({ q: '', category_id: '' })
+  const [filters, setFilters] = useState({ q: '', category_id: '', sort: '' })
   const [cart, setCart] = useState(readStoredCart)
   const [cartOpen, setCartOpen] = useState(false)
+  const [identifyOpen, setIdentifyOpen] = useState(false)
+  const [customer, setCustomer] = useState(emptyCustomer)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [message, setMessage] = useState('')
@@ -118,9 +122,12 @@ export function PublicLibraryStorefront() {
     try {
       const request = await api.createPublicLibraryRequest({
         idempotency_key: cart.requestKey,
+        customer_name: customer.customer_name,
+        customer_contact: customer.customer_contact,
         items: cart.items.map((item) => ({ product_id: item.product_id, quantity: item.quantity }))
       })
       setCart((current) => ({ ...current, requestReference: request.reference }))
+      setIdentifyOpen(false)
       if (request.whatsapp_url) {
         window.open(request.whatsapp_url, '_blank', 'noopener,noreferrer')
         setMessage(`Carrinho ${request.reference} enviado para atendimento.`)
@@ -151,16 +158,14 @@ export function PublicLibraryStorefront() {
       <header className="sticky top-0 z-30 border-b border-shalom-gold/35 bg-white/92 px-4 py-4 shadow-sm backdrop-blur sm:px-6 lg:px-10">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-shalom-deep text-white">
-                <BookOpen size={22} />
-              </span>
+            <div className="flex min-w-0 items-center gap-3">
+              <img className="h-12 w-auto max-w-[190px] object-contain sm:h-14" src="/livraria-shalom-logo.webp" alt="Livraria Shalom" />
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-shalom-orange">Shalom Store</p>
-                <h1 className="font-display text-2xl font-semibold">Livraria Shalom</h1>
+                <h1 className="sr-only">Livraria Shalom</h1>
               </div>
             </div>
-            <button type="button" className="mission-btn mission-btn-gold relative inline-flex items-center gap-2 px-3 py-2 font-semibold lg:hidden" onClick={() => setCartOpen(true)}>
+            <button type="button" className="mission-btn mission-btn-primary relative inline-flex items-center gap-2 px-3 py-2 font-semibold lg:hidden" onClick={() => setCartOpen(true)}>
               <ShoppingCart size={18} />
               {cartCount}
             </button>
@@ -174,7 +179,12 @@ export function PublicLibraryStorefront() {
               <option value="">Todas</option>
               {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
             </select>
-            <button type="button" className="mission-btn mission-btn-gold hidden items-center gap-2 px-4 py-3 font-semibold lg:inline-flex" onClick={() => setCartOpen(true)}>
+            <select className="mission-input rounded-xl px-3 py-3" value={filters.sort} onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value }))} aria-label="Ordenar por preco">
+              <option value="">Ordem padrao</option>
+              <option value="price_asc">Menor preco</option>
+              <option value="price_desc">Maior preco</option>
+            </select>
+            <button type="button" className="mission-btn mission-btn-primary hidden items-center gap-2 px-4 py-3 font-semibold lg:inline-flex" onClick={() => setCartOpen(true)}>
               <ShoppingCart size={18} />
               Carrinho ({cartCount})
             </button>
@@ -236,7 +246,7 @@ export function PublicLibraryStorefront() {
                       </div>
                     </button>
                     <div className="grid gap-2 px-4 pb-4">
-                      <button type="button" className="mission-btn mission-btn-gold inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" onClick={() => addToCart(product)}>
+                      <button type="button" className="mission-btn mission-btn-primary inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" onClick={() => addToCart(product)}>
                         <ShoppingCart size={18} />
                         Adicionar
                       </button>
@@ -308,13 +318,40 @@ export function PublicLibraryStorefront() {
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
                 <button type="button" className="mission-btn border border-line/80 px-4 py-3 font-semibold disabled:opacity-55" onClick={clearCart} disabled={!cart.items.length || sending}>Limpar</button>
-                <button type="button" className="mission-btn mission-btn-primary inline-flex items-center justify-center gap-2 px-4 py-3 font-semibold disabled:opacity-55" onClick={continueWhatsApp} disabled={!cart.items.length || sending}>
+                <button type="button" className="mission-btn mission-btn-primary inline-flex items-center justify-center gap-2 px-4 py-3 font-semibold disabled:opacity-55" onClick={() => setIdentifyOpen(true)} disabled={!cart.items.length || sending}>
                   <MessageCircle size={18} />
                   {sending ? 'Abrindo...' : 'Continuar pelo WhatsApp'}
                 </button>
               </div>
             </div>
           </aside>
+        </div>
+      ) : null}
+
+      {identifyOpen ? (
+        <div className="dashboard-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="library-identify-title">
+          <form className="dashboard-modal-panel mission-panel p-4" onSubmit={(event) => {
+            event.preventDefault()
+            continueWhatsApp()
+          }}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 id="library-identify-title" className="font-display text-xl font-semibold">Identificacao para atendimento</h2>
+                <p className="mission-muted mt-1 text-sm">A Livraria usa esses dados apenas para recuperar seu carrinho e continuar o atendimento.</p>
+              </div>
+              <button type="button" className="mission-btn border border-line/80 p-2" onClick={() => setIdentifyOpen(false)} aria-label="Fechar identificacao">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mt-4 grid gap-3">
+              <input className="mission-input px-3 py-3" value={customer.customer_name} onChange={(event) => setCustomer({ ...customer, customer_name: event.target.value })} placeholder="Seu nome" required minLength={2} maxLength={120} />
+              <input className="mission-input px-3 py-3" value={customer.customer_contact} onChange={(event) => setCustomer({ ...customer, customer_contact: event.target.value })} placeholder="WhatsApp com DDD" required minLength={10} maxLength={24} inputMode="tel" />
+            </div>
+            <button type="submit" className="mission-btn mission-btn-primary mt-4 inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" disabled={sending}>
+              <MessageCircle size={18} />
+              {sending ? 'Abrindo WhatsApp...' : 'Falar com a Livraria'}
+            </button>
+          </form>
         </div>
       ) : null}
     </div>
