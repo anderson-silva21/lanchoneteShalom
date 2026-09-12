@@ -169,6 +169,7 @@ jobs:
       - name: Scan filesystem vulnerabilities with Trivy
         uses: aquasecurity/trivy-action@v0.32.0
         with:
+          version: v0.63.0
           scan-type: fs
           scan-ref: .
           scanners: vuln,misconfig
@@ -179,13 +180,13 @@ jobs:
           exit-code: '1'
 
       - name: Upload Trivy SARIF to code scanning
-        if: always() && github.event.pull_request.head.repo.full_name == github.repository
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
 
       - name: Upload Trivy report artifact
-        if: always()
+        if: always() && hashFiles('trivy-results.sarif') != ''
         uses: actions/upload-artifact@v4
         with:
           name: trivy-sarif
