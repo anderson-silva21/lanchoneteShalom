@@ -312,6 +312,8 @@ CREATE TABLE IF NOT EXISTS library_assisted_requests (
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled', 'expired')),
   assigned_seller_id INTEGER REFERENCES library_sellers(id),
   assigned_at TEXT,
+  customer_name TEXT,
+  customer_contact TEXT,
   customer_note TEXT,
   idempotency_key TEXT UNIQUE,
   sale_id INTEGER REFERENCES library_sales(id),
@@ -345,6 +347,7 @@ CREATE INDEX IF NOT EXISTS idx_library_sellers_rotation ON library_sellers(activ
 CREATE INDEX IF NOT EXISTS idx_library_sellers_user ON library_sellers(user_id);
 CREATE INDEX IF NOT EXISTS idx_library_requests_status_created ON library_assisted_requests(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_library_requests_seller_status ON library_assisted_requests(assigned_seller_id, status);
+CREATE INDEX IF NOT EXISTS idx_library_requests_customer_lookup ON library_assisted_requests(customer_name, customer_contact);
 CREATE INDEX IF NOT EXISTS idx_library_request_items_request ON library_assisted_request_items(request_id);
 CREATE INDEX IF NOT EXISTS idx_library_assignment_history_request ON library_assignment_history(request_id, created_at);
 

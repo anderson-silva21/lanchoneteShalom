@@ -15,7 +15,9 @@ const {
   createAssistedRequest,
   createCategory,
   createSale,
+  getAssistedRequest,
   getDashboard,
+  getPublicAssistedRequest,
   getSellerMonitoring,
   listAssistedRequests,
   listPublicProducts,
@@ -61,6 +63,46 @@ test('catalogo publico exibe somente produtos ativos publicados e nao vaza custo
   assert.equal(products[0].url, `https://shalom.example/livraria/produto/${visible.id}`);
   assert.equal(Object.hasOwn(products[0], 'cost_price'), false);
   assert.equal(products[0].images[0].url, 'https://example.com/livro.jpg');
+});
+
+test('catalogo publico ordena por preco com filtros de busca e categoria', () => {
+  const category = createCategory({ name: 'Ordenacao' });
+  saveProduct({
+    name: 'Livro Ordenacao Medio',
+    category_id: category.id,
+    sku: 'TEST-SORT-MEDIO',
+    price: 30,
+    cost_price: 10,
+    stock_quantity: 4,
+    min_stock: 1,
+    published: true
+  });
+  saveProduct({
+    name: 'Livro Ordenacao Barato',
+    category_id: category.id,
+    sku: 'TEST-SORT-BARATO',
+    price: 12,
+    cost_price: 4,
+    stock_quantity: 4,
+    min_stock: 1,
+    published: true
+  });
+  saveProduct({
+    name: 'Livro Ordenacao Caro',
+    category_id: category.id,
+    sku: 'TEST-SORT-CARO',
+    price: 80,
+    cost_price: 30,
+    stock_quantity: 4,
+    min_stock: 1,
+    published: true
+  });
+
+  const ascending = listPublicProducts({ q: 'Ordenacao', categoryId: category.id, sort: 'price_asc' });
+  const descending = listPublicProducts({ q: 'Ordenacao', categoryId: category.id, sort: 'price_desc' });
+
+  assert.deepEqual(ascending.map((product) => product.price), [12, 30, 80]);
+  assert.deepEqual(descending.map((product) => product.price), [80, 30, 12]);
 });
 
 test('ajustes e venda da Livraria atualizam estoque de forma transacional', () => {
@@ -130,18 +172,26 @@ test('carrinho assistido cria referencia publica, nao baixa estoque e usa round-
 
   const first = createAssistedRequest({
     idempotency_key: 'cart-round-001',
+    customer_name: 'Cliente Round',
+    customer_contact: '5581999880001',
     items: [{ product_id: product.id, quantity: 1 }]
   });
   const duplicate = createAssistedRequest({
     idempotency_key: 'cart-round-001',
+    customer_name: 'Cliente Round',
+    customer_contact: '5581999880001',
     items: [{ product_id: product.id, quantity: 1 }]
   });
   const second = createAssistedRequest({
     idempotency_key: 'cart-round-002',
+    customer_name: 'Cliente Round Dois',
+    customer_contact: '5581999880002',
     items: [{ product_id: product.id, quantity: 1 }]
   });
   const third = createAssistedRequest({
     idempotency_key: 'cart-round-003',
+    customer_name: 'Cliente Round Tres',
+    customer_contact: '5581999880003',
     items: [{ product_id: product.id, quantity: 1 }]
   });
 
@@ -151,7 +201,38 @@ test('carrinho assistido cria referencia publica, nao baixa estoque e usa round-
   assert.equal(second.seller.display_name, sellerB.display_name);
   assert.equal(third.seller.display_name, sellerA.display_name);
   assert.match(decodeURIComponent(first.whatsapp_url.split('text=')[1]), new RegExp(first.reference));
+  assert.match(decodeURIComponent(first.whatsapp_url.split('text=')[1]), /Cliente Round/);
   assert.equal(db.prepare('SELECT stock_quantity FROM library_products WHERE id = ?').get(product.id).stock_quantity, 10);
+});
+
+test('carrinho assistido persiste dados do cliente e nao vaza no DTO publico', () => {
+  const category = createCategory({ name: 'Cliente Identificado' });
+  const product = saveProduct({
+    name: 'Livro Cliente Identificado',
+    category_id: category.id,
+    price: 35,
+    cost_price: 15,
+    stock_quantity: 5,
+    min_stock: 1,
+    published: true
+  });
+  saveSeller({ display_name: 'Seller Cliente', whatsapp_phone: '5581999000101', active: true, eligible: true });
+
+  const created = createAssistedRequest({
+    idempotency_key: 'cart-customer-001',
+    customer_name: '  Ana   Cliente  ',
+    customer_contact: '(81) 99988-7766',
+    items: [{ product_id: product.id, quantity: 1 }]
+  });
+  const adminRequest = getAssistedRequest(created.reference);
+  const publicRequest = getPublicAssistedRequest(created.reference);
+  const found = listAssistedRequests({ q: '999887766' });
+
+  assert.equal(adminRequest.customer_name, 'Ana Cliente');
+  assert.equal(adminRequest.customer_contact, '81999887766');
+  assert.equal(found.some((request) => request.reference === created.reference), true);
+  assert.equal(Object.hasOwn(publicRequest, 'customer_name'), false);
+  assert.equal(Object.hasOwn(publicRequest, 'customer_contact'), false);
 });
 
 test('round-robin pula vendedor inativo e preserva carrinho sem vendedor quando nao ha elegiveis', () => {
@@ -169,6 +250,8 @@ test('round-robin pula vendedor inativo e preserva carrinho sem vendedor quando 
   db.prepare('UPDATE library_sellers SET active = 0, eligible = 0').run();
   const unassigned = createAssistedRequest({
     idempotency_key: 'cart-unassigned-001',
+    customer_name: 'Cliente Sem Vendedor',
+    customer_contact: '5581999880004',
     items: [{ product_id: product.id, quantity: 1 }]
   });
   assert.equal(unassigned.seller, null);
@@ -178,6 +261,8 @@ test('round-robin pula vendedor inativo e preserva carrinho sem vendedor quando 
   const inactive = saveSeller({ display_name: 'Seller D', whatsapp_phone: '5581999000004', active: false, eligible: true });
   const assigned = createAssistedRequest({
     idempotency_key: 'cart-assigned-001',
+    customer_name: 'Cliente Seller C',
+    customer_contact: '5581999880005',
     items: [{ product_id: product.id, quantity: 1 }]
   });
   assert.equal(assigned.seller.display_name, active.display_name);
@@ -198,13 +283,17 @@ test('conversao de carrinho assistido reutiliza venda, baixa estoque uma vez e b
   saveSeller({ display_name: 'Seller Conversion', whatsapp_phone: '5581999000005', active: true, eligible: true });
   const request = createAssistedRequest({
     idempotency_key: 'cart-convert-001',
+    customer_name: 'Cliente Conversao',
+    customer_contact: '5581999880006',
     items: [{ product_id: product.id, quantity: 2 }]
   });
 
-  const sale = convertAssistedRequest(request.reference, { customer_name: 'Cliente Teste', payment_method: 'pix' }, { id: 1 });
-  const duplicate = convertAssistedRequest(request.reference, { customer_name: 'Cliente Teste', payment_method: 'pix' }, { id: 1 });
+  const sale = convertAssistedRequest(request.reference, { payment_method: 'pix' }, { id: 1 });
+  const duplicate = convertAssistedRequest(request.reference, { payment_method: 'pix' }, { id: 1 });
 
   assert.equal(sale.id, duplicate.id);
+  assert.equal(sale.customer_name, 'Cliente Conversao');
+  assert.match(sale.notes, /5581999880006/);
   assert.equal(sale.total, 40);
   assert.equal(sale.assisted_request_id > 0, true);
   assert.equal(db.prepare('SELECT stock_quantity FROM library_products WHERE id = ?').get(product.id).stock_quantity, 2);
@@ -225,6 +314,8 @@ test('admin pode reatribuir e historico de atribuicao e preservado', () => {
   const seller = saveSeller({ display_name: 'Seller Reassign', whatsapp_phone: '5581999000006', active: true, eligible: true });
   const request = createAssistedRequest({
     idempotency_key: 'cart-reassign-001',
+    customer_name: 'Cliente Reatribuicao',
+    customer_contact: '5581999880007',
     items: [{ product_id: product.id, quantity: 1 }]
   });
 
@@ -251,12 +342,46 @@ test('carrinho rejeita produto inativo ou nao publicado', () => {
 
   assert.throws(() => createAssistedRequest({
     idempotency_key: 'cart-hidden-001',
+    customer_name: 'Cliente Bloqueado',
+    customer_contact: '5581999880008',
     items: [{ product_id: product.id, quantity: 1 }]
   }), (error) => {
     assert.equal(error.status, 400);
     assert.match(error.message, /indisponivel/);
     return true;
   });
+});
+
+test('carrinho exige identificacao valida do cliente e aceita registros antigos sem dados', () => {
+  const category = createCategory({ name: 'Cliente Obrigatorio' });
+  const product = saveProduct({
+    name: 'Livro Cliente Obrigatorio',
+    category_id: category.id,
+    sku: 'TEST-CUSTOMER-REQ',
+    price: 22,
+    cost_price: 9,
+    stock_quantity: 2,
+    min_stock: 1,
+    published: true
+  });
+
+  assert.throws(() => createAssistedRequest({
+    idempotency_key: 'cart-invalid-customer-001',
+    customer_name: 'A',
+    customer_contact: '123',
+    items: [{ product_id: product.id, quantity: 1 }]
+  }), (error) => {
+    assert.equal(error.status, 400);
+    return true;
+  });
+
+  db.prepare(`
+    INSERT INTO library_assisted_requests (public_reference, status)
+    VALUES ('LS-OLD01', 'pending')
+  `).run();
+  const oldRequest = getAssistedRequest('LS-OLD01');
+  assert.equal(oldRequest.customer_name, null);
+  assert.equal(oldRequest.customer_contact, null);
 });
 
 test('dashboard financeiro calcula receita, custo, lucro e alertas da Livraria', () => {

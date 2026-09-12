@@ -12,6 +12,8 @@ const router = express.Router();
 
 const assistedRequestSchema = z.object({
   idempotency_key: z.string().trim().min(8).max(120).optional().nullable(),
+  customer_name: z.string().trim().min(2).max(120),
+  customer_contact: z.string().trim().min(10).max(24),
   customer_note: z.string().trim().max(500).optional().nullable(),
   items: z.array(z.object({
     product_id: z.coerce.number().int().positive(),
@@ -37,6 +39,7 @@ router.get('/products', (req, res) => {
     q: req.query.q,
     categoryId: req.query.category_id,
     includeUnavailable: req.query.include_unavailable === '1' || req.query.include_unavailable === 'true',
+    sort: req.query.sort,
     baseUrl: baseUrlFromRequest(req)
   });
   return res.json(products);

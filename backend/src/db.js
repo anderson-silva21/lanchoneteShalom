@@ -239,6 +239,8 @@ function ensureLibrarySchema() {
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'cancelled', 'expired')),
       assigned_seller_id INTEGER REFERENCES library_sellers(id),
       assigned_at TEXT,
+      customer_name TEXT,
+      customer_contact TEXT,
       customer_note TEXT,
       idempotency_key TEXT UNIQUE,
       sale_id INTEGER REFERENCES library_sales(id),
@@ -284,6 +286,13 @@ function ensureLibrarySchema() {
 
   addColumnIfMissing('library_sales', 'assisted_request_id', 'INTEGER REFERENCES library_assisted_requests(id)');
   addColumnIfMissing('library_sales', 'seller_id', 'INTEGER REFERENCES library_sellers(id)');
+  addColumnIfMissing('library_assisted_requests', 'customer_name', 'TEXT');
+  addColumnIfMissing('library_assisted_requests', 'customer_contact', 'TEXT');
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_library_requests_customer_lookup
+      ON library_assisted_requests(customer_name, customer_contact);
+  `);
 }
 
 function ensureCashClosingSchema() {

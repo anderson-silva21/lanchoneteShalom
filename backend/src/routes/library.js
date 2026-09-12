@@ -28,10 +28,12 @@ const {
 
 const router = express.Router();
 
-function hideSellerPhonesForFinance(req, payload) {
+function hideOperationalSensitiveForFinance(req, payload) {
   if (req.user?.role !== 'finance') return payload;
   const sanitizeRequest = (request) => ({
     ...request,
+    customer_name: undefined,
+    customer_contact: undefined,
     seller: request.seller ? { ...request.seller, whatsapp_phone: undefined } : request.seller
   });
   if (Array.isArray(payload)) return payload.map(sanitizeRequest);
@@ -144,11 +146,11 @@ router.patch('/sellers/:id', requirePermission('library:sellers:manage'), (req, 
 });
 
 router.get('/seller-monitoring', (req, res) => {
-  return res.json(hideSellerPhonesForFinance(req, getSellerMonitoring()));
+  return res.json(hideOperationalSensitiveForFinance(req, getSellerMonitoring()));
 });
 
 router.get('/requests', (req, res) => {
-  return res.json(hideSellerPhonesForFinance(req, listAssistedRequests({
+  return res.json(hideOperationalSensitiveForFinance(req, listAssistedRequests({
     status: req.query.status,
     sellerId: req.query.seller_id,
     q: req.query.q,
@@ -157,7 +159,7 @@ router.get('/requests', (req, res) => {
 });
 
 router.get('/requests/:reference', (req, res) => {
-  return res.json(hideSellerPhonesForFinance(req, getAssistedRequest(req.params.reference)));
+  return res.json(hideOperationalSensitiveForFinance(req, getAssistedRequest(req.params.reference)));
 });
 
 router.patch('/requests/:reference/items', requirePermission('library:write'), (req, res) => {

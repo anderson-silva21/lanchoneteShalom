@@ -16,6 +16,14 @@ function normalizeText(value) {
   return text || null;
 }
 
+function normalizeCustomerName(value) {
+  const name = String(value || '').trim().replace(/\s+/g, ' ');
+  if (name.length < 2 || name.length > 120) {
+    throw createHttpError('Informe o nome do cliente.', 400);
+  }
+  return name;
+}
+
 function normalizeSku(value, fallbackName = 'PRODUTO') {
   const normalized = String(value || fallbackName)
     .normalize('NFD')
@@ -173,7 +181,7 @@ function publicProduct(row, baseUrl = '') {
   };
 }
 
-function listPublicProducts({ q = '', categoryId = '', includeUnavailable = false, baseUrl = '' } = {}) {
+function listPublicProducts({ q = '', categoryId = '', includeUnavailable = false, baseUrl = '', sort = '' } = {}) {
   const where = ['p.active = 1', 'p.published = 1'];
   const params = [];
 
@@ -187,12 +195,17 @@ function listPublicProducts({ q = '', categoryId = '', includeUnavailable = fals
     params.push(Number(categoryId));
   }
 
+  const sortClause = {
+    price_asc: 'p.price ASC, c.name COLLATE NOCASE ASC, p.name COLLATE NOCASE ASC',
+    price_desc: 'p.price DESC, c.name COLLATE NOCASE ASC, p.name COLLATE NOCASE ASC'
+  }[sort] || 'c.name COLLATE NOCASE ASC, p.name COLLATE NOCASE ASC';
+
   const products = attachImages(db.prepare(`
     SELECT p.*, c.name AS category
     FROM library_products p
     LEFT JOIN library_categories c ON c.id = p.category_id
     WHERE ${where.join(' AND ')}
-    ORDER BY c.name COLLATE NOCASE ASC, p.name COLLATE NOCASE ASC
+    ORDER BY ${sortClause}
   `).all(...params));
 
   return products.map((product) => publicProduct(product, baseUrl));
@@ -580,6 +593,8 @@ function requestDto(row, { publicSafe = false } = {}) {
     base.id = row.id;
     base.assigned_seller_id = row.assigned_seller_id;
     base.sale_id = row.sale_id;
+    base.customer_name = row.customer_name;
+    base.customer_contact = row.customer_contact;
     base.customer_note = row.customer_note;
   }
   return base;
@@ -603,6 +618,8 @@ function buildRequestWhatsAppUrl(request) {
     'Ola! Montei um carrinho na Livraria Shalom e gostaria de continuar o atendimento.',
     '',
     `Codigo: ${request.reference || request.public_reference}`,
+    request.customer_name ? `Cliente: ${request.customer_name}` : '',
+    request.customer_contact ? `Contato: ${request.customer_contact}` : '',
     '',
     'Itens:',
     ...items,
@@ -628,6 +645,8 @@ const createAssistedRequestTransaction = db.transaction((payload = {}) => {
 
   const items = Array.isArray(payload.items) ? payload.items : [];
   if (!items.length) throw createHttpError('Inclua ao menos um item no carrinho.', 400);
+  const customerName = normalizeCustomerName(payload.customer_name || payload.customerName);
+  const customerContact = normalizePhone(payload.customer_contact || payload.customerContact);
 
   const normalizedItems = items.map((item) => ({
     product_id: Number(item.product_id || item.productId),
@@ -641,9 +660,9 @@ const createAssistedRequestTransaction = db.transaction((payload = {}) => {
   const reference = generatePublicReference();
   const requestId = db.prepare(`
     INSERT INTO library_assisted_requests
-      (public_reference, status, assigned_seller_id, assigned_at, customer_note, idempotency_key)
-    VALUES (?, 'pending', ?, ${seller ? "datetime('now', '-3 hours')" : 'NULL'}, ?, ?)
-  `).run(reference, seller?.id || null, normalizeText(payload.customer_note || payload.customerNote), idempotencyKey).lastInsertRowid;
+      (public_reference, status, assigned_seller_id, assigned_at, customer_name, customer_contact, customer_note, idempotency_key)
+    VALUES (?, 'pending', ?, ${seller ? "datetime('now', '-3 hours')" : 'NULL'}, ?, ?, ?, ?)
+  `).run(reference, seller?.id || null, customerName, customerContact, normalizeText(payload.customer_note || payload.customerNote), idempotencyKey).lastInsertRowid;
 
   const insertItem = db.prepare(`
     INSERT INTO library_assisted_request_items
@@ -699,8 +718,9 @@ function listAssistedRequests({ status = '', sellerId = '', q = '', limit = 100 
     params.push(Number(sellerId));
   }
   if (q) {
-    where.push('r.public_reference LIKE ?');
-    params.push(`%${String(q).trim().toUpperCase()}%`);
+    where.push('(r.public_reference LIKE ? OR r.customer_name LIKE ? OR r.customer_contact LIKE ?)');
+    const term = String(q).trim();
+    params.push(`%${term.toUpperCase()}%`, `%${term}%`, `%${term.replace(/\D/g, '')}%`);
   }
   const rows = db.prepare(`
     SELECT r.*, s.display_name AS assigned_seller_name, s.whatsapp_phone AS assigned_seller_phone
@@ -948,8 +968,8 @@ function convertAssistedRequest(reference, payload = {}, user) {
 
     const saleId = createSaleTransaction({
       payment_method: payload.payment_method || 'manual',
-      customer_name: normalizeText(payload.customer_name) || `Atendimento ${request.reference}`,
-      notes: normalizeText(payload.notes) || `Pedido assistido ${request.reference}`,
+      customer_name: normalizeText(payload.customer_name) || request.customer_name || `Atendimento ${request.reference}`,
+      notes: normalizeText(payload.notes) || [`Pedido assistido ${request.reference}`, request.customer_contact ? `Contato: ${request.customer_contact}` : ''].filter(Boolean).join(' - '),
       idempotency_key: `library-assisted-${request.reference}`,
       assisted_request_id: request.id,
       seller_id: request.assigned_seller_id || null,

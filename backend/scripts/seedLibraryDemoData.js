@@ -397,19 +397,27 @@ function seedAssistedRequests(productIds) {
   [
     {
       key: '001',
+      customer_name: 'Cliente Demo Beatriz',
+      customer_contact: '5581999110001',
       items: [['book_prayer', 1], ['rosary_wood', 2]]
     },
     {
       key: '002',
+      customer_name: 'Cliente Demo Daniel',
+      customer_contact: '5581999110002',
       items: [['shirt_blue', 1], ['bookmark', 3]]
     },
     {
       key: '003',
+      customer_name: 'Cliente Demo Teresa',
+      customer_contact: '5581999110003',
       items: [['notebook', 1], ['book_formation', 1]]
     }
   ].forEach((request) => {
     createAssistedRequest({
       idempotency_key: `${demoRequestPrefix}${request.key}`,
+      customer_name: request.customer_name,
+      customer_contact: request.customer_contact,
       customer_note: 'Carrinho ficticio criado pelo seed demo da Livraria.',
       items: request.items.map(([productKey, itemQuantity]) => ({
         product_id: productIds[productKey],
