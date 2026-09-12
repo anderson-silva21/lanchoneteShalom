@@ -166,18 +166,37 @@ jobs:
         run: npm audit --audit-level=high --omit=dev
         working-directory: frontend
 
-      - name: Scan filesystem vulnerabilities with Trivy
-        uses: aquasecurity/trivy-action@v0.32.0
+            - name: Get Trivy cache date
+        id: trivy-date
+        run: echo "date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Trivy vulnerability database
+        uses: actions/cache@v4
         with:
-          version: v0.63.0
-          scan-type: fs
-          scan-ref: .
-          scanners: vuln,misconfig
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          format: sarif
-          output: trivy-results.sarif
-          exit-code: '1'
+          path: ${{ github.workspace }}/.cache/trivy
+          key: cache-trivy-${{ steps.trivy-date.outputs.date }}
+          restore-keys: cache-trivy-
+
+      - name: Set up Trivy
+        uses: aquasecurity/setup-trivy@e07451d2e059ed86c2870430ea286b3a9e0bf241
+        with:
+          version: v0.68.2
+          cache: true
+
+      - name: Verify Trivy installation
+        run: trivy --version
+
+      - name: Scan filesystem vulnerabilities with Trivy
+        run: |
+          trivy fs \
+            --cache-dir "${{ github.workspace }}/.cache/trivy" \
+            --scanners vuln,misconfig \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --format sarif \
+            --output trivy-results.sarif \
+            --exit-code 1 \
+            .
 
       - name: Upload Trivy SARIF to code scanning
         if: always() && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('trivy-results.sarif') != ''
