@@ -2,6 +2,7 @@ import { AlertTriangle, BookOpen, Boxes, CheckCircle2, Eye, Inbox, MessageCircle
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../services/api'
 import { decimal, formatDateTime, money } from '../utils/formatters'
+import { clearLibraryRequestDraft, draftForLibraryRequest, formatLibraryCustomerContact, updateLibraryRequestDraft } from '../utils/libraryRequestDrafts'
 import { MetricCard } from './MetricCard'
 
 const emptyProduct = {
@@ -57,7 +58,7 @@ export function LibraryManager({ user }) {
   const [productDraft, setProductDraft] = useState(emptyProduct)
   const [sellerDraft, setSellerDraft] = useState({ display_name: '', whatsapp_phone: '', active: true, eligible: true, user_id: '' })
   const [editingSellerId, setEditingSellerId] = useState(null)
-  const [requestSaleDraft, setRequestSaleDraft] = useState({ customer_name: '', payment_method: 'manual', notes: '' })
+  const [requestSaleDrafts, setRequestSaleDrafts] = useState({})
   const [editingProductId, setEditingProductId] = useState(null)
   const [categoryDraft, setCategoryDraft] = useState({ name: '', description: '' })
   const [stockDraft, setStockDraft] = useState({ product_id: '', type: 'replenishment', operation: 'in', quantity: 1, reason: '' })
@@ -272,8 +273,8 @@ export function LibraryManager({ user }) {
     setSaving(true)
     setMessage('')
     try {
-      await api.convertLibraryRequest(request.reference, requestSaleDraft)
-      setRequestSaleDraft({ customer_name: '', payment_method: 'manual', notes: '' })
+      await api.convertLibraryRequest(request.reference, draftForLibraryRequest(requestSaleDrafts, request.reference))
+      setRequestSaleDrafts((current) => clearLibraryRequestDraft(current, request.reference))
       await loadData()
       setMessage(`Carrinho ${request.reference} convertido em venda.`)
     } catch (err) {
@@ -330,6 +331,10 @@ export function LibraryManager({ user }) {
     }
   }
 
+  function updateRequestDraft(reference, patch) {
+    setRequestSaleDrafts((current) => updateLibraryRequestDraft(current, reference, patch))
+  }
+
   return (
     <div className="grid gap-5">
       <section className="mission-panel p-4">
@@ -372,8 +377,8 @@ export function LibraryManager({ user }) {
       ) : null}
 
       {activeTab === 'requests' ? (
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="mission-panel p-4">
+        <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+          <div className="mission-panel min-w-0 p-4">
             <div className="grid gap-3 md:grid-cols-[1fr_180px]">
               <label className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 translate-y-[-10%] text-shalom-blue/60" size={18} />
@@ -388,8 +393,10 @@ export function LibraryManager({ user }) {
               </select>
             </div>
             <div className="mt-4 grid gap-3">
-              {requests.map((request) => (
-                <article key={request.reference} className="rounded-xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
+              {requests.map((request) => {
+                const requestDraft = draftForLibraryRequest(requestSaleDrafts, request.reference)
+                return (
+                <article key={request.reference} className="min-w-0 rounded-xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -397,28 +404,28 @@ export function LibraryManager({ user }) {
                         <span className="rounded-full border border-shalom-gold/40 px-2 py-1 text-xs font-semibold uppercase">{request.status}</span>
                         {request.has_availability_changes ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Revisar disponibilidade</span> : null}
                       </div>
-                      <div className="mission-muted mt-1 grid gap-1 text-sm sm:grid-cols-2">
-                        <span>{formatDateTime(request.created_at)}</span>
-                        <span>{request.seller?.display_name || 'Sem vendedor atribuido'}</span>
-                        <span>{request.customer_name || 'Cliente nao informado'}</span>
-                        <span className="flex min-w-0 items-center gap-2">
-                          {request.customer_contact || 'Contato nao informado'}
+                      <div className="mission-muted mt-2 grid gap-2 text-sm sm:grid-cols-2">
+                        <span className="min-w-0 break-words"><strong className="text-shalom-deep dark:text-white">Cliente:</strong> {request.customer_name || 'Cliente nao informado'}</span>
+                        <span className="flex min-w-0 items-center gap-2 break-words">
+                          <strong className="text-shalom-deep dark:text-white">Contato:</strong> {formatLibraryCustomerContact(request.customer_contact)}
                           {request.customer_contact ? (
                             <a className="mission-btn inline-flex shrink-0 items-center justify-center border border-line/80 p-1.5 text-shalom-blue dark:border-shalom-gold/10 dark:text-shalom-gold" href={whatsappContactUrl(request.customer_contact)} target="_blank" rel="noreferrer" aria-label="Abrir WhatsApp do cliente">
                               <MessageCircle size={14} />
                             </a>
                           ) : null}
                         </span>
+                        <span className="min-w-0 break-words"><strong className="text-shalom-deep dark:text-white">Vendedor:</strong> {request.seller?.display_name || 'Sem vendedor atribuido'}</span>
+                        <span className="min-w-0"><strong className="text-shalom-deep dark:text-white">Criado:</strong> {formatDateTime(request.created_at)}</span>
                       </div>
                       <div className="mt-3 grid gap-2">
                         {request.items.map((item) => (
-                          <div key={item.id || item.product_id} className="grid gap-2 rounded-lg border border-line/70 px-3 py-2 dark:border-shalom-gold/10 sm:grid-cols-[1fr_88px_120px] sm:items-center">
-                            <span className="font-medium">{item.product_name}</span>
+                          <div key={item.id || item.product_id} className="grid min-w-0 gap-2 rounded-lg border border-line/70 px-3 py-2 dark:border-shalom-gold/10 sm:grid-cols-[minmax(0,1fr)_88px_120px] sm:items-center">
+                            <span className="min-w-0 break-words font-medium">{item.product_name}</span>
                             <input
                               type="number"
                               min="0.001"
                               step="0.001"
-                              className="mission-input px-2 py-1"
+                              className="mission-input min-w-0 px-2 py-1"
                               defaultValue={item.requested_quantity}
                               onBlur={(event) => {
                                 if (Number(event.target.value) !== Number(item.requested_quantity)) updateRequestQuantity(request, item.product_id, event.target.value)
@@ -431,14 +438,14 @@ export function LibraryManager({ user }) {
                         ))}
                       </div>
                     </div>
-                    <div className="text-left lg:text-right">
+                    <div className="shrink-0 text-left lg:text-right">
                       <p className="text-lg font-semibold">{money.format(request.current_total)}</p>
                       <p className="mission-muted text-xs">Estimado no pedido: {money.format(request.estimated_total)}</p>
                     </div>
                   </div>
                   {writable && ['pending', 'in_progress'].includes(request.status) ? (
-                    <div className="mt-4 grid gap-2 lg:grid-cols-[1fr_150px_150px]">
-                      <input className="mission-input px-3 py-2" value={requestSaleDraft.customer_name} onChange={(event) => setRequestSaleDraft({ ...requestSaleDraft, customer_name: event.target.value })} placeholder={request.customer_name || 'Nome do cliente para venda'} />
+                    <div className="mt-4 grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_150px_150px]">
+                      <input className="mission-input min-w-0 px-3 py-2" value={requestDraft.customer_name} onChange={(event) => updateRequestDraft(request.reference, { customer_name: event.target.value })} placeholder={request.customer_name || 'Nome do cliente para venda'} />
                       <button type="button" className="mission-btn mission-btn-primary px-3 py-2 font-semibold disabled:opacity-55" onClick={() => convertRequest(request)} disabled={saving}>Converter</button>
                       <button type="button" className="mission-btn border border-line/80 px-3 py-2 font-semibold disabled:opacity-55 dark:border-shalom-gold/10" onClick={() => cancelRequest(request)} disabled={saving}>Cancelar</button>
                     </div>
@@ -452,11 +459,12 @@ export function LibraryManager({ user }) {
                     </div>
                   ) : null}
                 </article>
-              ))}
+                )
+              })}
               {!requests.length ? <p className="rounded-xl border border-line/80 bg-white/70 px-4 py-5 font-medium dark:border-shalom-gold/10 dark:bg-white/10">Nenhum carrinho assistido encontrado.</p> : null}
             </div>
           </div>
-          <aside className="mission-panel p-4">
+          <aside className="mission-panel min-w-0 p-4">
             <h3 className="font-display text-lg font-semibold">Monitoramento rapido</h3>
             <p className="mission-muted mt-1 text-sm">{monitoring.unassigned_pending || 0} carrinho(s) sem vendedor.</p>
             <div className="mt-4 grid gap-3">
@@ -626,36 +634,36 @@ export function LibraryManager({ user }) {
       ) : null}
 
       {activeTab === 'sales' ? (
-        <section className="grid gap-5 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
-          <div className="mission-panel p-4">
+        <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+          <div className="mission-panel min-w-0 p-4">
             <div>
               <h3 className="font-display text-lg font-semibold">Venda assistida manual</h3>
               <p className="mission-muted mt-1 text-sm">Use esta area para vendas presenciais. Carrinhos vindos da vitrine ficam em Atendimentos.</p>
             </div>
             <div className="mt-3 grid gap-3">
-              <input className="mission-input px-3 py-2" value={saleDraft.customer_name} onChange={(event) => setSaleDraft({ ...saleDraft, customer_name: event.target.value })} placeholder="Cliente atendido" disabled={!writable} />
+              <input className="mission-input min-w-0 px-3 py-2" value={saleDraft.customer_name} onChange={(event) => setSaleDraft({ ...saleDraft, customer_name: event.target.value })} placeholder="Cliente atendido" disabled={!writable} />
               <form className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_90px_48px]" onSubmit={addSaleItem}>
-                <select className="mission-input px-3 py-2" value={saleItem.product_id} onChange={(event) => setSaleItem({ ...saleItem, product_id: event.target.value })} disabled={!writable}>
+                <select className="mission-input min-w-0 px-3 py-2" value={saleItem.product_id} onChange={(event) => setSaleItem({ ...saleItem, product_id: event.target.value })} disabled={!writable}>
                   <option value="">Produto</option>
                   {products.filter((product) => product.stock_quantity > 0).map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
                 </select>
-                <input type="number" min="0.001" step="0.001" className="mission-input px-3 py-2" value={saleItem.quantity} onChange={(event) => setSaleItem({ ...saleItem, quantity: event.target.value })} disabled={!writable} />
+                <input type="number" min="0.001" step="0.001" className="mission-input min-w-0 px-3 py-2" value={saleItem.quantity} onChange={(event) => setSaleItem({ ...saleItem, quantity: event.target.value })} disabled={!writable} />
                 <button type="submit" className="mission-btn mission-btn-primary flex min-h-11 items-center justify-center px-3 py-2" disabled={!writable} aria-label="Adicionar item"><Plus size={17} /></button>
               </form>
               <div className="rounded-xl border border-line/80 p-3 dark:border-shalom-gold/10">
                 {saleLines.map((line, index) => (
                   <div key={`${line.product_id}-${index}`} className="grid gap-1 border-b border-line/60 py-2 last:border-0 dark:border-shalom-gold/10 sm:grid-cols-[1fr_auto] sm:items-center">
                     <span className="min-w-0 text-sm font-semibold">{line.product?.name || 'Produto'} x {decimal.format(line.quantity)}</span>
-                    <strong className="sm:text-right">{money.format(line.line_total)}</strong>
+                    <strong className="shrink-0 sm:text-right">{money.format(line.line_total)}</strong>
                   </div>
                 ))}
                 {!saleLines.length ? <p className="mission-muted text-sm">Nenhum item adicionado.</p> : null}
-                <div className="mt-3 flex justify-between text-lg font-semibold">
+                <div className="mt-3 flex min-w-0 items-center justify-between gap-3 text-lg font-semibold">
                   <span>Total</span>
                   <span>{money.format(saleTotal)}</span>
                 </div>
               </div>
-              <textarea className="mission-input px-3 py-2" value={saleDraft.notes} onChange={(event) => setSaleDraft({ ...saleDraft, notes: event.target.value })} placeholder="Observacoes do atendimento" rows={3} disabled={!writable} />
+              <textarea className="mission-input min-w-0 px-3 py-2" value={saleDraft.notes} onChange={(event) => setSaleDraft({ ...saleDraft, notes: event.target.value })} placeholder="Observacoes do atendimento" rows={3} disabled={!writable} />
               <button type="button" className="mission-btn mission-btn-primary inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" onClick={() => {
                 setSaleKey((current) => current || newSaleKey())
                 setReviewSale(true)
@@ -665,7 +673,7 @@ export function LibraryManager({ user }) {
               </button>
             </div>
           </div>
-          <div className="mission-panel p-4">
+          <div className="mission-panel min-w-0 p-4">
             <div>
               <h3 className="font-display text-lg font-semibold">Vendas recentes</h3>
               <p className="mission-muted mt-1 text-sm">Historico com origem de atendimento, vendedor e totais.</p>
