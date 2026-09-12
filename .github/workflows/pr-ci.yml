@@ -61,24 +61,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    # A aplicacao usa SQLite em arquivo via DB_PATH, entao nao precisa de services hoje.
-    # Exemplo para futuras dependencias:
-    #
-    # services:
-    #   postgres:
-    #     image: postgres:16-alpine
-    #     env:
-    #       POSTGRES_DB: lanchonete_test
-    #       POSTGRES_USER: postgres
-    #       POSTGRES_PASSWORD: postgres
-    #     ports:
-    #       - 5432:5432
-    #     options: >-
-    #       --health-cmd "pg_isready -U postgres -d lanchonete_test"
-    #       --health-interval 10s
-    #       --health-timeout 5s
-    #       --health-retries 5
-
     env:
       NODE_ENV: test
       JWT_SECRET: ci-test-secret-with-more-than-32-characters
@@ -178,26 +160,19 @@ jobs:
           key: cache-trivy-${{ steps.trivy-date.outputs.date }}
           restore-keys: cache-trivy-
 
-      - name: Set up Trivy
-        uses: aquasecurity/setup-trivy@v0.2.1  # Use latest stable release instead of pinned commit
-        with:
-          version: v0.68.2
-          cache: true
-
-      - name: Verify Trivy installation
-        run: trivy --version
-
       - name: Scan filesystem vulnerabilities with Trivy
-        run: |
-          trivy fs \
-            --cache-dir "${{ github.workspace }}/.cache/trivy" \
-            --scanners vuln,misconfig \
-            --severity HIGH,CRITICAL \
-            --ignore-unfixed \
-            --format sarif \
-            --output trivy-results.sarif \
-            --exit-code 1 \
-            .
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: '1'
+          cache-dir: ${{ github.workspace }}/.cache/trivy
+          version: v0.74.0
 
       - name: Upload Trivy SARIF to code scanning
         if: always() && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('trivy-results.sarif') != ''
