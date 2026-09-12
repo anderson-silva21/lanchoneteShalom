@@ -61,23 +61,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    # A aplicacao usa SQLite em arquivo via DB_PATH, entao nao precisa de services hoje.
-    # Exemplo para futuras dependencias:
-    # services:
-    #   postgres:
-    #     image: postgres:16-alpine
-    #     env:
-    #       POSTGRES_DB: lanchonete_test
-    #       POSTGRES_USER: postgres
-    #       POSTGRES_PASSWORD: postgres
-    #     ports:
-    #       - 5432:5432
-    #     options: >-
-    #       --health-cmd "pg_isready -U postgres -d lanchonete_test"
-    #       --health-interval 10s
-    #       --health-timeout 5s
-    #       --health-retries 5
-
     env:
       NODE_ENV: test
       JWT_SECRET: ci-test-secret-with-more-than-32-characters
@@ -166,8 +149,19 @@ jobs:
         run: npm audit --audit-level=high --omit=dev
         working-directory: frontend
 
-      - name: Scan filesystem vulnerabilities with Trivy
-        uses: aquasecurity/trivy-action@0.32.0
+      - name: Get Trivy cache date
+        id: trivy-date
+        run: echo "date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Trivy vulnerability database
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.cache/trivy
+          key: cache-trivy-${{ steps.trivy-date.outputs.date }}
+          restore-keys: cache-trivy-
+
+      - name: Generate Trivy SARIF report
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -176,22 +170,37 @@ jobs:
           ignore-unfixed: true
           format: sarif
           output: trivy-results.sarif
-          exit-code: '1'
+          exit-code: '0'
+          cache-dir: ${{ github.workspace }}/.cache/trivy
+          version: v0.74.0
 
       - name: Upload Trivy SARIF to code scanning
-        if: always() && github.event.pull_request.head.repo.full_name == github.repository
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
 
       - name: Upload Trivy report artifact
-        if: always()
+        if: always() && hashFiles('trivy-results.sarif') != ''
         uses: actions/upload-artifact@v4
         with:
           name: trivy-sarif
           path: trivy-results.sarif
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Fail on HIGH or CRITICAL Trivy findings
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: '1'
+          cache-dir: ${{ github.workspace }}/.cache/trivy
+          skip-setup-trivy: true
 
       - name: Scan for leaked secrets with Gitleaks
         uses: gitleaks/gitleaks-action@v2
@@ -229,10 +238,6 @@ jobs:
       - name: Build frontend
         run: npm run build
         working-directory: frontend
-
-      # Se o projeto ganhar Dockerfile, habilite este bloco para validar o empacotamento da imagem.
-      # - name: Build Docker image
-      #   run: docker build --pull --tag lanchonete-shalom:${{ github.sha }} .
 
       - name: Upload frontend build artifact
         uses: actions/upload-artifact@v4

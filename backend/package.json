@@ -9,6 +9,7 @@
     "start": "node src/server.js",
     "seed": "node src/server.js",
     "seed:dev": "node scripts/seedDevData.js",
+    "seed:library:dev": "node scripts/seedLibraryDemoData.js",
     "db:reset": "node scripts/resetOperationalData.js",
     "test": "node --test test/*.test.js",
     "user:create": "node scripts/createUser.js"
@@ -23,6 +24,7 @@
     "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
     "helmet": "^8.1.0",
     "json2csv": "^6.0.0-alpha.2",
     "jsonwebtoken": "^9.0.3",

@@ -8,12 +8,12 @@ const { recordAudit } = require('../services/auditService');
 const { generateTemporaryPassword } = require('../utils/passwords');
 
 const router = express.Router();
-const roles = new Set(['admin', 'manager', 'cashier', 'finance']);
+const roles = new Set(['admin', 'manager', 'cashier', 'finance', 'library']);
 
 const userSchema = z.object({
   name: z.string().trim().min(2),
   username: z.string().trim().toLowerCase().regex(/^[a-z0-9._-]{3,40}$/),
-  role: z.enum(['admin', 'manager', 'cashier', 'finance'])
+  role: z.enum(['admin', 'manager', 'cashier', 'finance', 'library'])
 });
 
 function publicUser(row) {

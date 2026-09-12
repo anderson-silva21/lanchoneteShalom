@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import {
   BarChart3,
+  BookOpen,
   Boxes,
   ClipboardCheck,
   ClipboardList,
@@ -28,6 +29,7 @@ const navItems = [
   { key: 'inventory', label: 'Inventario', icon: ClipboardCheck },
   { key: 'sheet', label: 'Planilha', icon: FileSpreadsheet },
   { key: 'reports', label: 'Relatorios', icon: ClipboardList },
+  { key: 'library', label: 'Livraria', icon: BookOpen },
   { key: 'settings', label: 'Sistema', icon: Settings }
 ]
 
@@ -35,7 +37,8 @@ const roleLabels = {
   admin: 'Admin',
   manager: 'Gerente',
   finance: 'Financeiro',
-  cashier: 'Caixa'
+  cashier: 'Caixa',
+  library: 'Livraria'
 }
 
 const mobilePrimaryLabels = {
@@ -44,7 +47,7 @@ const mobilePrimaryLabels = {
   payments: 'Pagamentos'
 }
 
-const mobilePrimaryOrder = ['sales', 'products', 'payments']
+const mobilePrimaryOrder = ['sales', 'products', 'payments', 'library']
 
 export function AppShell({ activeView, setActiveView, user, darkMode, setDarkMode, setupEnabled = false, onLogout, children }) {
   const allowedNavItems = navItems.filter((item) => canAccessView(user?.role, item.key, { setupEnabled }))
