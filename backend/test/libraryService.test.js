@@ -3,10 +3,14 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const express = require('express');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lanchonete-library-'));
 process.env.DB_PATH = path.join(tempDir, 'test.sqlite');
 
+const errorHandler = require('../src/middleware/errorHandler');
+const { signUser } = require('../src/middleware/auth');
+const libraryRoutes = require('../src/routes/library');
 const { db, initDatabase } = require('../src/db');
 const {
   adjustStock,
@@ -20,7 +24,10 @@ const {
   getPublicAssistedRequest,
   getSellerMonitoring,
   listAssistedRequests,
+  listSales,
+  listSellers,
   listPublicProducts,
+  removeSeller,
   reassignAssistedRequest,
   saveSeller,
   saveProduct
@@ -326,6 +333,134 @@ test('admin pode reatribuir e historico de atribuicao e preservado', () => {
   assert.equal(reassigned.assigned_seller_id, seller.id);
   assert.equal(history.total >= 2, true);
   assert.equal(Array.isArray(monitoring.sellers), true);
+});
+
+test('remocao apaga vendedor sem historico e limpa referencia da rotacao', () => {
+  const seller = saveSeller({ display_name: 'Seller Sem Historico', whatsapp_phone: '5581999000201', active: true, eligible: true });
+  db.prepare(`
+    INSERT INTO library_round_robin_state (id, last_seller_id)
+    VALUES (1, ?)
+    ON CONFLICT(id) DO UPDATE SET last_seller_id = excluded.last_seller_id
+  `).run(seller.id);
+
+  const result = removeSeller(seller.id);
+
+  assert.equal(result.mode, 'deleted');
+  assert.equal(db.prepare('SELECT id FROM library_sellers WHERE id = ?').get(seller.id), undefined);
+  assert.equal(db.prepare('SELECT last_seller_id FROM library_round_robin_state WHERE id = 1').get().last_seller_id, null);
+});
+
+test('remocao arquiva vendedor com historico, preserva atribuicoes e remove da rotacao', () => {
+  db.prepare('UPDATE library_sellers SET active = 0, eligible = 0 WHERE archived_at IS NULL').run();
+  db.prepare('UPDATE library_round_robin_state SET last_seller_id = NULL WHERE id = 1').run();
+
+  const category = createCategory({ name: 'Remocao Historica' });
+  const product = saveProduct({
+    name: 'Livro Remocao Historica',
+    category_id: category.id,
+    price: 44,
+    cost_price: 16,
+    stock_quantity: 8,
+    min_stock: 1,
+    published: true
+  });
+  const archivedSeller = saveSeller({ display_name: 'Seller Com Historico', whatsapp_phone: '5581999000202', active: true, eligible: true });
+  const activeSeller = saveSeller({ display_name: 'Seller Remocao Ativo', whatsapp_phone: '5581999000203', active: true, eligible: true });
+  db.prepare('UPDATE library_sellers SET active = 0, eligible = 0 WHERE id NOT IN (?, ?)').run(archivedSeller.id, activeSeller.id);
+
+  const request = createAssistedRequest({
+    idempotency_key: 'cart-remove-history-001',
+    customer_name: 'Cliente Historico',
+    customer_contact: '5581999880202',
+    items: [{ product_id: product.id, quantity: 1 }]
+  });
+  assert.equal(request.seller.display_name, archivedSeller.display_name);
+
+  const sale = convertAssistedRequest(request.reference, { payment_method: 'pix' }, { id: 1 });
+  const result = removeSeller(archivedSeller.id);
+  const storedSeller = db.prepare('SELECT active, eligible, archived_at FROM library_sellers WHERE id = ?').get(archivedSeller.id);
+  const storedRequest = getAssistedRequest(request.reference);
+  const storedSale = listSales({ limit: 20 }).find((item) => Number(item.id) === Number(sale.id));
+
+  assert.equal(result.mode, 'archived');
+  assert.equal(storedSeller.active, 0);
+  assert.equal(storedSeller.eligible, 0);
+  assert.equal(Boolean(storedSeller.archived_at), true);
+  assert.equal(storedRequest.seller.display_name, archivedSeller.display_name);
+  assert.equal(storedSale.seller_name, archivedSeller.display_name);
+  assert.equal(listSellers({ visibility: 'active' }).some((seller) => seller.id === archivedSeller.id), false);
+  assert.equal(listSellers({ visibility: 'archived' }).some((seller) => seller.id === archivedSeller.id), true);
+
+  const nextRequest = createAssistedRequest({
+    idempotency_key: 'cart-remove-history-002',
+    customer_name: 'Cliente Rotacao Pos Arquivo',
+    customer_contact: '5581999880203',
+    items: [{ product_id: product.id, quantity: 1 }]
+  });
+  assert.equal(nextRequest.seller.display_name, activeSeller.display_name);
+});
+
+test('remocao com atendimento ativo arquiva vendedor e mantem carrinho atribuido', () => {
+  db.prepare('UPDATE library_sellers SET active = 0, eligible = 0 WHERE archived_at IS NULL').run();
+  db.prepare('UPDATE library_round_robin_state SET last_seller_id = NULL WHERE id = 1').run();
+
+  const category = createCategory({ name: 'Remocao Ativa' });
+  const product = saveProduct({
+    name: 'Terco Remocao Ativa',
+    category_id: category.id,
+    price: 28,
+    cost_price: 9,
+    stock_quantity: 4,
+    min_stock: 1,
+    published: true
+  });
+  const seller = saveSeller({ display_name: 'Seller Atendimento Ativo', whatsapp_phone: '5581999000204', active: true, eligible: true });
+  const request = createAssistedRequest({
+    idempotency_key: 'cart-remove-active-001',
+    customer_name: 'Cliente Ativo',
+    customer_contact: '5581999880204',
+    items: [{ product_id: product.id, quantity: 1 }]
+  });
+
+  const result = removeSeller(seller.id);
+  const storedRequest = getAssistedRequest(request.reference);
+
+  assert.equal(result.mode, 'archived');
+  assert.equal(result.active_assignments_count, 1);
+  assert.equal(storedRequest.status, 'pending');
+  assert.equal(storedRequest.assigned_seller_id, seller.id);
+  assert.equal(storedRequest.seller.display_name, seller.display_name);
+});
+
+test('perfil nao autorizado nao remove vendedor pela API', async () => {
+  initDatabase();
+  const seller = saveSeller({ display_name: 'Seller Protegido API', whatsapp_phone: '5581999000205', active: true, eligible: true });
+  const userId = db.prepare(`
+    INSERT INTO users (name, username, email, password_hash, role)
+    VALUES ('Financeiro Teste', 'finance-delete-test', 'finance-delete-test@example.local', 'x', 'finance')
+  `).run().lastInsertRowid;
+  const token = signUser(db.prepare('SELECT * FROM users WHERE id = ?').get(userId));
+  const app = express();
+  app.use(express.json());
+  app.use('/api/library', libraryRoutes);
+  app.use(errorHandler);
+  const server = app.listen(0, '127.0.0.1');
+
+  try {
+    const baseUrl = await new Promise((resolve) => {
+      if (server.listening) return resolve(`http://127.0.0.1:${server.address().port}`);
+      return server.once('listening', () => resolve(`http://127.0.0.1:${server.address().port}`));
+    });
+    const response = await fetch(`${baseUrl}/api/library/sellers/${seller.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    assert.equal(response.status, 403);
+    assert.equal(Boolean(db.prepare('SELECT id FROM library_sellers WHERE id = ?').get(seller.id)), true);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test('carrinho rejeita produto inativo ou nao publicado', () => {

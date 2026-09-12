@@ -20,6 +20,7 @@ const {
   listProducts,
   listSales,
   listSellers,
+  removeSeller,
   reassignAssistedRequest,
   saveSeller,
   saveProduct,
@@ -115,7 +116,7 @@ router.get('/dashboard', (req, res) => {
 });
 
 router.get('/sellers', (req, res) => {
-  const sellers = listSellers().map((seller) => req.user.role === 'finance' ? { ...seller, whatsapp_phone: undefined } : seller);
+  const sellers = listSellers({ visibility: req.query.visibility }).map((seller) => req.user.role === 'finance' ? { ...seller, whatsapp_phone: undefined } : seller);
   return res.json(sellers);
 });
 
@@ -143,6 +144,21 @@ router.patch('/sellers/:id', requirePermission('library:sellers:manage'), (req, 
     metadata: seller
   });
   return res.json(seller);
+});
+
+router.delete('/sellers/:id', requirePermission('library:sellers:manage'), (req, res) => {
+  const result = removeSeller(req.params.id);
+  recordAudit({
+    req,
+    action: result.mode === 'deleted' ? 'library.seller.delete' : 'library.seller.archive',
+    entityType: 'library_seller',
+    entityId: result.seller.id,
+    summary: result.mode === 'deleted'
+      ? `Vendedor da Livraria removido permanentemente: ${result.seller.display_name}`
+      : `Vendedor da Livraria arquivado: ${result.seller.display_name}`,
+    metadata: result
+  });
+  return res.json(result);
 });
 
 router.get('/seller-monitoring', (req, res) => {

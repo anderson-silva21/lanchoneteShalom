@@ -1,4 +1,4 @@
-import { AlertTriangle, BookOpen, Boxes, CheckCircle2, Eye, Inbox, MessageCircle, PackagePlus, Pencil, Plus, ReceiptText, Save, Search, TrendingUp, UserRound, X } from 'lucide-react'
+import { AlertTriangle, BookOpen, Boxes, CheckCircle2, Eye, Inbox, MessageCircle, PackagePlus, Pencil, Plus, ReceiptText, Save, Search, Trash2, TrendingUp, UserRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../services/api'
 import { decimal, formatDateTime, money } from '../utils/formatters'
@@ -55,6 +55,7 @@ export function LibraryManager({ user }) {
   const [monitoring, setMonitoring] = useState({ sellers: [], unassigned_pending: 0 })
   const [filters, setFilters] = useState({ q: '', status: '' })
   const [requestFilters, setRequestFilters] = useState({ q: '', status: '' })
+  const [sellerVisibility, setSellerVisibility] = useState('active')
   const [productDraft, setProductDraft] = useState(emptyProduct)
   const [sellerDraft, setSellerDraft] = useState({ display_name: '', whatsapp_phone: '', active: true, eligible: true, user_id: '' })
   const [editingSellerId, setEditingSellerId] = useState(null)
@@ -91,7 +92,7 @@ export function LibraryManager({ user }) {
         api.librarySales(),
         api.libraryMovements(),
         api.libraryRequests(requestFilters),
-        api.librarySellers(),
+        api.librarySellersByVisibility(sellerVisibility),
         api.librarySellerMonitoring()
       ])
       setDashboard(nextDashboard)
@@ -105,7 +106,7 @@ export function LibraryManager({ user }) {
     } catch (err) {
       setMessage(err.message)
     }
-  }, [filters, requestFilters])
+  }, [filters, requestFilters, sellerVisibility])
 
   useEffect(() => {
     loadData()
@@ -259,6 +260,7 @@ export function LibraryManager({ user }) {
   }
 
   function startSellerEdit(seller) {
+    if (seller.archived) return
     setEditingSellerId(seller.id)
     setSellerDraft({
       display_name: seller.display_name,
@@ -267,6 +269,31 @@ export function LibraryManager({ user }) {
       eligible: Boolean(seller.eligible),
       user_id: seller.user_id || ''
     })
+  }
+
+  async function removeSellerRecord(seller) {
+    if (user?.role !== 'admin') return
+    const hasHistory = seller.archived || Number(seller.operational_history_count || 0) > 0
+    const confirmation = hasHistory
+      ? 'Remover vendedor?\n\nEste vendedor possui historico de atendimentos ou vendas. Ele sera arquivado e deixara de receber novos clientes, mas seus registros historicos serao preservados.'
+      : 'Remover vendedor permanentemente?\n\nEste vendedor nao possui historico operacional conhecido. A remocao apagara o cadastro.'
+    if (!window.confirm(confirmation)) return
+
+    setSaving(true)
+    setMessage('')
+    try {
+      const result = await api.removeLibrarySeller(seller.id)
+      if (editingSellerId === seller.id) {
+        setEditingSellerId(null)
+        setSellerDraft({ display_name: '', whatsapp_phone: '', active: true, eligible: true, user_id: '' })
+      }
+      await loadData()
+      setMessage(result.mode === 'deleted' ? 'Vendedor removido permanentemente.' : 'Vendedor arquivado e removido da rotacao.')
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function convertRequest(request) {
@@ -446,7 +473,7 @@ export function LibraryManager({ user }) {
                   {writable && ['pending', 'in_progress'].includes(request.status) ? (
                     <div className="mt-4 grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_150px_150px]">
                       <input className="mission-input min-w-0 px-3 py-2" value={requestDraft.customer_name} onChange={(event) => updateRequestDraft(request.reference, { customer_name: event.target.value })} placeholder={request.customer_name || 'Nome do cliente para venda'} />
-                      <button type="button" className="mission-btn mission-btn-primary px-3 py-2 font-semibold disabled:opacity-55" onClick={() => convertRequest(request)} disabled={saving}>Converter</button>
+                      <button type="button" className="mission-btn mission-btn-primary px-3 py-2 font-semibold disabled:opacity-55" onClick={() => convertRequest(request)} disabled={saving}>Finalizar Venda</button>
                       <button type="button" className="mission-btn border border-line/80 px-3 py-2 font-semibold disabled:opacity-55 dark:border-shalom-gold/10" onClick={() => cancelRequest(request)} disabled={saving}>Cancelar</button>
                     </div>
                   ) : null}
@@ -736,9 +763,19 @@ export function LibraryManager({ user }) {
             </button>
           </form>
           <div className="mission-panel p-4">
-            <h3 className="font-display text-lg font-semibold">Vendedores da Livraria</h3>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="font-display text-lg font-semibold">Vendedores da Livraria</h3>
+                <p className="mission-muted mt-1 text-sm">Remover arquiva vendedores com historico e apaga apenas cadastros sem uso.</p>
+              </div>
+              <select className="mission-input px-3 py-2 text-sm" value={sellerVisibility} onChange={(event) => setSellerVisibility(event.target.value)} disabled={user?.role !== 'admin'}>
+                <option value="active">Ativos</option>
+                <option value="archived">Arquivados</option>
+                <option value="all">Todos</option>
+              </select>
+            </div>
             <div className="mt-4 overflow-x-auto scrollbar-thin">
-              <table className="min-w-[720px] w-full border-separate border-spacing-0 text-left text-sm">
+              <table className="min-w-[820px] w-full border-separate border-spacing-0 text-left text-sm">
                 <thead className="text-xs uppercase tracking-[0.12em] text-shalom-blue/70 dark:text-shalom-gold/80">
                   <tr>
                     <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Vendedor</th>
@@ -753,15 +790,27 @@ export function LibraryManager({ user }) {
                     const stats = monitoring.sellers?.find((item) => Number(item.id) === Number(seller.id))
                     return (
                       <tr key={seller.id}>
-                        <td className="border-b border-line/80 px-3 py-2 font-semibold dark:border-shalom-gold/10">{seller.display_name}</td>
+                        <td className="border-b border-line/80 px-3 py-2 font-semibold dark:border-shalom-gold/10">
+                          <span className="block">{seller.display_name}</span>
+                          {seller.archived ? <span className="mission-muted text-xs">Arquivado em {formatDateTime(seller.archived_at)}</span> : null}
+                        </td>
                         <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{seller.whatsapp_phone}</td>
-                        <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{seller.active ? 'Ativo' : 'Inativo'} / {seller.eligible ? 'na rotacao' : 'fora da rotacao'}</td>
-                        <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">Hoje {decimal.format(stats?.assigned_today || 0)} - Pend. {decimal.format(stats?.pending || 0)}</td>
+                        <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{seller.archived ? 'Arquivado' : seller.active ? 'Ativo' : 'Inativo'} / {seller.eligible && !seller.archived ? 'na rotacao' : 'fora da rotacao'}</td>
                         <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                          <button type="button" className="mission-btn inline-flex items-center gap-2 border border-line/80 px-3 py-2 font-semibold disabled:opacity-55 dark:border-shalom-gold/10" onClick={() => startSellerEdit(seller)} disabled={user?.role !== 'admin' || saving}>
-                            <Pencil size={16} />
-                            Editar
-                          </button>
+                          Hoje {decimal.format(stats?.assigned_today || 0)} - Pend. {decimal.format(stats?.pending || 0)}
+                          {seller.active_assignments_count ? <span className="mission-muted block text-xs">Ativos atribuidos: {decimal.format(seller.active_assignments_count)}</span> : null}
+                        </td>
+                        <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button type="button" className="mission-btn inline-flex items-center gap-2 border border-line/80 px-3 py-2 font-semibold disabled:opacity-55 dark:border-shalom-gold/10" onClick={() => startSellerEdit(seller)} disabled={user?.role !== 'admin' || saving || seller.archived}>
+                              <Pencil size={16} />
+                              Editar
+                            </button>
+                            <button type="button" className="mission-btn inline-flex items-center gap-2 border border-shalom-wine/30 px-3 py-2 font-semibold text-shalom-wine disabled:opacity-55 dark:border-rose-300/20 dark:text-rose-100" onClick={() => removeSellerRecord(seller)} disabled={user?.role !== 'admin' || saving}>
+                              <Trash2 size={16} />
+                              Remover
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )

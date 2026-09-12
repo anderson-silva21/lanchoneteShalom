@@ -161,7 +161,6 @@ export function PublicLibraryStorefront() {
             <div className="flex min-w-0 items-center gap-3">
               <img className="h-12 w-auto max-w-[190px] object-contain sm:h-14" src="/livraria-shalom-logo.webp" alt="Livraria Shalom" />
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-shalom-orange">Shalom Store</p>
                 <h1 className="sr-only">Livraria Shalom</h1>
               </div>
             </div>

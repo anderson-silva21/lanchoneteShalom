@@ -223,6 +223,7 @@ function ensureLibrarySchema() {
       active INTEGER NOT NULL DEFAULT 1,
       eligible INTEGER NOT NULL DEFAULT 1,
       user_id INTEGER REFERENCES users(id),
+      archived_at TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
     );
@@ -288,10 +289,13 @@ function ensureLibrarySchema() {
   addColumnIfMissing('library_sales', 'seller_id', 'INTEGER REFERENCES library_sellers(id)');
   addColumnIfMissing('library_assisted_requests', 'customer_name', 'TEXT');
   addColumnIfMissing('library_assisted_requests', 'customer_contact', 'TEXT');
+  addColumnIfMissing('library_sellers', 'archived_at', 'TEXT');
 
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_library_requests_customer_lookup
       ON library_assisted_requests(customer_name, customer_contact);
+    CREATE INDEX IF NOT EXISTS idx_library_sellers_archived
+      ON library_sellers(archived_at, active, eligible);
   `);
 }
 

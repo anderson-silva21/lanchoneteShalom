@@ -433,6 +433,10 @@ function sellerDto(row) {
     whatsapp_phone: row.whatsapp_phone,
     active: Boolean(row.active),
     eligible: Boolean(row.eligible),
+    archived: Boolean(row.archived_at),
+    archived_at: row.archived_at || null,
+    operational_history_count: Number(row.operational_history_count || 0),
+    active_assignments_count: Number(row.active_assignments_count || 0),
     user_id: row.user_id,
     user_name: row.user_name || null,
     created_at: row.created_at,
@@ -440,20 +444,73 @@ function sellerDto(row) {
   };
 }
 
-function listSellers({ includeInactive = true } = {}) {
-  const where = includeInactive ? '' : 'WHERE s.active = 1';
+function listSellers({ includeInactive = true, visibility = 'active' } = {}) {
+  const where = [];
+  if (visibility === 'archived') where.push('s.archived_at IS NOT NULL');
+  else if (visibility === 'all') {
+    // ADMIN audit view: include archived and inactive sellers.
+  } else {
+    where.push('s.archived_at IS NULL');
+    if (!includeInactive || visibility === 'active') where.push('s.active = 1');
+  }
   return db.prepare(`
-    SELECT s.*, u.name AS user_name
+    SELECT
+      s.*,
+      u.name AS user_name,
+      (
+        SELECT COUNT(*)
+        FROM library_assisted_requests r
+        WHERE r.assigned_seller_id = s.id
+      ) + (
+        SELECT COUNT(*)
+        FROM library_sales sale
+        WHERE sale.seller_id = s.id
+      ) + (
+        SELECT COUNT(*)
+        FROM library_assignment_history h
+        WHERE h.previous_seller_id = s.id OR h.new_seller_id = s.id
+      ) AS operational_history_count,
+      (
+        SELECT COUNT(*)
+        FROM library_assisted_requests active_request
+        WHERE active_request.assigned_seller_id = s.id
+          AND active_request.status IN ('pending', 'in_progress')
+      ) AS active_assignments_count
     FROM library_sellers s
     LEFT JOIN users u ON u.id = s.user_id
-    ${where}
-    ORDER BY s.active DESC, s.eligible DESC, s.display_name COLLATE NOCASE ASC
+    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+    ORDER BY
+      CASE WHEN s.archived_at IS NULL THEN 0 ELSE 1 END,
+      s.active DESC,
+      s.eligible DESC,
+      s.display_name COLLATE NOCASE ASC
   `).all().map(sellerDto);
 }
 
 function getSeller(id) {
   return sellerDto(db.prepare(`
-    SELECT s.*, u.name AS user_name
+    SELECT
+      s.*,
+      u.name AS user_name,
+      (
+        SELECT COUNT(*)
+        FROM library_assisted_requests r
+        WHERE r.assigned_seller_id = s.id
+      ) + (
+        SELECT COUNT(*)
+        FROM library_sales sale
+        WHERE sale.seller_id = s.id
+      ) + (
+        SELECT COUNT(*)
+        FROM library_assignment_history h
+        WHERE h.previous_seller_id = s.id OR h.new_seller_id = s.id
+      ) AS operational_history_count,
+      (
+        SELECT COUNT(*)
+        FROM library_assisted_requests active_request
+        WHERE active_request.assigned_seller_id = s.id
+          AND active_request.status IN ('pending', 'in_progress')
+      ) AS active_assignments_count
     FROM library_sellers s
     LEFT JOIN users u ON u.id = s.user_id
     WHERE s.id = ?
@@ -464,6 +521,7 @@ function saveSeller(payload, id = null) {
   let sellerId = id ? Number(id) : null;
   const current = sellerId ? getSeller(sellerId) : null;
   if (sellerId && !current) throw createHttpError('Vendedor da Livraria nao encontrado.', 404);
+  if (current?.archived) throw createHttpError('Vendedor arquivado nao pode ser editado.', 400);
 
   const seller = {
     display_name: String(payload.display_name ?? payload.displayName ?? current?.display_name ?? '').trim(),
@@ -498,11 +556,74 @@ function saveSeller(payload, id = null) {
   return getSeller(sellerId);
 }
 
+function getSellerRemovalImpact(id) {
+  const sellerId = Number(id);
+  if (!Number.isInteger(sellerId) || sellerId <= 0) throw createHttpError('Vendedor da Livraria invalido.', 400);
+  const seller = getSeller(sellerId);
+  if (!seller) throw createHttpError('Vendedor da Livraria nao encontrado.', 404);
+
+  const requests = db.prepare('SELECT COUNT(*) AS total FROM library_assisted_requests WHERE assigned_seller_id = ?').get(sellerId).total;
+  const activeRequests = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM library_assisted_requests
+    WHERE assigned_seller_id = ?
+      AND status IN ('pending', 'in_progress')
+  `).get(sellerId).total;
+  const sales = db.prepare('SELECT COUNT(*) AS total FROM library_sales WHERE seller_id = ?').get(sellerId).total;
+  const assignmentHistory = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM library_assignment_history
+    WHERE previous_seller_id = ? OR new_seller_id = ?
+  `).get(sellerId, sellerId).total;
+
+  const history_count = Number(requests || 0) + Number(sales || 0) + Number(assignmentHistory || 0);
+  return {
+    seller,
+    history_count,
+    active_assignments_count: Number(activeRequests || 0),
+    has_history: history_count > 0
+  };
+}
+
+const removeSellerTransaction = db.transaction((id) => {
+  const impact = getSellerRemovalImpact(id);
+
+  if (!impact.has_history) {
+    db.prepare('UPDATE library_round_robin_state SET last_seller_id = NULL WHERE last_seller_id = ?').run(impact.seller.id);
+    db.prepare('DELETE FROM library_sellers WHERE id = ?').run(impact.seller.id);
+    return {
+      mode: 'deleted',
+      seller: impact.seller,
+      history_count: impact.history_count,
+      active_assignments_count: impact.active_assignments_count
+    };
+  }
+
+  db.prepare(`
+    UPDATE library_sellers
+    SET active = 0,
+        eligible = 0,
+        archived_at = COALESCE(archived_at, datetime('now', '-3 hours'))
+    WHERE id = ?
+  `).run(impact.seller.id);
+
+  return {
+    mode: 'archived',
+    seller: getSeller(impact.seller.id),
+    history_count: impact.history_count,
+    active_assignments_count: impact.active_assignments_count
+  };
+});
+
+function removeSeller(id) {
+  return removeSellerTransaction(id);
+}
+
 function selectNextSeller() {
   const sellers = db.prepare(`
     SELECT id, display_name, whatsapp_phone
     FROM library_sellers
-    WHERE active = 1 AND eligible = 1
+    WHERE active = 1 AND eligible = 1 AND archived_at IS NULL
     ORDER BY id ASC
   `).all();
   if (!sellers.length) return null;
@@ -1102,6 +1223,7 @@ module.exports = {
   listPublicProducts,
   listSales,
   listSellers,
+  removeSeller,
   reassignAssistedRequest,
   saveSeller,
   saveProduct,
