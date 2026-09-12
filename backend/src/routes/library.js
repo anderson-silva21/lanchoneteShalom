@@ -1,8 +1,8 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/accessControl');
-const { createEnvRateLimiter } = require('../middleware/rateLimit');
 const { recordAudit } = require('../services/auditService');
 const {
   adjustStock,
@@ -29,13 +29,20 @@ const {
 } = require('../services/libraryService');
 
 const router = express.Router();
-const libraryOperationalRateLimit = createEnvRateLimiter({
-  keyPrefix: 'library:operational',
-  windowMinutesEnv: 'LIBRARY_RATE_LIMIT_WINDOW_MINUTES',
-  maxRequestsEnv: 'LIBRARY_RATE_LIMIT_MAX_REQUESTS',
-  defaultWindowMinutes: 1,
-  defaultMaxRequests: 300,
-  message: 'Muitas requisicoes na Livraria. Tente novamente em instantes.'
+
+function positiveIntEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+const libraryOperationalRateLimit = rateLimit({
+  windowMs: positiveIntEnv('LIBRARY_RATE_LIMIT_WINDOW_MINUTES', 1) * 60 * 1000,
+  limit: positiveIntEnv('LIBRARY_RATE_LIMIT_MAX_REQUESTS', 300),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: {
+    message: 'Muitas requisicoes na Livraria. Tente novamente em instantes.'
+  }
 });
 
 function hideOperationalSensitiveForFinance(req, payload) {
@@ -118,18 +125,16 @@ const convertRequestSchema = z.object({
   notes: z.string().trim().optional().nullable()
 });
 
-router.use(authenticate, requirePermission('library:read'), libraryOperationalRateLimit);
-
-router.get('/dashboard', (req, res) => {
+router.get('/dashboard', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
   return res.json(getDashboard());
 });
 
-router.get('/sellers', (req, res) => {
+router.get('/sellers', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
   const sellers = listSellers({ visibility: req.query.visibility }).map((seller) => req.user.role === 'finance' ? { ...seller, whatsapp_phone: undefined } : seller);
   return res.json(sellers);
 });
 
-router.post('/sellers', requirePermission('library:sellers:manage'), (req, res) => {
+router.post('/sellers', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:sellers:manage'), (req, res) => {
   const seller = saveSeller(sellerSchema.parse(req.body));
   recordAudit({
     req,
@@ -142,7 +147,7 @@ router.post('/sellers', requirePermission('library:sellers:manage'), (req, res) 
   return res.status(201).json(seller);
 });
 
-router.patch('/sellers/:id', requirePermission('library:sellers:manage'), (req, res) => {
+router.patch('/sellers/:id', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:sellers:manage'), (req, res) => {
   const seller = saveSeller(sellerSchema.partial().parse(req.body), req.params.id);
   recordAudit({
     req,
@@ -155,7 +160,7 @@ router.patch('/sellers/:id', requirePermission('library:sellers:manage'), (req, 
   return res.json(seller);
 });
 
-router.delete('/sellers/:id', requirePermission('library:sellers:manage'), (req, res) => {
+router.delete('/sellers/:id', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:sellers:manage'), (req, res) => {
   const result = removeSeller(req.params.id);
   recordAudit({
     req,
@@ -170,11 +175,11 @@ router.delete('/sellers/:id', requirePermission('library:sellers:manage'), (req,
   return res.json(result);
 });
 
-router.get('/seller-monitoring', (req, res) => {
+router.get('/seller-monitoring', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
   return res.json(hideOperationalSensitiveForFinance(req, getSellerMonitoring()));
 });
 
-router.get('/requests', (req, res) => {
+router.get('/requests', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
   return res.json(hideOperationalSensitiveForFinance(req, listAssistedRequests({
     status: req.query.status,
     sellerId: req.query.seller_id,
@@ -183,11 +188,11 @@ router.get('/requests', (req, res) => {
   })));
 });
 
-router.get('/requests/:reference', (req, res) => {
+router.get('/requests/:reference', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
   return res.json(hideOperationalSensitiveForFinance(req, getAssistedRequest(req.params.reference)));
 });
 
-router.patch('/requests/:reference/items', requirePermission('library:write'), (req, res) => {
+router.patch('/requests/:reference/items', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:write'), (req, res) => {
   const request = updateAssistedRequestItems(req.params.reference, assistedItemsSchema.parse(req.body).items);
   recordAudit({
     req,
@@ -200,7 +205,7 @@ router.patch('/requests/:reference/items', requirePermission('library:write'), (
   return res.json(request);
 });
 
-router.patch('/requests/:reference/cancel', requirePermission('library:write'), (req, res) => {
+router.patch('/requests/:reference/cancel', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:write'), (req, res) => {
   const request = cancelAssistedRequest(req.params.reference);
   recordAudit({
     req,
@@ -213,7 +218,7 @@ router.patch('/requests/:reference/cancel', requirePermission('library:write'), 
   return res.json(request);
 });
 
-router.patch('/requests/:reference/reassign', requirePermission('library:requests:reassign'), (req, res) => {
+router.patch('/requests/:reference/reassign', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:requests:reassign'), (req, res) => {
   const payload = z.object({
     seller_id: z.coerce.number().int().positive(),
     reason: z.string().trim().optional().nullable()
@@ -230,7 +235,7 @@ router.patch('/requests/:reference/reassign', requirePermission('library:request
   return res.json(request);
 });
 
-router.post('/requests/:reference/convert', requirePermission('library:write'), (req, res) => {
+router.post('/requests/:reference/convert', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:write'), (req, res) => {
   const sale = convertAssistedRequest(req.params.reference, convertRequestSchema.parse(req.body), req.user);
   recordAudit({
     req,
@@ -243,11 +248,11 @@ router.post('/requests/:reference/convert', requirePermission('library:write'), 
   return res.status(201).json(sale);
 });
 
-router.get('/categories', (req, res) => {
+router.get('/categories', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
   return res.json(listCategories({ includeInactive: req.query.include_inactive === '1' }));
 });
 
-router.post('/categories', requirePermission('library:write'), (req, res) => {
+router.post('/categories', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:write'), (req, res) => {
   const category = createCategory(categorySchema.parse(req.body));
   recordAudit({
     req,
@@ -260,7 +265,7 @@ router.post('/categories', requirePermission('library:write'), (req, res) => {
   return res.status(201).json(category);
 });
 
-router.get('/products', (req, res) => {
+router.get('/products', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
   return res.json(listProducts({
     q: req.query.q,
     categoryId: req.query.category_id,
@@ -268,11 +273,11 @@ router.get('/products', (req, res) => {
   }));
 });
 
-router.get('/products/:id', (req, res) => {
+router.get('/products/:id', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
   return res.json(getProduct(req.params.id));
 });
 
-router.post('/products', requirePermission('library:write'), (req, res) => {
+router.post('/products', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:write'), (req, res) => {
   const product = saveProduct({ ...productSchema.parse(req.body), user_id: req.user.id });
   recordAudit({
     req,
@@ -285,7 +290,7 @@ router.post('/products', requirePermission('library:write'), (req, res) => {
   return res.status(201).json(product);
 });
 
-router.patch('/products/:id', requirePermission('library:write'), (req, res) => {
+router.patch('/products/:id', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:write'), (req, res) => {
   const current = getProduct(req.params.id);
   const payload = productSchema.partial().parse(req.body);
   const product = saveProduct({
@@ -306,11 +311,11 @@ router.patch('/products/:id', requirePermission('library:write'), (req, res) => 
   return res.json(product);
 });
 
-router.get('/movements', (req, res) => {
+router.get('/movements', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
   return res.json(listMovements({ limit: req.query.limit }));
 });
 
-router.post('/movements', requirePermission('library:write'), (req, res) => {
+router.post('/movements', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:write'), (req, res) => {
   const payload = stockSchema.parse(req.body);
   const movement = adjustStock({
     productId: payload.product_id,
@@ -330,17 +335,17 @@ router.post('/movements', requirePermission('library:write'), (req, res) => {
   return res.status(201).json(movement);
 });
 
-router.get('/sales', (req, res) => {
+router.get('/sales', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
   return res.json(listSales({ limit: req.query.limit }));
 });
 
-router.get('/sales/:id', (req, res) => {
+router.get('/sales/:id', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
   const sale = getSaleById(req.params.id);
   if (!sale) return res.status(404).json({ message: 'Venda da Livraria nao encontrada.' });
   return res.json(sale);
 });
 
-router.post('/sales', requirePermission('library:write'), (req, res) => {
+router.post('/sales', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:write'), (req, res) => {
   const sale = createSale(saleSchema.parse(req.body), req.user);
   recordAudit({
     req,
