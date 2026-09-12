@@ -2,6 +2,7 @@ const express = require('express');
 const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/accessControl');
+const { createEnvRateLimiter } = require('../middleware/rateLimit');
 const { recordAudit } = require('../services/auditService');
 const {
   adjustStock,
@@ -28,6 +29,14 @@ const {
 } = require('../services/libraryService');
 
 const router = express.Router();
+const libraryOperationalRateLimit = createEnvRateLimiter({
+  keyPrefix: 'library:operational',
+  windowMinutesEnv: 'LIBRARY_RATE_LIMIT_WINDOW_MINUTES',
+  maxRequestsEnv: 'LIBRARY_RATE_LIMIT_MAX_REQUESTS',
+  defaultWindowMinutes: 1,
+  defaultMaxRequests: 300,
+  message: 'Muitas requisicoes na Livraria. Tente novamente em instantes.'
+});
 
 function hideOperationalSensitiveForFinance(req, payload) {
   if (req.user?.role !== 'finance') return payload;
@@ -109,7 +118,7 @@ const convertRequestSchema = z.object({
   notes: z.string().trim().optional().nullable()
 });
 
-router.use(authenticate, requirePermission('library:read'));
+router.use(authenticate, requirePermission('library:read'), libraryOperationalRateLimit);
 
 router.get('/dashboard', (req, res) => {
   return res.json(getDashboard());

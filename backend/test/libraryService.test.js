@@ -212,6 +212,34 @@ test('carrinho assistido cria referencia publica, nao baixa estoque e usa round-
   assert.equal(db.prepare('SELECT stock_quantity FROM library_products WHERE id = ?').get(product.id).stock_quantity, 10);
 });
 
+test('geracao de referencia publica mantem formato e funciona em criacoes repetidas', () => {
+  const category = createCategory({ name: 'Referencia Publica' });
+  const product = saveProduct({
+    name: 'Livro Referencia Publica',
+    category_id: category.id,
+    price: 24,
+    cost_price: 8,
+    stock_quantity: 40,
+    min_stock: 1,
+    published: true
+  });
+  saveSeller({ display_name: 'Seller Referencia Publica', whatsapp_phone: '5581999000301', active: true, eligible: true });
+
+  const references = new Set();
+  for (let index = 0; index < 20; index += 1) {
+    const request = createAssistedRequest({
+      idempotency_key: `cart-reference-repeat-${index}`,
+      customer_name: `Cliente Referencia ${index}`,
+      customer_contact: `55819998803${String(index).padStart(2, '0')}`,
+      items: [{ product_id: product.id, quantity: 1 }]
+    });
+    assert.match(request.reference, /^LS-[A-Z2-9]{5}$/);
+    references.add(request.reference);
+  }
+
+  assert.equal(references.size, 20);
+});
+
 test('carrinho assistido persiste dados do cliente e nao vaza no DTO publico', () => {
   const category = createCategory({ name: 'Cliente Identificado' });
   const product = saveProduct({

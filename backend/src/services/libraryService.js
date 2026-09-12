@@ -44,8 +44,11 @@ function normalizePhone(value) {
 
 function randomReference() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const bytes = crypto.randomBytes(5);
-  return `LS-${Array.from(bytes).map((byte) => alphabet[byte % alphabet.length]).join('')}`;
+  let suffix = '';
+  while (suffix.length < 5) {
+    suffix += alphabet[crypto.randomInt(alphabet.length)];
+  }
+  return `LS-${suffix}`;
 }
 
 function generatePublicReference() {
