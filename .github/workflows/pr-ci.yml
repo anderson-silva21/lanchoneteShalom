@@ -63,6 +63,7 @@ jobs:
 
     # A aplicacao usa SQLite em arquivo via DB_PATH, entao nao precisa de services hoje.
     # Exemplo para futuras dependencias:
+    #
     # services:
     #   postgres:
     #     image: postgres:16-alpine
@@ -166,7 +167,7 @@ jobs:
         run: npm audit --audit-level=high --omit=dev
         working-directory: frontend
 
-            - name: Get Trivy cache date
+      - name: Get Trivy cache date
         id: trivy-date
         run: echo "date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
 
