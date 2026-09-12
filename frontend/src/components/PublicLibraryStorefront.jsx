@@ -1,5 +1,5 @@
 import { ArrowLeft, Minus, MessageCircle, Plus, Search, ShoppingCart, Store, Trash2, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../services/api'
 import { money } from '../utils/formatters'
 
@@ -33,6 +33,74 @@ function readStoredCart() {
 }
 
 const emptyCustomer = { customer_name: '', customer_contact: '' }
+const mobileControlsQuery = '(max-width: 1023px)'
+
+function useMobileScrollVisibility({ locked = false, threshold = 14, topOffset = 28 } = {}) {
+  const [hidden, setHidden] = useState(false)
+  const hiddenRef = useRef(false)
+  const lockedRef = useRef(locked)
+  const previousScrollY = useRef(0)
+  const frameId = useRef(0)
+
+  const setControlsHidden = useCallback((nextHidden) => {
+    if (hiddenRef.current === nextHidden) return
+    hiddenRef.current = nextHidden
+    setHidden(nextHidden)
+  }, [])
+
+  useEffect(() => {
+    lockedRef.current = locked
+    if (locked) setControlsHidden(false)
+  }, [locked, setControlsHidden])
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(mobileControlsQuery)
+    previousScrollY.current = Math.max(window.scrollY || window.pageYOffset || 0, 0)
+
+    function showControls() {
+      setControlsHidden(false)
+    }
+
+    function handleBreakpointChange() {
+      previousScrollY.current = Math.max(window.scrollY || window.pageYOffset || 0, 0)
+      if (!mediaQuery.matches) showControls()
+    }
+
+    function handleScroll() {
+      if (frameId.current) return
+
+      frameId.current = window.requestAnimationFrame(() => {
+        frameId.current = 0
+
+        const currentScrollY = Math.max(window.scrollY || window.pageYOffset || 0, 0)
+        const delta = currentScrollY - previousScrollY.current
+
+        if (!mediaQuery.matches || lockedRef.current || currentScrollY <= topOffset) {
+          previousScrollY.current = currentScrollY
+          showControls()
+          return
+        }
+
+        if (Math.abs(delta) < threshold) return
+
+        previousScrollY.current = currentScrollY
+        setControlsHidden(delta > 0)
+      })
+    }
+
+    handleBreakpointChange()
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    mediaQuery.addEventListener('change', handleBreakpointChange)
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll)
+      mediaQuery.removeEventListener('change', handleBreakpointChange)
+      if (frameId.current) window.cancelAnimationFrame(frameId.current)
+    }
+  }, [setControlsHidden, threshold, topOffset])
+
+  return hidden
+}
 
 export function PublicLibraryStorefront() {
   const [categories, setCategories] = useState([])
@@ -46,7 +114,13 @@ export function PublicLibraryStorefront() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [message, setMessage] = useState('')
+  const [controlsFocused, setControlsFocused] = useState(false)
   const selectedId = useMemo(() => productIdFromPath(), [])
+  const controlsHidden = useMobileScrollVisibility({
+    locked: controlsFocused || cartOpen || identifyOpen,
+    threshold: 14,
+    topOffset: 28
+  })
 
   useEffect(() => {
     localStorage.setItem(cartStorageKey, JSON.stringify(cart))
@@ -153,9 +227,20 @@ export function PublicLibraryStorefront() {
 
   const visibleProduct = selectedProduct
 
+  function handleControlsBlur(event) {
+    const currentTarget = event.currentTarget
+    window.setTimeout(() => {
+      setControlsFocused(currentTarget.contains(document.activeElement))
+    }, 0)
+  }
+
   return (
     <div className="min-h-screen bg-[#f7f5ef] text-shalom-deep">
-      <header className="sticky top-0 z-30 border-b border-shalom-gold/35 bg-white/92 px-4 py-4 shadow-sm backdrop-blur sm:px-6 lg:px-10">
+      <header
+        className={`sticky top-0 z-30 border-b border-shalom-gold/35 bg-white/95 px-4 py-4 backdrop-blur transition-[transform,opacity,box-shadow] duration-300 ease-out motion-reduce:transition-none sm:px-6 lg:translate-y-0 lg:opacity-100 lg:px-10 ${controlsHidden ? '-translate-y-full opacity-0 shadow-none' : 'translate-y-0 opacity-100 shadow-sm'}`}
+        onBlurCapture={handleControlsBlur}
+        onFocusCapture={() => setControlsFocused(true)}
+      >
         <div className="mx-auto flex max-w-6xl flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
