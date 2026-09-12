@@ -160,7 +160,7 @@ jobs:
           key: cache-trivy-${{ steps.trivy-date.outputs.date }}
           restore-keys: cache-trivy-
 
-      - name: Scan filesystem vulnerabilities with Trivy
+      - name: Generate Trivy SARIF report
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -170,7 +170,7 @@ jobs:
           ignore-unfixed: true
           format: sarif
           output: trivy-results.sarif
-          exit-code: '1'
+          exit-code: '0'
           cache-dir: ${{ github.workspace }}/.cache/trivy
           version: v0.74.0
 
@@ -188,6 +188,19 @@ jobs:
           path: trivy-results.sarif
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Fail on HIGH or CRITICAL Trivy findings
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: '1'
+          cache-dir: ${{ github.workspace }}/.cache/trivy
+          skip-setup-trivy: true
 
       - name: Scan for leaked secrets with Gitleaks
         uses: gitleaks/gitleaks-action@v2
@@ -225,10 +238,6 @@ jobs:
       - name: Build frontend
         run: npm run build
         working-directory: frontend
-
-      # Se o projeto ganhar Dockerfile, habilite este bloco para validar o empacotamento da imagem.
-      # - name: Build Docker image
-      #   run: docker build --pull --tag lanchonete-shalom:${{ github.sha }} .
 
       - name: Upload frontend build artifact
         uses: actions/upload-artifact@v4
