@@ -4,6 +4,8 @@ const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/accessControl');
 const { recordAudit } = require('../services/auditService');
+const { toCsv, toLibraryReportPdfStream, toLibraryReportXlsxBuffer, toLibraryStockPdfStream, toLibraryStockXlsxBuffer } = require('../services/exportService');
+const { brazilDate } = require('../utils/time');
 const {
   adjustStock,
   cancelAssistedRequest,
@@ -12,6 +14,11 @@ const {
   createSale,
   getAssistedRequest,
   getDashboard,
+  getLibraryExportData,
+  getLibrarySpreadsheet,
+  getLibrarySpreadsheetOptions,
+  getLibraryStockExportData,
+  getLibraryStockSpreadsheet,
   getProduct,
   getSaleById,
   getSellerMonitoring,
@@ -49,8 +56,6 @@ function hideOperationalSensitiveForFinance(req, payload) {
   if (req.user?.role !== 'finance') return payload;
   const sanitizeRequest = (request) => ({
     ...request,
-    customer_name: undefined,
-    customer_contact: undefined,
     seller: request.seller ? { ...request.seller, whatsapp_phone: undefined } : request.seller
   });
   if (Array.isArray(payload)) return payload.map(sanitizeRequest);
@@ -126,7 +131,10 @@ const convertRequestSchema = z.object({
 });
 
 router.get('/dashboard', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
-  return res.json(getDashboard());
+  return res.json(getDashboard({
+    startDate: req.query.start_date,
+    endDate: req.query.end_date
+  }));
 });
 
 router.get('/sellers', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
@@ -337,6 +345,55 @@ router.post('/movements', libraryOperationalRateLimit, authenticate, requirePerm
 
 router.get('/sales', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
   return res.json(listSales({ limit: req.query.limit }));
+});
+
+router.get('/spreadsheet/options', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
+  return res.json(getLibrarySpreadsheetOptions());
+});
+
+router.get('/spreadsheet', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
+  if (req.query.section === 'stock') return res.json(getLibraryStockSpreadsheet(req.query));
+  return res.json(getLibrarySpreadsheet(req.query));
+});
+
+router.get('/spreadsheet/export', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), async (req, res, next) => {
+  try {
+    const format = String(req.query.format || 'csv').toLowerCase();
+    const section = req.query.section === 'stock' ? 'stock' : 'sales';
+    const exportData = section === 'stock' ? getLibraryStockExportData(req.query) : getLibraryExportData(req.query);
+    const filename = `livraria-${section === 'stock' ? 'estoque' : 'vendas'}-${brazilDate()}`;
+    const period = {
+      start_date: req.query.start_date || '',
+      end_date: req.query.end_date || ''
+    };
+
+    if (format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.csv"`);
+      return res.send(`\uFEFF${toCsv(exportData.rows)}`);
+    }
+
+    if (format === 'xlsx') {
+      const buffer = section === 'stock'
+        ? await toLibraryStockXlsxBuffer(exportData)
+        : await toLibraryReportXlsxBuffer({ ...exportData, period });
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.xlsx"`);
+      return res.send(Buffer.from(buffer));
+    }
+
+    if (format === 'pdf') {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
+      return (section === 'stock'
+        ? toLibraryStockPdfStream(exportData)
+        : toLibraryReportPdfStream({ ...exportData, period })).pipe(res);
+    }
+
+    return res.status(400).json({ message: 'Formato invalido.' });
+  } catch (error) {
+    return next(error);
+  }
 });
 
 router.get('/sales/:id', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {

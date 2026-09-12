@@ -240,7 +240,6 @@ function listProducts({ q = '', categoryId = '', status = '' } = {}) {
   }
   if (status === 'published') where.push('p.published = 1');
   if (status === 'draft') where.push('p.published = 0');
-  if (status === 'low') where.push('p.stock_quantity <= p.min_stock');
   if (status === 'inactive') where.push('p.active = 0');
   if (status !== 'inactive') where.push('p.active = 1');
 
@@ -250,7 +249,6 @@ function listProducts({ q = '', categoryId = '', status = '' } = {}) {
       c.name AS category,
       CASE
         WHEN p.stock_quantity <= 0 THEN 'empty'
-        WHEN p.stock_quantity <= p.min_stock THEN 'low'
         ELSE 'ok'
       END AS stock_status
     FROM library_products p
@@ -1154,38 +1152,673 @@ function getSellerMonitoring() {
   };
 }
 
-function getDashboard() {
+function normalizeDateOnly(value) {
+  const text = String(value || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : null;
+}
+
+function dateRangeClause(alias = 's', { startDate, endDate } = {}) {
+  const where = [];
+  const params = {};
+  if (startDate) {
+    where.push(`date(${alias}.created_at) >= date(@startDate)`);
+    params.startDate = startDate;
+  }
+  if (endDate) {
+    where.push(`date(${alias}.created_at) <= date(@endDate)`);
+    params.endDate = endDate;
+  }
+  return { where, params };
+}
+
+function calculatePreviousRange({ startDate, endDate } = {}) {
+  if (!startDate || !endDate) return null;
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return null;
+  const days = Math.round((end - start) / 86400000) + 1;
+  const previousEnd = new Date(start);
+  previousEnd.setUTCDate(previousEnd.getUTCDate() - 1);
+  const previousStart = new Date(previousEnd);
+  previousStart.setUTCDate(previousStart.getUTCDate() - days + 1);
+  return {
+    startDate: previousStart.toISOString().slice(0, 10),
+    endDate: previousEnd.toISOString().slice(0, 10)
+  };
+}
+
+function percentChange(current, previous) {
+  const currentValue = Number(current || 0);
+  const previousValue = Number(previous || 0);
+  if (!Number.isFinite(currentValue) || !Number.isFinite(previousValue) || previousValue === 0) return null;
+  return money(((currentValue - previousValue) / previousValue) * 100);
+}
+
+function financialSummary(range = {}) {
+  const { where, params } = dateRangeClause('s', range);
+  const row = db.prepare(`
+    SELECT
+      COUNT(DISTINCT s.id) AS sales_count,
+      COALESCE(SUM(i.quantity), 0) AS items_sold,
+      COALESCE(SUM(i.line_total), 0) AS revenue,
+      COALESCE(SUM(i.quantity * i.unit_cost), 0) AS cost,
+      COALESCE(SUM(i.line_profit), 0) AS gross_profit
+    FROM library_sales s
+    LEFT JOIN library_sale_items i ON i.sale_id = s.id
+    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+  `).get(params);
+  const revenue = money(row.revenue);
+  const grossProfit = money(row.gross_profit);
+  const salesCount = Number(row.sales_count || 0);
+  return {
+    sales_count: salesCount,
+    items_sold: quantity(row.items_sold),
+    revenue,
+    cost: money(row.cost),
+    gross_profit: grossProfit,
+    margin: revenue > 0 ? money((grossProfit / revenue) * 100) : 0,
+    average_ticket: salesCount > 0 ? money(revenue / salesCount) : 0
+  };
+}
+
+function getPeriodGranularity({ startDate, endDate } = {}) {
+  if (!startDate || !endDate || startDate === endDate) return 'hour';
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  const days = Math.max(1, Math.round((end - start) / 86400000) + 1);
+  if (days > 92) return 'month';
+  return 'day';
+}
+
+function listFinancialSeries(range = {}) {
+  const granularity = getPeriodGranularity(range);
+  const bucket = granularity === 'month'
+    ? "strftime('%Y-%m', s.created_at)"
+    : granularity === 'hour'
+      ? "strftime('%H:00', s.created_at)"
+      : "date(s.created_at)";
+  const { where, params } = dateRangeClause('s', range);
+  return db.prepare(`
+    SELECT
+      ${bucket} AS label,
+      COALESCE(SUM(i.line_total), 0) AS revenue,
+      COALESCE(SUM(i.quantity * i.unit_cost), 0) AS cost,
+      COALESCE(SUM(i.line_profit), 0) AS profit
+    FROM library_sales s
+    JOIN library_sale_items i ON i.sale_id = s.id
+    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+    GROUP BY label
+    ORDER BY MIN(datetime(s.created_at)) ASC
+  `).all(params).map((row) => ({
+    label: row.label,
+    revenue: money(row.revenue),
+    cost: money(row.cost),
+    profit: money(row.profit)
+  }));
+}
+
+function listProductPerformance(range = {}) {
+  const { where, params } = dateRangeClause('s', range);
+  return db.prepare(`
+    SELECT
+      i.product_id,
+      i.item_name AS product_name,
+      COALESCE(c.name, 'Sem categoria') AS category,
+      COALESCE(SUM(i.quantity), 0) AS quantity_sold,
+      COALESCE(SUM(i.line_total), 0) AS revenue,
+      COALESCE(SUM(i.line_profit), 0) AS profit
+    FROM library_sale_items i
+    JOIN library_sales s ON s.id = i.sale_id
+    LEFT JOIN library_products p ON p.id = i.product_id
+    LEFT JOIN library_categories c ON c.id = p.category_id
+    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+    GROUP BY i.product_id, i.item_name, c.name
+  `).all(params).map((row) => ({
+    product_id: row.product_id,
+    product_name: row.product_name,
+    category: row.category,
+    quantity_sold: quantity(row.quantity_sold),
+    revenue: money(row.revenue),
+    profit: money(row.profit)
+  }));
+}
+
+function listSellerPerformance(range = {}) {
+  const { where, params } = dateRangeClause('s', range);
+  return db.prepare(`
+    SELECT
+      COALESCE(ls.id, 0) AS seller_id,
+      COALESCE(ls.display_name, u.name, 'Sem vendedor') AS seller_name,
+      COUNT(DISTINCT s.id) AS sales_count,
+      COALESCE(SUM(i.quantity), 0) AS items_sold,
+      COALESCE(SUM(i.line_total), 0) AS revenue,
+      COALESCE(SUM(i.line_profit), 0) AS profit
+    FROM library_sales s
+    LEFT JOIN library_sale_items i ON i.sale_id = s.id
+    LEFT JOIN library_sellers ls ON ls.id = s.seller_id
+    LEFT JOIN users u ON u.id = s.sold_by
+    ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+    GROUP BY seller_id, seller_name
+    ORDER BY revenue DESC, sales_count DESC
+  `).all(params).map((row) => {
+    const salesCount = Number(row.sales_count || 0);
+    const revenue = money(row.revenue);
+    return {
+      seller_id: row.seller_id || null,
+      seller_name: row.seller_name,
+      sales_count: salesCount,
+      items_sold: quantity(row.items_sold),
+      revenue,
+      profit: money(row.profit),
+      average_ticket: salesCount > 0 ? money(revenue / salesCount) : 0
+    };
+  });
+}
+
+function buildInventorySummary() {
   const summary = db.prepare(`
     SELECT
       COUNT(*) AS products_count,
-      COALESCE(SUM(stock_quantity), 0) AS units_in_stock,
-      COALESCE(SUM(stock_quantity * cost_price), 0) AS inventory_value,
-      COALESCE(SUM(CASE WHEN stock_quantity <= min_stock THEN 1 ELSE 0 END), 0) AS low_stock_count,
-      COALESCE(SUM(CASE WHEN published = 1 AND active = 1 THEN 1 ELSE 0 END), 0) AS published_count
+      COALESCE(SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END), 0) AS active_products_count,
+      COALESCE(SUM(CASE WHEN published = 1 AND active = 1 THEN 1 ELSE 0 END), 0) AS published_count,
+      COALESCE(SUM(CASE WHEN active = 1 THEN stock_quantity ELSE 0 END), 0) AS units_in_stock,
+      COALESCE(SUM(CASE WHEN active = 1 THEN stock_quantity * cost_price ELSE 0 END), 0) AS inventory_value,
+      COALESCE(SUM(CASE WHEN active = 1 THEN stock_quantity * price ELSE 0 END), 0) AS inventory_sale_value,
+      COALESCE(SUM(CASE WHEN active = 1 AND stock_quantity <= 0 THEN 1 ELSE 0 END), 0) AS out_of_stock_count
     FROM library_products
-    WHERE active = 1
   `).get();
-
-  const financial = db.prepare(`
-    SELECT
-      COUNT(*) AS sales_count,
-      COALESCE(SUM(total), 0) AS revenue,
-      COALESCE(SUM(total_cost), 0) AS cost,
-      COALESCE(SUM(gross_profit), 0) AS gross_profit
-    FROM library_sales
+  const slow = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM library_products p
+    WHERE p.active = 1
+      AND NOT EXISTS (
+        SELECT 1
+        FROM library_sale_items i
+        JOIN library_sales s ON s.id = i.sale_id
+        WHERE i.product_id = p.id
+          AND date(s.created_at) >= date('now', '-3 hours', '-90 days')
+      )
   `).get();
-
+  const costValue = money(summary.inventory_value);
+  const saleValue = money(summary.inventory_sale_value);
   return {
     products_count: Number(summary.products_count || 0),
-    units_in_stock: quantity(summary.units_in_stock),
-    inventory_value: money(summary.inventory_value),
-    low_stock_count: Number(summary.low_stock_count || 0),
+    active_products_count: Number(summary.active_products_count || 0),
     published_count: Number(summary.published_count || 0),
-    sales_count: Number(financial.sales_count || 0),
-    revenue: money(financial.revenue),
-    cost: money(financial.cost),
-    gross_profit: money(financial.gross_profit),
-    margin: financial.revenue > 0 ? money((financial.gross_profit / financial.revenue) * 100) : 0
+    units_in_stock: quantity(summary.units_in_stock),
+    inventory_value: costValue,
+    inventory_sale_value: saleValue,
+    potential_profit: money(saleValue - costValue),
+    out_of_stock_count: Number(summary.out_of_stock_count || 0),
+    no_movement_count: Number(slow.total || 0)
+  };
+}
+
+function getDashboard({ startDate, endDate } = {}) {
+  const range = {
+    startDate: normalizeDateOnly(startDate),
+    endDate: normalizeDateOnly(endDate)
+  };
+  const inventory = buildInventorySummary();
+  const financial = financialSummary(range);
+  const previousRange = calculatePreviousRange(range);
+  const previous = previousRange ? financialSummary(previousRange) : null;
+  const products = listProductPerformance(range);
+  const byQuantity = [...products].sort((a, b) => b.quantity_sold - a.quantity_sold).slice(0, 8);
+  const byRevenue = [...products].sort((a, b) => b.revenue - a.revenue).slice(0, 8);
+  const byProfit = [...products].sort((a, b) => b.profit - a.profit).slice(0, 8);
+  const stockExtremes = db.prepare(`
+    SELECT id, name, stock_quantity, price, cost_price
+    FROM library_products
+    WHERE active = 1
+    ORDER BY stock_quantity ASC, name COLLATE NOCASE ASC
+  `).all().map((row) => ({
+    id: row.id,
+    name: row.name,
+    stock_quantity: quantity(row.stock_quantity),
+    price: money(row.price),
+    cost_price: money(row.cost_price)
+  }));
+  const productsWithoutSales = db.prepare(`
+    SELECT p.id, p.name, COALESCE(c.name, 'Sem categoria') AS category, p.stock_quantity
+    FROM library_products p
+    LEFT JOIN library_categories c ON c.id = p.category_id
+    WHERE p.active = 1
+      AND NOT EXISTS (
+        SELECT 1
+        FROM library_sale_items i
+        JOIN library_sales s ON s.id = i.sale_id
+        WHERE i.product_id = p.id
+          ${range.startDate ? "AND date(s.created_at) >= date(@startDate)" : ''}
+          ${range.endDate ? "AND date(s.created_at) <= date(@endDate)" : ''}
+      )
+    ORDER BY p.name COLLATE NOCASE ASC
+    LIMIT 8
+  `).all(range).map((row) => ({ ...row, stock_quantity: quantity(row.stock_quantity) }));
+
+  return {
+    period: range,
+    previous_period: previousRange,
+    ...inventory,
+    ...financial,
+    previous,
+    comparisons: previous ? {
+      revenue: percentChange(financial.revenue, previous.revenue),
+      gross_profit: percentChange(financial.gross_profit, previous.gross_profit),
+      sales_count: percentChange(financial.sales_count, previous.sales_count),
+      average_ticket: percentChange(financial.average_ticket, previous.average_ticket),
+      items_sold: percentChange(financial.items_sold, previous.items_sold)
+    } : {},
+    series: listFinancialSeries(range),
+    top_products: byQuantity,
+    top_revenue_products: byRevenue,
+    top_profit_products: byProfit,
+    best_selling_product: byQuantity[0] || null,
+    highest_revenue_product: byRevenue[0] || null,
+    highest_profit_product: byProfit[0] || null,
+    lowest_stock_product: stockExtremes[0] || null,
+    highest_stock_product: stockExtremes[stockExtremes.length - 1] || null,
+    products_without_sales: productsWithoutSales,
+    seller_performance: listSellerPerformance(range)
+  };
+}
+
+function normalizeSpreadsheetParams(params = {}) {
+  const page = Math.max(Number(params.page || 1), 1);
+  const pageSize = Math.min(Math.max(Number(params.page_size || params.pageSize || 50), 1), 200);
+  const sort = [
+    'data_hora',
+    'produto',
+    'quantidade',
+    'receita',
+    'custo',
+    'lucro',
+    'margem'
+  ].includes(params.sort) ? params.sort : 'data_hora';
+  const order = String(params.order || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+  return {
+    page,
+    pageSize,
+    sort,
+    order,
+    q: String(params.q || '').trim(),
+    startDate: normalizeDateOnly(params.start_date || params.startDate),
+    endDate: normalizeDateOnly(params.end_date || params.endDate),
+    productId: params.product_id || params.productId ? Number(params.product_id || params.productId) : null,
+    categoryId: params.category_id || params.categoryId ? Number(params.category_id || params.categoryId) : null,
+    sellerId: params.seller_id || params.sellerId ? Number(params.seller_id || params.sellerId) : null,
+    paymentMethod: String(params.payment_method || params.paymentMethod || '').trim(),
+    status: String(params.status || '').trim()
+  };
+}
+
+function buildSpreadsheetWhere(filters = {}) {
+  const where = [];
+  const params = {};
+  if (filters.startDate) {
+    where.push('date(s.created_at) >= date(@startDate)');
+    params.startDate = filters.startDate;
+  }
+  if (filters.endDate) {
+    where.push('date(s.created_at) <= date(@endDate)');
+    params.endDate = filters.endDate;
+  }
+  if (filters.productId) {
+    where.push('i.product_id = @productId');
+    params.productId = filters.productId;
+  }
+  if (filters.categoryId) {
+    where.push('p.category_id = @categoryId');
+    params.categoryId = filters.categoryId;
+  }
+  if (filters.sellerId) {
+    where.push('s.seller_id = @sellerId');
+    params.sellerId = filters.sellerId;
+  }
+  if (filters.paymentMethod) {
+    where.push('s.payment_method = @paymentMethod');
+    params.paymentMethod = filters.paymentMethod;
+  }
+  if (filters.status && !['completed', 'concluida', 'concluida'].includes(filters.status)) {
+    where.push('1 = 0');
+  }
+  if (filters.q) {
+    where.push("(i.item_name LIKE @q OR CAST(s.id AS TEXT) LIKE @q OR COALESCE(ls.display_name, u.name, '') LIKE @q)");
+    params.q = `%${filters.q}%`;
+  }
+  return { where, params };
+}
+
+function spreadsheetSelect() {
+  return `
+    SELECT
+      i.id,
+      s.created_at AS data_hora,
+      date(s.created_at) AS data,
+      time(s.created_at) AS hora,
+      s.id AS venda_id,
+      i.product_id,
+      i.item_name AS produto,
+      COALESCE(c.name, 'Sem categoria') AS categoria,
+      i.quantity AS quantidade,
+      i.unit_price AS preco_unitario,
+      i.line_total AS valor_bruto,
+      0 AS desconto,
+      i.line_total AS valor_liquido,
+      i.unit_cost AS custo_unitario,
+      i.quantity * i.unit_cost AS custo_total,
+      i.line_profit AS lucro,
+      CASE WHEN i.line_total > 0 THEN (i.line_profit / i.line_total) * 100 ELSE 0 END AS margem,
+      s.payment_method AS forma_pagamento,
+      COALESCE(ls.display_name, u.name, 'Sem vendedor') AS vendedor,
+      'completed' AS status
+    FROM library_sale_items i
+    JOIN library_sales s ON s.id = i.sale_id
+    LEFT JOIN library_products p ON p.id = i.product_id
+    LEFT JOIN library_categories c ON c.id = p.category_id
+    LEFT JOIN library_sellers ls ON ls.id = s.seller_id
+    LEFT JOIN users u ON u.id = s.sold_by
+  `;
+}
+
+function mapSpreadsheetRow(row) {
+  return {
+    ...row,
+    quantidade: quantity(row.quantidade),
+    preco_unitario: money(row.preco_unitario),
+    valor_bruto: money(row.valor_bruto),
+    desconto: money(row.desconto),
+    valor_liquido: money(row.valor_liquido),
+    custo_unitario: money(row.custo_unitario),
+    custo_total: money(row.custo_total),
+    lucro: money(row.lucro),
+    margem: money(row.margem)
+  };
+}
+
+function getLibrarySpreadsheet(params = {}) {
+  const filters = normalizeSpreadsheetParams(params);
+  const { where, params: queryParams } = buildSpreadsheetWhere(filters);
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const sortMap = {
+    data_hora: 'datetime(data_hora)',
+    produto: 'produto COLLATE NOCASE',
+    quantidade: 'quantidade',
+    receita: 'valor_liquido',
+    custo: 'custo_total',
+    lucro: 'lucro',
+    margem: 'margem'
+  };
+  const orderBy = `${sortMap[filters.sort]} ${filters.order}, venda_id DESC, id DESC`;
+  const total = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM (${spreadsheetSelect()} ${whereSql}) report_rows
+  `).get(queryParams).total;
+  const rows = db.prepare(`
+    SELECT *
+    FROM (${spreadsheetSelect()} ${whereSql}) report_rows
+    ORDER BY ${orderBy}
+    LIMIT @limit OFFSET @offset
+  `).all({ ...queryParams, limit: filters.pageSize, offset: (filters.page - 1) * filters.pageSize }).map(mapSpreadsheetRow);
+  const allRows = db.prepare(`
+    SELECT *
+    FROM (${spreadsheetSelect()} ${whereSql}) report_rows
+  `).all(queryParams).map(mapSpreadsheetRow);
+  return {
+    rows,
+    summary: summarizeSpreadsheetRows(allRows),
+    pagination: {
+      page: filters.page,
+      page_size: filters.pageSize,
+      total: Number(total || 0),
+      total_pages: Math.max(Math.ceil(Number(total || 0) / filters.pageSize), 1)
+    }
+  };
+}
+
+function normalizeStockSpreadsheetParams(params = {}) {
+  const page = Math.max(Number(params.page || 1), 1);
+  const pageSize = Math.min(Math.max(Number(params.page_size || params.pageSize || 50), 1), 200);
+  const sort = [
+    'produto',
+    'categoria',
+    'quantidade',
+    'custo_unitario',
+    'valor_estoque',
+    'preco_venda',
+    'valor_potencial',
+    'lucro_potencial',
+    'ultima_movimentacao'
+  ].includes(params.sort) ? params.sort : 'produto';
+  const order = String(params.order || 'asc').toLowerCase() === 'desc' ? 'DESC' : 'ASC';
+  return {
+    page,
+    pageSize,
+    sort,
+    order,
+    q: String(params.q || '').trim(),
+    categoryId: params.category_id || params.categoryId ? Number(params.category_id || params.categoryId) : null,
+    active: String(params.active || '').trim(),
+    published: String(params.published || '').trim(),
+    stock: String(params.stock || '').trim()
+  };
+}
+
+function buildStockSpreadsheetWhere(filters = {}) {
+  const where = [];
+  const params = {};
+  if (filters.q) {
+    where.push('(p.name LIKE @q OR p.sku LIKE @q)');
+    params.q = `%${filters.q}%`;
+  }
+  if (filters.categoryId) {
+    where.push('p.category_id = @categoryId');
+    params.categoryId = filters.categoryId;
+  }
+  if (filters.active === 'active') where.push('p.active = 1');
+  if (filters.active === 'inactive') where.push('p.active = 0');
+  if (filters.published === 'published') where.push('p.published = 1');
+  if (filters.published === 'draft') where.push('p.published = 0');
+  if (filters.stock === 'in_stock') where.push('p.stock_quantity > 0');
+  if (filters.stock === 'out_of_stock') where.push('p.stock_quantity <= 0');
+  return { where, params };
+}
+
+function stockSpreadsheetSelect() {
+  return `
+    SELECT
+      p.id,
+      p.name AS produto,
+      p.sku,
+      COALESCE(c.name, 'Sem categoria') AS categoria,
+      CASE WHEN p.active = 1 THEN 'Ativo' ELSE 'Inativo' END AS status,
+      CASE WHEN p.published = 1 THEN 'Publicado' ELSE 'Nao publicado' END AS publicado,
+      p.stock_quantity AS quantidade,
+      p.cost_price AS custo_unitario,
+      p.stock_quantity * p.cost_price AS valor_estoque,
+      p.price AS preco_venda,
+      p.stock_quantity * p.price AS valor_potencial,
+      (p.stock_quantity * p.price) - (p.stock_quantity * p.cost_price) AS lucro_potencial,
+      (
+        SELECT MAX(m.created_at)
+        FROM library_inventory_movements m
+        WHERE m.product_id = p.id
+      ) AS ultima_movimentacao,
+      p.created_at AS cadastrado_em
+    FROM library_products p
+    LEFT JOIN library_categories c ON c.id = p.category_id
+  `;
+}
+
+function mapStockSpreadsheetRow(row) {
+  return {
+    ...row,
+    quantidade: quantity(row.quantidade),
+    custo_unitario: money(row.custo_unitario),
+    valor_estoque: money(row.valor_estoque),
+    preco_venda: money(row.preco_venda),
+    valor_potencial: money(row.valor_potencial),
+    lucro_potencial: money(row.lucro_potencial)
+  };
+}
+
+function summarizeStockRows(rows = []) {
+  const activeRows = rows.filter((row) => row.status !== 'Inativo');
+  const stockValue = money(activeRows.reduce((sum, row) => sum + Number(row.valor_estoque || 0), 0));
+  const potentialValue = money(activeRows.reduce((sum, row) => sum + Number(row.valor_potencial || 0), 0));
+  return {
+    products_count: activeRows.length,
+    units_in_stock: quantity(activeRows.reduce((sum, row) => sum + Number(row.quantidade || 0), 0)),
+    inventory_value: stockValue,
+    inventory_sale_value: potentialValue,
+    potential_profit: money(potentialValue - stockValue)
+  };
+}
+
+function getLibraryStockSpreadsheet(params = {}) {
+  const filters = normalizeStockSpreadsheetParams(params);
+  const { where, params: queryParams } = buildStockSpreadsheetWhere(filters);
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const sortMap = {
+    produto: 'produto COLLATE NOCASE',
+    categoria: 'categoria COLLATE NOCASE',
+    quantidade: 'quantidade',
+    custo_unitario: 'custo_unitario',
+    valor_estoque: 'valor_estoque',
+    preco_venda: 'preco_venda',
+    valor_potencial: 'valor_potencial',
+    lucro_potencial: 'lucro_potencial',
+    ultima_movimentacao: 'datetime(ultima_movimentacao)'
+  };
+  const orderBy = `${sortMap[filters.sort]} ${filters.order}, produto COLLATE NOCASE ASC, id ASC`;
+  const total = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM (${stockSpreadsheetSelect()} ${whereSql}) stock_rows
+  `).get(queryParams).total;
+  const rows = db.prepare(`
+    SELECT *
+    FROM (${stockSpreadsheetSelect()} ${whereSql}) stock_rows
+    ORDER BY ${orderBy}
+    LIMIT @limit OFFSET @offset
+  `).all({ ...queryParams, limit: filters.pageSize, offset: (filters.page - 1) * filters.pageSize }).map(mapStockSpreadsheetRow);
+  const allRows = db.prepare(`
+    SELECT *
+    FROM (${stockSpreadsheetSelect()} ${whereSql}) stock_rows
+  `).all(queryParams).map(mapStockSpreadsheetRow);
+  return {
+    rows,
+    summary: summarizeStockRows(allRows),
+    pagination: {
+      page: filters.page,
+      page_size: filters.pageSize,
+      total: Number(total || 0),
+      total_pages: Math.max(Math.ceil(Number(total || 0) / filters.pageSize), 1)
+    }
+  };
+}
+
+function listLibraryStockSpreadsheetRows(params = {}) {
+  const filters = normalizeStockSpreadsheetParams({ ...params, page: 1, page_size: 100000 });
+  const { where, params: queryParams } = buildStockSpreadsheetWhere(filters);
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  return db.prepare(`
+    SELECT *
+    FROM (${stockSpreadsheetSelect()} ${whereSql}) stock_rows
+    ORDER BY produto COLLATE NOCASE ASC, id ASC
+  `).all(queryParams).map(mapStockSpreadsheetRow);
+}
+
+function getLibraryStockExportData(params = {}) {
+  const rows = listLibraryStockSpreadsheetRows(params);
+  return {
+    rows,
+    summary: summarizeStockRows(rows)
+  };
+}
+
+function listLibrarySpreadsheetRows(params = {}) {
+  const filters = normalizeSpreadsheetParams({ ...params, page: 1, page_size: 100000 });
+  const { where, params: queryParams } = buildSpreadsheetWhere(filters);
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  return db.prepare(`
+    SELECT *
+    FROM (${spreadsheetSelect()} ${whereSql}) report_rows
+    ORDER BY datetime(data_hora) DESC, venda_id DESC, id DESC
+  `).all(queryParams).map(mapSpreadsheetRow);
+}
+
+function summarizeSpreadsheetRows(rows = []) {
+  const saleIds = new Set(rows.map((row) => row.venda_id));
+  const revenue = money(rows.reduce((sum, row) => sum + Number(row.valor_liquido || 0), 0));
+  const cost = money(rows.reduce((sum, row) => sum + Number(row.custo_total || 0), 0));
+  const profit = money(rows.reduce((sum, row) => sum + Number(row.lucro || 0), 0));
+  const salesCount = saleIds.size;
+  return {
+    revenue,
+    cost,
+    gross_profit: profit,
+    margin: revenue > 0 ? money((profit / revenue) * 100) : 0,
+    sales_count: salesCount,
+    items_sold: quantity(rows.reduce((sum, row) => sum + Number(row.quantidade || 0), 0)),
+    average_ticket: salesCount > 0 ? money(revenue / salesCount) : 0
+  };
+}
+
+function getLibrarySpreadsheetOptions() {
+  return {
+    products: db.prepare('SELECT id, name FROM library_products WHERE active = 1 ORDER BY name COLLATE NOCASE ASC').all(),
+    categories: db.prepare('SELECT id, name FROM library_categories WHERE active = 1 ORDER BY name COLLATE NOCASE ASC').all(),
+    sellers: db.prepare('SELECT id, display_name FROM library_sellers ORDER BY display_name COLLATE NOCASE ASC').all(),
+    payment_methods: db.prepare('SELECT DISTINCT payment_method FROM library_sales ORDER BY payment_method COLLATE NOCASE ASC').all().map((row) => row.payment_method).filter(Boolean),
+    statuses: ['completed']
+  };
+}
+
+function getLibraryExportData(params = {}) {
+  const rows = listLibrarySpreadsheetRows(params);
+  const summary = summarizeSpreadsheetRows(rows);
+  const productRows = rows.reduce((acc, row) => {
+    const key = row.product_id;
+    if (!acc[key]) acc[key] = { product_id: row.product_id, product_name: row.produto, quantity_sold: 0, revenue: 0, profit: 0 };
+    acc[key].quantity_sold += Number(row.quantidade || 0);
+    acc[key].revenue += Number(row.valor_liquido || 0);
+    acc[key].profit += Number(row.lucro || 0);
+    return acc;
+  }, {});
+  const sellerRows = rows.reduce((acc, row) => {
+    const key = row.vendedor || 'Sem vendedor';
+    if (!acc[key]) acc[key] = { seller_name: key, sales: new Set(), items_sold: 0, revenue: 0, profit: 0 };
+    acc[key].sales.add(row.venda_id);
+    acc[key].items_sold += Number(row.quantidade || 0);
+    acc[key].revenue += Number(row.valor_liquido || 0);
+    acc[key].profit += Number(row.lucro || 0);
+    return acc;
+  }, {});
+  return {
+    rows,
+    summary,
+    top_products: Object.values(productRows)
+      .map((row) => ({ ...row, quantity_sold: quantity(row.quantity_sold), revenue: money(row.revenue), profit: money(row.profit) }))
+      .sort((a, b) => b.quantity_sold - a.quantity_sold)
+      .slice(0, 10),
+    top_revenue_products: Object.values(productRows)
+      .map((row) => ({ ...row, quantity_sold: quantity(row.quantity_sold), revenue: money(row.revenue), profit: money(row.profit) }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10),
+    seller_performance: Object.values(sellerRows)
+      .map((row) => {
+        const salesCount = row.sales.size;
+        const revenue = money(row.revenue);
+        return {
+          seller_name: row.seller_name,
+          sales_count: salesCount,
+          items_sold: quantity(row.items_sold),
+          revenue,
+          profit: money(row.profit),
+          average_ticket: salesCount > 0 ? money(revenue / salesCount) : 0
+        };
+      })
+      .sort((a, b) => b.revenue - a.revenue)
   };
 }
 
@@ -1214,6 +1847,11 @@ module.exports = {
   getAssistedRequest,
   getDashboard,
   getProduct,
+  getLibraryExportData,
+  getLibrarySpreadsheet,
+  getLibrarySpreadsheetOptions,
+  getLibraryStockExportData,
+  getLibraryStockSpreadsheet,
   getPublicAssistedRequest,
   getPublicProduct,
   getSaleById,

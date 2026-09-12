@@ -21,6 +21,8 @@ const {
   createSale,
   getAssistedRequest,
   getDashboard,
+  getLibrarySpreadsheet,
+  getLibraryStockSpreadsheet,
   getPublicAssistedRequest,
   getSellerMonitoring,
   listAssistedRequests,
@@ -547,7 +549,7 @@ test('carrinho exige identificacao valida do cliente e aceita registros antigos 
   assert.equal(oldRequest.customer_contact, null);
 });
 
-test('dashboard financeiro calcula receita, custo, lucro e alertas da Livraria', () => {
+test('dashboard financeiro calcula receita, custo, lucro e estoque atual da Livraria sem baixo estoque', () => {
   const category = createCategory({ name: 'Papelaria' });
   saveProduct({
     name: 'Caderno vocacional',
@@ -565,7 +567,129 @@ test('dashboard financeiro calcula receita, custo, lucro e alertas da Livraria',
   assert.equal(dashboard.revenue >= 50, true);
   assert.equal(dashboard.cost >= 20, true);
   assert.equal(dashboard.gross_profit >= 30, true);
-  assert.equal(dashboard.low_stock_count >= 1, true);
+  assert.equal(dashboard.active_products_count >= 1, true);
+  assert.equal(dashboard.units_in_stock >= 1, true);
+  assert.equal(Object.hasOwn(dashboard, 'low_stock_count'), false);
+});
+
+test('dashboard avancado e planilha filtram vendas da Livraria sem misturar Lanchonete', () => {
+  const category = createCategory({ name: 'Relatorios Livraria' });
+  const product = saveProduct({
+    name: 'Livro Relatorio Livraria',
+    category_id: category.id,
+    sku: 'TEST-REPORT-LIB',
+    price: 40,
+    cost_price: 15,
+    stock_quantity: 10,
+    min_stock: 1,
+    published: true
+  });
+  const sale = createSale({
+    customer_name: 'Cliente Relatorio',
+    payment_method: 'pix',
+    idempotency_key: 'sale-report-library-001',
+    items: [{ product_id: product.id, quantity: 2 }]
+  }, { id: 1 });
+  const dashboard = getDashboard({ startDate: String(sale.created_at).slice(0, 10), endDate: String(sale.created_at).slice(0, 10) });
+  const sheet = getLibrarySpreadsheet({ q: 'Livro Relatorio Livraria', page_size: 10 });
+
+  assert.equal(sheet.rows.length, 1);
+  assert.equal(sheet.summary.revenue, 80);
+  assert.equal(sheet.summary.cost, 30);
+  assert.equal(sheet.summary.gross_profit, 50);
+  assert.equal(sheet.summary.sales_count, 1);
+  assert.equal(dashboard.top_products.some((item) => item.product_name === 'Livro Relatorio Livraria'), true);
+  assert.equal(sheet.rows.every((row) => row.produto.includes('Livraria')), true);
+});
+
+test('planilha de estoque da Livraria calcula valores e filtra sem estoque minimo', () => {
+  const category = createCategory({ name: 'Estoque Planilha' });
+  const product = saveProduct({
+    name: 'Livro Estoque Planilha',
+    category_id: category.id,
+    sku: 'TEST-STOCK-SHEET',
+    price: 50,
+    cost_price: 20,
+    stock_quantity: 3,
+    min_stock: 99,
+    published: true
+  });
+  saveProduct({
+    name: 'Livro Sem Estoque Planilha',
+    category_id: category.id,
+    sku: 'TEST-STOCK-ZERO',
+    price: 30,
+    cost_price: 10,
+    stock_quantity: 0,
+    min_stock: 99,
+    published: false
+  });
+
+  const sheet = getLibraryStockSpreadsheet({ q: 'Planilha', category_id: category.id, page_size: 10, sort: 'valor_potencial', order: 'desc' });
+  const zeroStock = getLibraryStockSpreadsheet({ category_id: category.id, stock: 'out_of_stock', page_size: 10 });
+  const row = sheet.rows.find((item) => item.id === product.id);
+
+  assert.equal(Boolean(row), true);
+  assert.equal(row.quantidade, 3);
+  assert.equal(row.valor_estoque, 60);
+  assert.equal(row.valor_potencial, 150);
+  assert.equal(row.lucro_potencial, 90);
+  assert.equal(Object.hasOwn(row, 'min_stock'), false);
+  assert.equal(sheet.summary.inventory_value >= 60, true);
+  assert.equal(zeroStock.rows.some((item) => item.produto === 'Livro Sem Estoque Planilha'), true);
+});
+
+test('financeiro visualiza cliente e contato dos atendimentos mas nao edita', async () => {
+  const category = createCategory({ name: 'Financeiro Atendimento' });
+  const product = saveProduct({
+    name: 'Livro Financeiro Atendimento',
+    category_id: category.id,
+    sku: 'TEST-FIN-REQ',
+    price: 33,
+    cost_price: 12,
+    stock_quantity: 5,
+    min_stock: 1,
+    published: true
+  });
+  saveSeller({ display_name: 'Seller Financeiro Atendimento', whatsapp_phone: '5581999000401', active: true, eligible: true });
+  const request = createAssistedRequest({
+    idempotency_key: 'cart-finance-read-001',
+    customer_name: 'Cliente Financeiro',
+    customer_contact: '5581999880401',
+    items: [{ product_id: product.id, quantity: 1 }]
+  });
+  const userId = db.prepare(`
+    INSERT INTO users (name, username, email, password_hash, role)
+    VALUES ('Financeiro Atendimento', 'finance-request-read', 'finance-request-read@example.local', 'x', 'finance')
+  `).run().lastInsertRowid;
+  const token = signUser(db.prepare('SELECT * FROM users WHERE id = ?').get(userId));
+  const app = express();
+  app.use(express.json());
+  app.use('/api/library', libraryRoutes);
+  app.use(errorHandler);
+  const server = app.listen(0, '127.0.0.1');
+
+  try {
+    const baseUrl = await new Promise((resolve) => {
+      if (server.listening) return resolve(`http://127.0.0.1:${server.address().port}`);
+      return server.once('listening', () => resolve(`http://127.0.0.1:${server.address().port}`));
+    });
+    const readResponse = await fetch(`${baseUrl}/api/library/requests/${request.reference}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const readPayload = await readResponse.json();
+    const writeResponse = await fetch(`${baseUrl}/api/library/requests/${request.reference}/cancel`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    assert.equal(readResponse.status, 200);
+    assert.equal(readPayload.customer_name, 'Cliente Financeiro');
+    assert.equal(readPayload.customer_contact, '5581999880401');
+    assert.equal(writeResponse.status, 403);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test('link de WhatsApp usa telefone configurado e mensagem codificada', () => {
