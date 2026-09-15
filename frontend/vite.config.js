@@ -11,6 +11,8 @@ export default defineConfig({
       'intranet.lanchoneteshalom',
       'intranet.lanchoneteshalom.local',
       '100.82.234.51',
+      '192.168.15.2',
+      '192.168.15.3',
       '192.168.15.9'
     ]
   },
@@ -21,6 +23,8 @@ export default defineConfig({
       'intranet.lanchoneteshalom',
       'intranet.lanchoneteshalom.local',
       '100.82.234.51',
+      '192.168.15.2',
+      '192.168.15.3',
       '192.168.15.9'
     ]
   }

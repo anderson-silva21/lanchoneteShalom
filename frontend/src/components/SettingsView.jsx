@@ -7,6 +7,7 @@ const roleOptions = [
   { value: 'cashier', label: 'Caixa' },
   { value: 'manager', label: 'Gerente' },
   { value: 'finance', label: 'Financeiro' },
+  { value: 'library', label: 'Livraria' },
   { value: 'admin', label: 'Admin' }
 ]
 
@@ -19,6 +20,7 @@ const permissionRows = [
   ['inventory', 'Inventario', ['admin', 'manager', 'finance']],
   ['sheet', 'Planilha', ['admin', 'manager', 'cashier', 'finance']],
   ['reports', 'Relatorios', ['admin', 'finance']],
+  ['library', 'Livraria', ['admin', 'finance', 'library']],
   ['settings', 'Sistema', ['admin']]
 ]
 

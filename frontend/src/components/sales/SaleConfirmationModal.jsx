@@ -29,8 +29,10 @@ export function SaleConfirmationModal({
   const loadingRef = useRef(loading)
   const onCloseRef = useRef(onClose)
 
-  loadingRef.current = loading
-  onCloseRef.current = onClose
+  useEffect(() => {
+    loadingRef.current = loading
+    onCloseRef.current = onClose
+  }, [loading, onClose])
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow

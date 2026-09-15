@@ -1,0 +1,443 @@
+import { ArrowLeft, Minus, MessageCircle, Plus, Search, ShoppingCart, Store, Trash2, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { api } from '../services/api'
+import { money } from '../utils/formatters'
+
+const cartStorageKey = 'shalom_library_cart_v1'
+
+function productImage(product) {
+  return product.images?.[0]?.url || '/shalom.png'
+}
+
+function productIdFromPath() {
+  const match = window.location.pathname.match(/\/livraria\/produto\/(\d+)/)
+  return match ? Number(match[1]) : null
+}
+
+function newRequestKey() {
+  if (window.crypto?.randomUUID) return window.crypto.randomUUID()
+  return `library-cart-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function readStoredCart() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(cartStorageKey) || '{}')
+    return {
+      items: Array.isArray(parsed.items) ? parsed.items : [],
+      requestKey: parsed.requestKey || newRequestKey(),
+      requestReference: parsed.requestReference || ''
+    }
+  } catch {
+    return { items: [], requestKey: newRequestKey(), requestReference: '' }
+  }
+}
+
+const emptyCustomer = { customer_name: '', customer_contact: '' }
+const mobileControlsQuery = '(max-width: 1023px)'
+
+function useMobileScrollVisibility({ locked = false, threshold = 14, topOffset = 28 } = {}) {
+  const [hidden, setHidden] = useState(false)
+  const hiddenRef = useRef(false)
+  const lockedRef = useRef(locked)
+  const previousScrollY = useRef(0)
+  const frameId = useRef(0)
+
+  const setControlsHidden = useCallback((nextHidden) => {
+    if (hiddenRef.current === nextHidden) return
+    hiddenRef.current = nextHidden
+    setHidden(nextHidden)
+  }, [])
+
+  useEffect(() => {
+    lockedRef.current = locked
+    if (locked) setControlsHidden(false)
+  }, [locked, setControlsHidden])
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(mobileControlsQuery)
+    previousScrollY.current = Math.max(window.scrollY || window.pageYOffset || 0, 0)
+
+    function showControls() {
+      setControlsHidden(false)
+    }
+
+    function handleBreakpointChange() {
+      previousScrollY.current = Math.max(window.scrollY || window.pageYOffset || 0, 0)
+      if (!mediaQuery.matches) showControls()
+    }
+
+    function handleScroll() {
+      if (frameId.current) return
+
+      frameId.current = window.requestAnimationFrame(() => {
+        frameId.current = 0
+
+        const currentScrollY = Math.max(window.scrollY || window.pageYOffset || 0, 0)
+        const delta = currentScrollY - previousScrollY.current
+
+        if (!mediaQuery.matches || lockedRef.current || currentScrollY <= topOffset) {
+          previousScrollY.current = currentScrollY
+          showControls()
+          return
+        }
+
+        if (Math.abs(delta) < threshold) return
+
+        previousScrollY.current = currentScrollY
+        setControlsHidden(delta > 0)
+      })
+    }
+
+    handleBreakpointChange()
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    mediaQuery.addEventListener('change', handleBreakpointChange)
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll)
+      mediaQuery.removeEventListener('change', handleBreakpointChange)
+      if (frameId.current) window.cancelAnimationFrame(frameId.current)
+    }
+  }, [setControlsHidden, threshold, topOffset])
+
+  return hidden
+}
+
+export function PublicLibraryStorefront() {
+  const [categories, setCategories] = useState([])
+  const [products, setProducts] = useState([])
+  const [selectedProduct, setSelectedProduct] = useState(null)
+  const [filters, setFilters] = useState({ q: '', category_id: '', sort: '' })
+  const [cart, setCart] = useState(readStoredCart)
+  const [cartOpen, setCartOpen] = useState(false)
+  const [identifyOpen, setIdentifyOpen] = useState(false)
+  const [customer, setCustomer] = useState(emptyCustomer)
+  const [loading, setLoading] = useState(true)
+  const [sending, setSending] = useState(false)
+  const [message, setMessage] = useState('')
+  const [controlsFocused, setControlsFocused] = useState(false)
+  const selectedId = useMemo(() => productIdFromPath(), [])
+  const controlsHidden = useMobileScrollVisibility({
+    locked: controlsFocused || cartOpen || identifyOpen,
+    threshold: 14,
+    topOffset: 28
+  })
+
+  useEffect(() => {
+    localStorage.setItem(cartStorageKey, JSON.stringify(cart))
+  }, [cart])
+
+  const loadProducts = useCallback(async () => {
+    setLoading(true)
+    setMessage('')
+    try {
+      const [nextCategories, nextProducts] = await Promise.all([
+        api.publicLibraryCategories(),
+        api.publicLibraryProducts(filters)
+      ])
+      setCategories(nextCategories)
+      setProducts(nextProducts)
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [filters])
+
+  useEffect(() => {
+    loadProducts()
+  }, [loadProducts])
+
+  useEffect(() => {
+    if (!selectedId) return
+    api.publicLibraryProduct(selectedId)
+      .then(setSelectedProduct)
+      .catch((err) => setMessage(err.message))
+  }, [selectedId])
+
+  const cartCount = cart.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
+  const cartTotal = cart.items.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0)
+
+  function addToCart(product, amount = 1) {
+    setCart((current) => {
+      const existing = current.items.find((item) => Number(item.product_id) === Number(product.id))
+      const nextItems = existing
+        ? current.items.map((item) => Number(item.product_id) === Number(product.id) ? { ...item, quantity: Number(item.quantity) + amount } : item)
+        : [...current.items, {
+          product_id: product.id,
+          name: product.name,
+          price: product.price,
+          image_url: productImage(product),
+          quantity: amount
+        }]
+      return { items: nextItems, requestKey: newRequestKey(), requestReference: '' }
+    })
+    setMessage(`${product.name} foi adicionado ao carrinho.`)
+  }
+
+  function changeQuantity(productId, quantity) {
+    const nextQuantity = Number(quantity)
+    setCart((current) => ({
+      items: current.items
+        .map((item) => Number(item.product_id) === Number(productId) ? { ...item, quantity: nextQuantity } : item)
+        .filter((item) => Number(item.quantity) > 0),
+      requestKey: newRequestKey(),
+      requestReference: ''
+    }))
+  }
+
+  function clearCart() {
+    setCart({ items: [], requestKey: newRequestKey(), requestReference: '' })
+  }
+
+  async function continueWhatsApp() {
+    if (!cart.items.length) return
+    setSending(true)
+    setMessage('')
+    try {
+      const request = await api.createPublicLibraryRequest({
+        idempotency_key: cart.requestKey,
+        customer_name: customer.customer_name,
+        customer_contact: customer.customer_contact,
+        items: cart.items.map((item) => ({ product_id: item.product_id, quantity: item.quantity }))
+      })
+      setCart((current) => ({ ...current, requestReference: request.reference }))
+      setIdentifyOpen(false)
+      if (request.whatsapp_url) {
+        window.open(request.whatsapp_url, '_blank', 'noopener,noreferrer')
+        setMessage(`Carrinho ${request.reference} enviado para atendimento.`)
+      } else {
+        setMessage(`Carrinho ${request.reference} salvo. A Livraria ainda nao possui vendedor disponivel para WhatsApp.`)
+      }
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  function showProduct(product) {
+    window.history.pushState({}, '', `/livraria/produto/${product.id}`)
+    setSelectedProduct(product)
+  }
+
+  function backToCatalog() {
+    window.history.pushState({}, '', '/livraria')
+    setSelectedProduct(null)
+  }
+
+  const visibleProduct = selectedProduct
+
+  function handleControlsBlur(event) {
+    const currentTarget = event.currentTarget
+    window.setTimeout(() => {
+      setControlsFocused(currentTarget.contains(document.activeElement))
+    }, 0)
+  }
+
+  return (
+    <div className="min-h-screen bg-[#f7f5ef] text-shalom-deep">
+      <header
+        className={`sticky top-0 z-30 border-b border-shalom-gold/35 bg-white/95 px-4 py-4 backdrop-blur transition-[transform,opacity,box-shadow] duration-300 ease-out motion-reduce:transition-none sm:px-6 lg:translate-y-0 lg:opacity-100 lg:px-10 ${controlsHidden ? '-translate-y-full opacity-0 shadow-none' : 'translate-y-0 opacity-100 shadow-sm'}`}
+        onBlurCapture={handleControlsBlur}
+        onFocusCapture={() => setControlsFocused(true)}
+      >
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <img className="h-12 w-auto max-w-[190px] object-contain sm:h-14" src="/livraria-shalom-logo.webp" alt="Livraria Shalom" />
+              <div>
+                <h1 className="sr-only">Livraria Shalom</h1>
+              </div>
+            </div>
+            <button type="button" className="mission-btn mission-btn-primary relative inline-flex items-center gap-2 px-3 py-2 font-semibold lg:hidden" onClick={() => setCartOpen(true)}>
+              <ShoppingCart size={18} />
+              {cartCount}
+            </button>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <label className="relative min-w-0 sm:w-80">
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-shalom-blue/60" size={18} />
+              <input className="mission-input w-full rounded-xl py-3 pl-10 pr-3" value={filters.q} onChange={(event) => setFilters((current) => ({ ...current, q: event.target.value }))} placeholder="Buscar produto" aria-label="Buscar produto" />
+            </label>
+            <select className="mission-input rounded-xl px-3 py-3" value={filters.category_id} onChange={(event) => setFilters((current) => ({ ...current, category_id: event.target.value }))} aria-label="Filtrar por categoria">
+              <option value="">Todas</option>
+              {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select>
+            <select className="mission-input rounded-xl px-3 py-3" value={filters.sort} onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value }))} aria-label="Ordenar por preco">
+              <option value="">Ordem padrao</option>
+              <option value="price_asc">Menor preco</option>
+              <option value="price_desc">Maior preco</option>
+            </select>
+            <button type="button" className="mission-btn mission-btn-primary hidden items-center gap-2 px-4 py-3 font-semibold lg:inline-flex" onClick={() => setCartOpen(true)}>
+              <ShoppingCart size={18} />
+              Carrinho ({cartCount})
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-10">
+        {message ? <p className="mb-4 rounded-xl border border-shalom-gold/40 bg-white px-4 py-3 text-sm font-medium" aria-live="polite">{message}</p> : null}
+
+        {visibleProduct ? (
+          <section className="grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <button type="button" className="mission-btn col-span-full inline-flex w-fit items-center gap-2 border border-shalom-gold/40 bg-white px-4 py-2 text-sm font-semibold" onClick={backToCatalog}>
+              <ArrowLeft size={16} />
+              Voltar
+            </button>
+            <div className="overflow-hidden rounded-xl border border-shalom-gold/35 bg-white">
+              <img className="h-full max-h-[520px] min-h-[320px] w-full object-cover" src={productImage(visibleProduct)} alt={visibleProduct.images?.[0]?.alt_text || visibleProduct.name} />
+            </div>
+            <article className="flex flex-col justify-center">
+              <p className="text-sm font-semibold text-shalom-orange">{visibleProduct.category || 'Livraria'}</p>
+              <h2 className="mt-2 font-display text-3xl font-semibold">{visibleProduct.name}</h2>
+              <p className="mt-4 text-3xl font-semibold">{money.format(visibleProduct.price)}</p>
+              <p className="mt-3 font-medium text-shalom-blue">{visibleProduct.available ? 'Disponivel para atendimento pela Livraria' : 'Consulte disponibilidade com a Livraria'}</p>
+              {visibleProduct.description ? <p className="mt-5 leading-7 text-shalom-deep/78">{visibleProduct.description}</p> : null}
+              <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+                <button type="button" className="mission-btn mission-btn-primary inline-flex items-center justify-center gap-2 px-5 py-3 font-semibold" onClick={() => addToCart(visibleProduct)}>
+                  <ShoppingCart size={19} />
+                  Adicionar ao carrinho
+                </button>
+                <button type="button" className="mission-btn border border-shalom-gold/40 bg-white px-5 py-3 font-semibold" onClick={() => setCartOpen(true)}>
+                  Ver carrinho
+                </button>
+              </div>
+            </article>
+          </section>
+        ) : (
+          <>
+            <section className="mb-6 flex flex-col gap-2">
+              <p className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.14em] text-shalom-orange">
+                <Store size={17} />
+                Catalogo publico
+              </p>
+              <h2 className="font-display text-3xl font-semibold">Produtos selecionados para atendimento pela Livraria</h2>
+            </section>
+            {loading ? (
+              <p className="rounded-xl border border-shalom-gold/35 bg-white px-4 py-5 font-medium">Carregando catalogo...</p>
+            ) : (
+              <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {products.map((product) => (
+                  <article key={product.id} className="mission-card overflow-hidden bg-white">
+                    <button type="button" className="block w-full text-left" onClick={() => showProduct(product)}>
+                      <img className="h-56 w-full object-cover" src={productImage(product)} alt={product.images?.[0]?.alt_text || product.name} />
+                      <div className="p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-shalom-orange">{product.category || 'Livraria'}</p>
+                        <h3 className="mt-2 min-h-12 font-display text-lg font-semibold">{product.name}</h3>
+                        <p className="mt-3 text-xl font-semibold">{money.format(product.price)}</p>
+                        <p className="mt-2 text-sm font-medium text-shalom-blue">{product.available ? 'Disponivel' : 'Consulte disponibilidade'}</p>
+                      </div>
+                    </button>
+                    <div className="grid gap-2 px-4 pb-4">
+                      <button type="button" className="mission-btn mission-btn-primary inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" onClick={() => addToCart(product)}>
+                        <ShoppingCart size={18} />
+                        Adicionar
+                      </button>
+                      <button type="button" className="mission-btn border border-shalom-gold/35 bg-white px-4 py-2 text-sm font-semibold" onClick={() => showProduct(product)}>
+                        Ver detalhes
+                      </button>
+                    </div>
+                  </article>
+                ))}
+                {!products.length ? <p className="col-span-full rounded-xl border border-shalom-gold/35 bg-white px-4 py-5 font-medium">Nenhum produto publicado encontrado.</p> : null}
+              </section>
+            )}
+          </>
+        )}
+      </main>
+
+      {cartOpen ? (
+        <div className="fixed inset-0 z-40 bg-black/35" role="dialog" aria-modal="true" aria-labelledby="library-cart-title">
+          <aside className="ml-auto flex h-full w-full max-w-lg flex-col bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-shalom-gold/25 px-4 py-4">
+              <div>
+                <h2 id="library-cart-title" className="font-display text-xl font-semibold">Carrinho da Livraria</h2>
+                {cart.requestReference ? <p className="text-sm font-semibold text-shalom-orange">Referencia {cart.requestReference}</p> : null}
+              </div>
+              <button type="button" className="mission-btn border border-line/80 p-2" onClick={() => setCartOpen(false)} aria-label="Fechar carrinho">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-4">
+              {cart.items.map((item) => (
+                <article key={item.product_id} className="grid grid-cols-[72px_1fr] gap-3 border-b border-line/70 py-3">
+                  <img className="h-20 w-20 rounded-lg object-cover" src={item.image_url || '/shalom.png'} alt="" />
+                  <div className="min-w-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="font-semibold">{item.name}</h3>
+                        <p className="text-sm text-shalom-blue">{money.format(item.price)} un.</p>
+                      </div>
+                      <button type="button" className="mission-btn border border-line/80 p-2" onClick={() => changeQuantity(item.product_id, 0)} aria-label="Remover item">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <div className="grid grid-cols-[36px_64px_36px] overflow-hidden rounded-lg border border-line/80">
+                        <button type="button" className="flex h-10 items-center justify-center" onClick={() => changeQuantity(item.product_id, Number(item.quantity) - 1)} aria-label="Diminuir quantidade">
+                          <Minus size={15} />
+                        </button>
+                        <input className="h-10 border-x border-line/80 text-center font-semibold" type="number" min="1" value={item.quantity} onChange={(event) => changeQuantity(item.product_id, event.target.value)} aria-label="Quantidade" />
+                        <button type="button" className="flex h-10 items-center justify-center" onClick={() => changeQuantity(item.product_id, Number(item.quantity) + 1)} aria-label="Aumentar quantidade">
+                          <Plus size={15} />
+                        </button>
+                      </div>
+                      <strong>{money.format(Number(item.price || 0) * Number(item.quantity || 0))}</strong>
+                    </div>
+                  </div>
+                </article>
+              ))}
+              {!cart.items.length ? (
+                <div className="rounded-xl border border-shalom-gold/35 bg-shalom-cream/70 px-4 py-8 text-center">
+                  <ShoppingCart className="mx-auto text-shalom-orange" size={32} />
+                  <p className="mt-3 font-semibold">Seu carrinho esta vazio.</p>
+                </div>
+              ) : null}
+            </div>
+            <div className="border-t border-shalom-gold/25 px-4 py-4">
+              <div className="mb-4 flex items-center justify-between text-lg font-semibold">
+                <span>Total estimado</span>
+                <span>{money.format(cartTotal)}</span>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button type="button" className="mission-btn border border-line/80 px-4 py-3 font-semibold disabled:opacity-55" onClick={clearCart} disabled={!cart.items.length || sending}>Limpar</button>
+                <button type="button" className="mission-btn mission-btn-primary inline-flex items-center justify-center gap-2 px-4 py-3 font-semibold disabled:opacity-55" onClick={() => setIdentifyOpen(true)} disabled={!cart.items.length || sending}>
+                  <MessageCircle size={18} />
+                  {sending ? 'Abrindo...' : 'Continuar pelo WhatsApp'}
+                </button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      ) : null}
+
+      {identifyOpen ? (
+        <div className="dashboard-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="library-identify-title">
+          <form className="dashboard-modal-panel mission-panel p-4" onSubmit={(event) => {
+            event.preventDefault()
+            continueWhatsApp()
+          }}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 id="library-identify-title" className="font-display text-xl font-semibold">Identificacao para atendimento</h2>
+                <p className="mission-muted mt-1 text-sm">A Livraria usa esses dados apenas para recuperar seu carrinho e continuar o atendimento.</p>
+              </div>
+              <button type="button" className="mission-btn border border-line/80 p-2" onClick={() => setIdentifyOpen(false)} aria-label="Fechar identificacao">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mt-4 grid gap-3">
+              <input className="mission-input px-3 py-3" value={customer.customer_name} onChange={(event) => setCustomer({ ...customer, customer_name: event.target.value })} placeholder="Seu nome" required minLength={2} maxLength={120} />
+              <input className="mission-input px-3 py-3" value={customer.customer_contact} onChange={(event) => setCustomer({ ...customer, customer_contact: event.target.value })} placeholder="WhatsApp com DDD" required minLength={10} maxLength={24} inputMode="tel" />
+            </div>
+            <button type="submit" className="mission-btn mission-btn-primary mt-4 inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" disabled={sending}>
+              <MessageCircle size={18} />
+              {sending ? 'Abrindo WhatsApp...' : 'Falar com a Livraria'}
+            </button>
+          </form>
+        </div>
+      ) : null}
+    </div>
+  )
+}
