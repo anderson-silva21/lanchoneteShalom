@@ -299,6 +299,407 @@ test('venda distribuida consome multiplos lotes quando o primeiro nao basta', ()
   assert.equal(updatedProduct.stock_quantity, 1);
 });
 
+test('venda com quantidade maior que o estoque e recusada sem alterar o banco', () => {
+  const product = createProduct({
+    name: 'Produto com estoque limitado',
+    sale_price: 10,
+    cost_price: 4
+  });
+
+  addStock({
+    productId: product.id,
+    quantity: 2,
+    expirationDate: '2026-12-20',
+    userId
+  });
+
+  const salesBefore = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM sales
+  `).get().total;
+
+  const saleItemsBefore = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM sale_items
+  `).get().total;
+
+  const saleMovementsBefore = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM inventory_movements
+    WHERE type = 'sale'
+  `).get().total;
+
+  assert.throws(
+    () => createSale({
+      payment_method: 'pix',
+      items: [
+        {
+          product_id: product.id,
+          quantity: 3
+        }
+      ]
+    }, { id: userId }),
+    /estoque suficiente/
+  );
+
+  const updatedProduct = db.prepare(`
+    SELECT stock_quantity
+    FROM products
+    WHERE id = ?
+  `).get(product.id);
+
+  const batches = getBatches(product.id);
+
+  const salesAfter = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM sales
+  `).get().total;
+
+  const saleItemsAfter = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM sale_items
+  `).get().total;
+
+  const saleMovementsAfter = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM inventory_movements
+    WHERE type = 'sale'
+  `).get().total;
+
+  assert.equal(updatedProduct.stock_quantity, 2);
+  assert.equal(batches.length, 1);
+  assert.equal(batches[0].quantity_available, 2);
+
+  assert.equal(salesAfter, salesBefore);
+  assert.equal(saleItemsAfter, saleItemsBefore);
+  assert.equal(saleMovementsAfter, saleMovementsBefore);
+});
+
+test('falha em um item da venda faz rollback completo dos itens processados anteriormente', () => {
+  const productA = createProduct({
+    name: 'Produto A rollback',
+    sale_price: 10,
+    cost_price: 4
+  });
+
+  const productB = createProduct({
+    name: 'Produto B rollback',
+    sale_price: 8,
+    cost_price: 3
+  });
+
+  addStock({
+    productId: productA.id,
+    quantity: 10,
+    expirationDate: '2026-12-20',
+    userId
+  });
+
+  addStock({
+    productId: productB.id,
+    quantity: 1,
+    expirationDate: '2026-12-20',
+    userId
+  });
+
+  assert.throws(
+    () => createSale({
+      payment_method: 'pix',
+      items: [
+        {
+          product_id: productA.id,
+          quantity: 2
+        },
+        {
+          product_id: productB.id,
+          quantity: 5
+        }
+      ]
+    }, { id: userId }),
+    /estoque suficiente/
+  );
+
+  const productAAfter = db.prepare(`
+    SELECT stock_quantity
+    FROM products
+    WHERE id = ?
+  `).get(productA.id);
+
+  const productBAfter = db.prepare(`
+    SELECT stock_quantity
+    FROM products
+    WHERE id = ?
+  `).get(productB.id);
+
+  assert.equal(productAAfter.stock_quantity, 10);
+  assert.equal(productBAfter.stock_quantity, 1);
+
+  const batchesA = getBatches(productA.id);
+  const batchesB = getBatches(productB.id);
+
+  assert.equal(batchesA[0].quantity_available, 10);
+  assert.equal(batchesB[0].quantity_available, 1);
+
+  const sales = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM sales
+  `).get();
+
+  const saleItems = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM sale_items
+  `).get();
+
+  const saleMovements = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM inventory_movements
+    WHERE type = 'sale'
+  `).get();
+
+  assert.equal(sales.total, 0);
+  assert.equal(saleItems.total, 0);
+  assert.equal(saleMovements.total, 0);
+});
+test('falha no estoque de um produto do combo faz rollback completo da venda', () => {
+  const pastel = createProduct({
+    name: 'Pastel rollback',
+    sale_price: 8,
+    cost_price: 3
+  })
+
+  const coxinha = createProduct({
+    name: 'Coxinha rollback',
+    sale_price: 7,
+    cost_price: 2.5
+  })
+
+  addStock({
+    productId: pastel.id,
+    quantity: 10,
+    expirationDate: '2026-12-20',
+    userId
+  })
+
+  addStock({
+    productId: coxinha.id,
+    quantity: 2,
+    expirationDate: '2026-12-20',
+    userId
+  })
+
+  const combo = createCombo({
+    name: 'Combo rollback',
+    sale_price: 18,
+    is_promotion: false,
+    items: [
+      {
+        product_id: pastel.id,
+        quantity: 1
+      },
+      {
+        product_id: coxinha.id,
+        quantity: 2
+      }
+    ]
+  }, userId)
+
+  const coxinhaBatch = getBatches(coxinha.id)[0]
+
+  updateBatch({
+    batchId: coxinhaBatch.id,
+    quantityAvailable: 1,
+    userId
+  })
+
+  // Confirma que o estoque realmente caiu para 1 antes da venda.
+  const coxinhaBeforeSale = db.prepare(`
+    SELECT stock_quantity
+    FROM products
+    WHERE id = ?
+  `).get(coxinha.id)
+
+  const coxinhaBatchesBeforeSale = getBatches(coxinha.id)
+
+  assert.equal(coxinhaBeforeSale.stock_quantity, 1)
+  assert.equal(coxinhaBatchesBeforeSale[0].quantity_available, 1)
+
+  // Confirma que o combo continua exigindo 2 coxinhas.
+  const comboItemsBeforeSale = db.prepare(`
+    SELECT product_id, quantity
+    FROM combo_items
+    WHERE combo_id = ?
+  `).all(combo.id)
+
+  const pastelComboItem = comboItemsBeforeSale.find(
+    (item) => item.product_id === pastel.id
+  )
+
+  const coxinhaComboItem = comboItemsBeforeSale.find(
+    (item) => item.product_id === coxinha.id
+  )
+
+  assert.ok(pastelComboItem)
+  assert.ok(coxinhaComboItem)
+
+  assert.equal(pastelComboItem.quantity, 1)
+  assert.equal(coxinhaComboItem.quantity, 2)
+
+  // Guarda o estado do banco antes da tentativa de venda.
+  const salesBefore = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM sales
+  `).get().total
+
+  const saleItemsBefore = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM sale_items
+  `).get().total
+
+  const saleMovementsBefore = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM inventory_movements
+    WHERE type = 'sale'
+  `).get().total
+
+  // O combo precisa de 2 coxinhas, mas existe somente 1.
+  assert.throws(
+    () => createSale({
+      payment_method: 'pix',
+      items: [
+        {
+          combo_id: combo.id,
+          quantity: 1
+        }
+      ]
+    }, { id: userId }),
+    (error) => {
+      assert.equal(error.status, 400)
+      assert.match(error.message, /estoque suficiente/)
+      return true
+    }
+  )
+
+  // Depois da falha, nenhum estoque pode ter sido alterado.
+  const pastelAfter = db.prepare(`
+    SELECT stock_quantity
+    FROM products
+    WHERE id = ?
+  `).get(pastel.id)
+
+  const coxinhaAfter = db.prepare(`
+    SELECT stock_quantity
+    FROM products
+    WHERE id = ?
+  `).get(coxinha.id)
+
+  const pastelBatchesAfter = getBatches(pastel.id)
+  const coxinhaBatchesAfter = getBatches(coxinha.id)
+
+  assert.equal(pastelAfter.stock_quantity, 10)
+  assert.equal(coxinhaAfter.stock_quantity, 1)
+
+  assert.equal(pastelBatchesAfter[0].quantity_available, 10)
+  assert.equal(coxinhaBatchesAfter[0].quantity_available, 1)
+
+  // Também não pode sobrar nenhuma parte da venda no banco.
+  const salesAfter = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM sales
+  `).get().total
+
+  const saleItemsAfter = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM sale_items
+  `).get().total
+
+  const saleMovementsAfter = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM inventory_movements
+    WHERE type = 'sale'
+  `).get().total
+
+  assert.equal(salesAfter, salesBefore)
+  assert.equal(saleItemsAfter, saleItemsBefore)
+  assert.equal(saleMovementsAfter, saleMovementsBefore)
+})
+test('produto repetido na mesma venda faz rollback completo quando a quantidade total excede o estoque', () => {
+  const product = createProduct({
+    name: 'Produto repetido rollback',
+    sale_price: 10,
+    cost_price: 4
+  })
+
+  addStock({
+    productId: product.id,
+    quantity: 3,
+    expirationDate: '2026-12-20',
+    userId
+  })
+
+  const salesBefore = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM sales
+  `).get().total
+
+  const saleItemsBefore = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM sale_items
+  `).get().total
+
+  const saleMovementsBefore = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM inventory_movements
+    WHERE type = 'sale'
+  `).get().total
+
+  assert.throws(
+    () => createSale({
+      payment_method: 'pix',
+      items: [
+        {
+          product_id: product.id,
+          quantity: 2
+        },
+        {
+          product_id: product.id,
+          quantity: 2
+        }
+      ]
+    }, { id: userId }),
+    /estoque suficiente/
+  )
+
+  const productAfter = db.prepare(`
+    SELECT stock_quantity
+    FROM products
+    WHERE id = ?
+  `).get(product.id)
+
+  const batchesAfter = getBatches(product.id)
+
+  assert.equal(productAfter.stock_quantity, 3)
+  assert.equal(batchesAfter[0].quantity_available, 3)
+
+  const salesAfter = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM sales
+  `).get().total
+
+  const saleItemsAfter = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM sale_items
+  `).get().total
+
+  const saleMovementsAfter = db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM inventory_movements
+    WHERE type = 'sale'
+  `).get().total
+
+  assert.equal(salesAfter, salesBefore)
+  assert.equal(saleItemsAfter, saleItemsBefore)
+  assert.equal(saleMovementsAfter, saleMovementsBefore)
+})
 test('exclusao de venda remove faturamento e estorna estoque consumido', () => {
   const product = createProduct({ name: 'Agua', sale_price: 4, cost_price: 1.5 });
   addStock({ productId: product.id, quantity: 5, expirationDate: '2026-12-20', userId });
