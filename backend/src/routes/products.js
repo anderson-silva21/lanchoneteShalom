@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 const { db } = require('../db');
 const { authenticate, requireRole } = require('../middleware/auth');
@@ -8,6 +9,21 @@ const { deleteProductSafely } = require('../services/productService');
 const { recordAudit } = require('../services/auditService');
 
 const router = express.Router();
+
+function positiveIntEnv(name, fallback) {
+  const value = Number(process.env[name]);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+const productMutationRateLimit = rateLimit({
+  windowMs: positiveIntEnv('PRODUCT_RATE_LIMIT_WINDOW_MINUTES', 1) * 60 * 1000,
+  limit: positiveIntEnv('PRODUCT_RATE_LIMIT_MAX_REQUESTS', 120),
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: {
+    message: 'Muitas requisicoes de produtos. Tente novamente em instantes.'
+  }
+});
 
 const optionalDateSchema = z.preprocess(
   (value) => value === '' || value === undefined ? null : value,
@@ -450,7 +466,7 @@ router.patch('/:id', requireScreen('products'), (req, res) => {
   return res.json(updated);
 });
 
-router.patch('/:id/pos-visibility', requireRole('admin', 'finance'), (req, res) => {
+router.patch('/:id/pos-visibility', requireRole('admin', 'finance'), productMutationRateLimit, (req, res) => {
   const payload = z.object({ visible_in_pos: z.coerce.boolean() }).parse(req.body);
   const current = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
   if (!current) return res.status(404).json({ message: 'Produto nao encontrado.' });
