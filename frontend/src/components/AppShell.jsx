@@ -208,7 +208,7 @@ export function AppShell({ activeView, setActiveView, user, darkMode, setDarkMod
           </div>
         </header>
 
-        <main className="animate-rise h-[calc(100dvh_-_8.2rem_-_env(safe-area-inset-bottom))] min-w-0 overflow-y-auto px-3 pb-6 pt-4 scrollbar-thin sm:px-5 lg:h-auto lg:overflow-visible lg:px-8 lg:pb-5 lg:pt-5">{children}</main>
+        <main className="h-[calc(100dvh_-_8.2rem_-_env(safe-area-inset-bottom))] min-w-0 overflow-y-auto px-3 pb-6 pt-4 scrollbar-thin sm:px-5 lg:h-auto lg:overflow-visible lg:px-8 lg:pb-5 lg:pt-5">{children}</main>
       </div>
 
       {mobileMenuOpen ? (

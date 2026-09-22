@@ -64,6 +64,27 @@ function formatCurrency(value) {
   return `R$ ${money(value).toFixed(2).replace('.', ',')}`;
 }
 
+const installmentPaymentMethods = new Set(['cartao_credito', 'credito', 'cartao']);
+
+function normalizePaymentInstallments(paymentMethod, value = 1) {
+  const installments = Math.trunc(Number(value || 1));
+  if (!Number.isInteger(installments) || installments < 1 || installments > 24) {
+    throw createHttpError('Quantidade de parcelas invalida.', 400);
+  }
+  if (installments > 1 && !installmentPaymentMethods.has(String(paymentMethod || '').trim())) {
+    throw createHttpError('Esta forma de pagamento nao permite parcelamento.', 400);
+  }
+  return installments;
+}
+
+function buildInstallmentPlan(total, installments = 1) {
+  const count = Math.max(Math.trunc(Number(installments || 1)), 1);
+  const totalCents = Math.round(money(total) * 100);
+  const base = Math.floor(totalCents / count);
+  const remainder = totalCents % count;
+  return Array.from({ length: count }, (_, index) => money((base + (index < remainder ? 1 : 0)) / 100));
+}
+
 function generateSku(name) {
   const prefix = normalizeSku(name).slice(0, 8).padEnd(3, 'X');
   const rows = db.prepare('SELECT sku FROM library_products WHERE sku LIKE ?').all(`${prefix}-%`);
@@ -971,6 +992,8 @@ function getSaleById(id) {
   sale.total = money(sale.total);
   sale.total_cost = money(sale.total_cost);
   sale.gross_profit = money(sale.gross_profit);
+  sale.payment_installments = Number(sale.payment_installments || 1);
+  sale.installment_amounts = buildInstallmentPlan(sale.total, sale.payment_installments);
   sale.items = listSaleItemsBySaleIds([sale.id])[sale.id] || [];
   return sale;
 }
@@ -984,12 +1007,15 @@ const createSaleTransaction = db.transaction((payload, user) => {
 
   const items = payload.items || [];
   if (!items.length) throw createHttpError('Inclua ao menos um item na venda da Livraria.', 400);
+  const paymentMethod = String(payload.payment_method || 'manual').trim() || 'manual';
+  const paymentInstallments = normalizePaymentInstallments(paymentMethod, payload.payment_installments || payload.paymentInstallments);
 
   const saleId = db.prepare(`
-    INSERT INTO library_sales (payment_method, customer_name, notes, idempotency_key, assisted_request_id, seller_id, sold_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO library_sales (payment_method, payment_installments, customer_name, notes, idempotency_key, assisted_request_id, seller_id, sold_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    String(payload.payment_method || 'manual').trim() || 'manual',
+    paymentMethod,
+    paymentInstallments,
     normalizeText(payload.customer_name),
     normalizeText(payload.notes),
     idempotencyKey,
@@ -1073,7 +1099,9 @@ function listSales({ limit = 100 } = {}) {
     ...sale,
     total: money(sale.total),
     total_cost: money(sale.total_cost),
-    gross_profit: money(sale.gross_profit)
+    gross_profit: money(sale.gross_profit),
+    payment_installments: Number(sale.payment_installments || 1),
+    installment_amounts: buildInstallmentPlan(sale.total, sale.payment_installments)
   }));
   const itemsBySale = listSaleItemsBySaleIds(sales.map((sale) => sale.id));
   return sales.map((sale) => ({ ...sale, items: itemsBySale[sale.id] || [] }));
@@ -1090,6 +1118,7 @@ function convertAssistedRequest(reference, payload = {}, user) {
 
     const saleId = createSaleTransaction({
       payment_method: payload.payment_method || 'manual',
+      payment_installments: payload.payment_installments || payload.paymentInstallments || 1,
       customer_name: normalizeText(payload.customer_name) || request.customer_name || `Atendimento ${request.reference}`,
       notes: normalizeText(payload.notes) || [`Pedido assistido ${request.reference}`, request.customer_contact ? `Contato: ${request.customer_contact}` : ''].filter(Boolean).join(' - '),
       idempotency_key: `library-assisted-${request.reference}`,
@@ -1510,6 +1539,7 @@ function spreadsheetSelect() {
       i.line_profit AS lucro,
       CASE WHEN i.line_total > 0 THEN (i.line_profit / i.line_total) * 100 ELSE 0 END AS margem,
       s.payment_method AS forma_pagamento,
+      s.payment_installments AS parcelas,
       COALESCE(ls.display_name, u.name, 'Sem vendedor') AS vendedor,
       'completed' AS status
     FROM library_sale_items i

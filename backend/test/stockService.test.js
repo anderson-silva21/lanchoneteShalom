@@ -12,7 +12,7 @@ const { getDashboardAnalytics } = require('../src/services/analyticsService');
 const { createCombo, deleteComboSafely, listActiveCombos } = require('../src/services/comboService');
 const { createEvent, updateEvent } = require('../src/services/eventsService');
 const { deleteProductSafely } = require('../src/services/productService');
-const { confirmSalePayment, createSale, deleteSale, getCashClosing, getSaleById, listPendingPayments } = require('../src/services/salesService');
+const { confirmSalePayment, createSale, deleteSale, getCashClosing, getSaleById, listPendingPayments, updateSaleItemCost } = require('../src/services/salesService');
 const { addStock, getProductStock, updateBatch } = require('../src/services/stockService');
 const { buildTelegramAlertMessage } = require('../src/services/telegramAlertService');
 
@@ -207,6 +207,41 @@ test('compra de estoque pode atualizar custo e valor de venda do produto', () =>
   assert.equal(updatedProduct.cost_price, 3.75);
   assert.equal(updatedProduct.sale_price, 12.5);
   assert.equal(updatedProduct.stock_quantity, 5);
+});
+
+test('correcao de custo historico recalcula lucro sem alterar preco vendido ou custo atual', () => {
+  const product = createProduct({ name: 'Bolo de pote', cost_price: 8, sale_price: 10 });
+  addStock({ productId: product.id, quantity: 3, expirationDate: '2026-12-20', userId });
+
+  const sale = createSale({
+    payment_method: 'pix',
+    items: [{ product_id: product.id, quantity: 1 }]
+  }, { id: userId });
+  const saleItem = sale.items[0];
+
+  const result = updateSaleItemCost({
+    saleId: sale.id,
+    itemId: saleItem.id,
+    unitCost: 5,
+    userId,
+    reason: 'Nota fiscal corrigida'
+  });
+  const updatedSale = getSaleById(sale.id);
+  const updatedProduct = db.prepare('SELECT cost_price, sale_price FROM products WHERE id = ?').get(product.id);
+  const correction = db.prepare('SELECT * FROM sale_item_cost_corrections WHERE sale_item_id = ?').get(saleItem.id);
+
+  assert.equal(result.previous_unit_cost, 8);
+  assert.equal(result.new_unit_cost, 5);
+  assert.equal(updatedSale.total, 10);
+  assert.equal(updatedSale.estimated_profit, 5);
+  assert.equal(updatedSale.items[0].unit_price, 10);
+  assert.equal(updatedSale.items[0].unit_cost, 5);
+  assert.equal(updatedSale.items[0].line_profit, 5);
+  assert.equal(updatedProduct.cost_price, 8);
+  assert.equal(updatedProduct.sale_price, 10);
+  assert.equal(correction.previous_unit_cost, 8);
+  assert.equal(correction.new_unit_cost, 5);
+  assert.equal(correction.changed_by, userId);
 });
 
 test('entrada de estoque por doacao zera custo do produto', () => {

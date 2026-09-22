@@ -69,6 +69,8 @@ CREATE TABLE IF NOT EXISTS products (
   internal_code TEXT NOT NULL UNIQUE,
   unit TEXT NOT NULL DEFAULT 'unidade',
   expiration_date TEXT,
+  image_url TEXT,
+  visible_in_pos INTEGER NOT NULL DEFAULT 1,
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
@@ -128,6 +130,17 @@ CREATE TABLE IF NOT EXISTS sale_items (
   unit_cost REAL NOT NULL DEFAULT 0,
   line_total REAL NOT NULL,
   line_profit REAL NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS sale_item_cost_corrections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+  sale_item_id INTEGER NOT NULL REFERENCES sale_items(id) ON DELETE CASCADE,
+  previous_unit_cost REAL NOT NULL,
+  new_unit_cost REAL NOT NULL,
+  changed_by INTEGER REFERENCES users(id),
+  reason TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
 );
 
 CREATE TABLE IF NOT EXISTS inventory_movements (
@@ -202,6 +215,7 @@ CREATE INDEX IF NOT EXISTS idx_sales_created_at ON sales(created_at);
 CREATE INDEX IF NOT EXISTS idx_sales_event ON sales(event_id);
 CREATE INDEX IF NOT EXISTS idx_cash_closings_date ON cash_closings(closing_date, event_id);
 CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
+CREATE INDEX IF NOT EXISTS idx_sale_item_cost_corrections_item ON sale_item_cost_corrections(sale_item_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_movements_product_date ON inventory_movements(product_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_movements_batch_date ON inventory_movements(batch_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_events_date_name ON events(event_date, name);
@@ -260,6 +274,7 @@ CREATE TABLE IF NOT EXISTS library_sales (
   total_cost REAL NOT NULL DEFAULT 0 CHECK (total_cost >= 0),
   gross_profit REAL NOT NULL DEFAULT 0,
   payment_method TEXT NOT NULL DEFAULT 'manual',
+  payment_installments INTEGER NOT NULL DEFAULT 1 CHECK (payment_installments >= 1),
   customer_name TEXT,
   notes TEXT,
   idempotency_key TEXT UNIQUE,

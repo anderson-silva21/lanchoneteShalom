@@ -1,6 +1,7 @@
 export const emptyLibraryRequestSaleDraft = {
   customer_name: '',
   payment_method: 'manual',
+  payment_installments: 1,
   notes: ''
 }
 

@@ -3,6 +3,9 @@
 @tailwind utilities;
 
 :root {
+  --mobile-bottom-nav-height: calc(4.35rem + env(safe-area-inset-bottom));
+  --pos-action-height: 3.5rem;
+  --pos-action-gap: 0.75rem;
   color: #142f53;
   background: #f8f8f8;
   font-family: Inter, Poppins, ui-sans-serif, system-ui, sans-serif;
@@ -10,6 +13,95 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.pos-action-bar {
+  bottom: calc(var(--mobile-bottom-nav-height) + var(--pos-action-gap));
+}
+
+.pos-view-with-action {
+  padding-bottom: calc(var(--pos-action-height) + (var(--pos-action-gap) * 2));
+}
+
+@media (min-width: 768px) {
+  .pos-action-bar {
+    bottom: 1rem;
+  }
+
+  .pos-view-with-action {
+    padding-bottom: 0;
+  }
+}
+
+@media (min-width: 1024px) {
+  .pos-catalog-view {
+    display: flex;
+    min-height: calc(100dvh - 9rem);
+    flex-direction: column;
+  }
+
+  .pos-product-grid {
+    grid-template-columns: repeat(auto-fill, minmax(190px, 240px));
+    justify-content: start;
+    gap: 16px;
+    border: 0;
+    padding-top: 24px;
+  }
+
+  .pos-catalog-header {
+    position: static;
+    background: transparent;
+    backdrop-filter: none;
+  }
+
+  .pos-product-card {
+    min-height: 290px;
+    border: 1px solid rgba(231, 223, 205, 0.9);
+    border-radius: 6px;
+    padding: 16px;
+    background: rgba(255, 255, 255, 0.64);
+    cursor: pointer;
+  }
+
+  .pos-product-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(242, 124, 35, 0.5);
+    background: rgba(255, 247, 223, 0.72);
+    box-shadow: 0 10px 24px rgba(20, 47, 83, 0.08);
+  }
+
+  .pos-product-card-limit {
+    cursor: default;
+  }
+
+  .pos-product-card-limit:hover {
+    transform: none;
+  }
+
+  .pos-product-card-selected {
+    border-color: rgba(24, 78, 127, 0.55);
+  }
+
+  .pos-product-visual {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 4 / 3;
+    font-size: 16px;
+  }
+
+  .pos-product-name {
+    min-height: 40px;
+  }
+
+  .dark .pos-product-card {
+    border-color: rgba(250, 224, 136, 0.14);
+    background: rgba(10, 34, 62, 0.58);
+  }
+
+  .dark .pos-product-card:hover {
+    border-color: rgba(250, 224, 136, 0.4);
+    background: rgba(14, 42, 74, 0.78);
+  }
 }
 
 * {

@@ -14,6 +14,11 @@ const optionalDateSchema = z.preprocess(
   z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).nullable()
 );
 
+const optionalImageUrlSchema = z.preprocess(
+  (value) => value === '' || value === undefined ? null : value,
+  z.string().trim().url().refine((value) => ['http:', 'https:'].includes(new URL(value).protocol), 'Use uma URL HTTP ou HTTPS.').nullable()
+);
+
 const productSchema = z.object({
   name: z.string().trim().min(2),
   category: z.string().trim().min(2),
@@ -26,6 +31,8 @@ const productSchema = z.object({
   internal_code: z.string().trim().min(2).optional(),
   unit: z.string().trim().min(1),
   expiration_date: optionalDateSchema,
+  image_url: optionalImageUrlSchema,
+  visible_in_pos: z.coerce.boolean().default(true),
   active: z.coerce.number().int().min(0).max(1).default(1)
 });
 
@@ -167,7 +174,7 @@ function normalizeImportRow(row) {
 router.use(authenticate);
 
 router.get('/', (req, res) => {
-  const { q = '', category = '', status = '' } = req.query;
+  const { q = '', category = '', status = '', catalog = '' } = req.query;
   const params = [];
   const where = ['active = 1'];
 
@@ -183,6 +190,7 @@ router.get('/', (req, res) => {
 
   if (status === 'low') where.push('stock_quantity <= min_stock');
   if (status === 'critical') where.push('stock_quantity <= min_stock * 0.5');
+  if (catalog === 'pos') where.push('visible_in_pos = 1 AND sale_price > 0');
 
   const products = db.prepare(`
     SELECT *,
@@ -266,11 +274,15 @@ router.get('/:id/history', requireScreen('products'), (req, res) => {
 
 router.post('/', requireScreen('products'), (req, res) => {
   const payload = productSchema.parse(req.body);
+  if (!payload.visible_in_pos && !['admin', 'finance'].includes(req.user.role)) {
+    return res.status(403).json({ message: 'Sem permissao para alterar a visibilidade no PDV.' });
+  }
   const product = {
     ...payload,
     internal_code: generateProductCode(payload.category),
     cost_price: payload.is_donation ? 0 : payload.cost_price,
     is_donation: payload.is_donation ? 1 : 0,
+    visible_in_pos: payload.visible_in_pos ? 1 : 0,
     stock_quantity: 0,
     expiration_date: null
   };
@@ -279,9 +291,9 @@ router.post('/', requireScreen('products'), (req, res) => {
     ensureProductCategory(product.category);
     const result = db.prepare(`
       INSERT INTO products
-        (name, category, cost_price, is_donation, sale_price, stock_quantity, min_stock, supplier, internal_code, unit, expiration_date, active)
+        (name, category, cost_price, is_donation, sale_price, stock_quantity, min_stock, supplier, internal_code, unit, expiration_date, image_url, visible_in_pos, active)
       VALUES
-        (@name, @category, @cost_price, @is_donation, @sale_price, @stock_quantity, @min_stock, @supplier, @internal_code, @unit, @expiration_date, @active)
+        (@name, @category, @cost_price, @is_donation, @sale_price, @stock_quantity, @min_stock, @supplier, @internal_code, @unit, @expiration_date, @image_url, @visible_in_pos, @active)
     `).run(product);
 
     if (roundQuantity(payload.stock_quantity) > 0) {
@@ -350,6 +362,7 @@ router.post('/import', requireScreen('products'), (req, res) => {
         internal_code: generateProductCode(payloadRow.category),
         cost_price: payloadRow.is_donation ? 0 : payloadRow.cost_price,
         is_donation: payloadRow.is_donation ? 1 : 0,
+        visible_in_pos: payloadRow.visible_in_pos ? 1 : 0,
         stock_quantity: 0,
         expiration_date: null
       };
@@ -357,9 +370,9 @@ router.post('/import', requireScreen('products'), (req, res) => {
       ensureProductCategory(product.category);
       const result = db.prepare(`
         INSERT INTO products
-          (name, category, cost_price, is_donation, sale_price, stock_quantity, min_stock, supplier, internal_code, unit, expiration_date, active)
+          (name, category, cost_price, is_donation, sale_price, stock_quantity, min_stock, supplier, internal_code, unit, expiration_date, image_url, visible_in_pos, active)
         VALUES
-          (@name, @category, @cost_price, @is_donation, @sale_price, @stock_quantity, @min_stock, @supplier, @internal_code, @unit, @expiration_date, @active)
+          (@name, @category, @cost_price, @is_donation, @sale_price, @stock_quantity, @min_stock, @supplier, @internal_code, @unit, @expiration_date, @image_url, @visible_in_pos, @active)
       `).run(product);
 
       if (roundQuantity(payloadRow.stock_quantity) > 0) {
@@ -412,6 +425,7 @@ router.patch('/:id', requireScreen('products'), (req, res) => {
         supplier = @supplier,
         internal_code = @internal_code,
         unit = @unit,
+        image_url = @image_url,
         active = COALESCE(@active, 1)
       WHERE id = @id
     `).run({
@@ -433,6 +447,28 @@ router.patch('/:id', requireScreen('products'), (req, res) => {
     metadata: { before: current, after: updated }
   });
 
+  return res.json(updated);
+});
+
+router.patch('/:id/pos-visibility', requireRole('admin', 'finance'), (req, res) => {
+  const payload = z.object({ visible_in_pos: z.coerce.boolean() }).parse(req.body);
+  const current = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
+  if (!current) return res.status(404).json({ message: 'Produto nao encontrado.' });
+  if (payload.visible_in_pos && Number(current.sale_price) <= 0) {
+    return res.status(400).json({ message: 'Informe um preco de venda antes de disponibilizar o produto no PDV.' });
+  }
+
+  db.prepare('UPDATE products SET visible_in_pos = ? WHERE id = ?')
+    .run(payload.visible_in_pos ? 1 : 0, current.id);
+  const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(current.id);
+  recordAudit({
+    req,
+    action: 'product.pos_visibility.update',
+    entityType: 'product',
+    entityId: updated.id,
+    summary: `${updated.name}: ${updated.visible_in_pos ? 'visivel' : 'oculto'} no PDV`,
+    metadata: { before: Boolean(current.visible_in_pos), after: Boolean(updated.visible_in_pos) }
+  });
   return res.json(updated);
 });
 

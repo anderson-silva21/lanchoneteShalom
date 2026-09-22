@@ -165,6 +165,61 @@ test('ajustes e venda da Livraria atualizam estoque de forma transacional', () =
   assert.equal(db.prepare('SELECT stock_quantity FROM library_products WHERE id = ?').get(product.id).stock_quantity, 3);
 });
 
+test('venda da Livraria persiste parcelamento permitido e arredonda parcelas', () => {
+  const category = createCategory({ name: 'Parcelamento' });
+  const product = saveProduct({
+    name: 'Livro Parcelado',
+    category_id: category.id,
+    sku: 'TEST-PARCELADO',
+    price: 100,
+    cost_price: 40,
+    stock_quantity: 2,
+    min_stock: 1,
+    published: true
+  });
+
+  const sale = createSale({
+    customer_name: 'Cliente Parcelado',
+    payment_method: 'cartao_credito',
+    payment_installments: 3,
+    idempotency_key: 'sale-installments-001',
+    items: [{ product_id: product.id, quantity: 1 }]
+  }, { id: 1 });
+
+  assert.equal(sale.payment_installments, 3);
+  assert.deepEqual(sale.installment_amounts, [33.34, 33.33, 33.33]);
+  assert.equal(sale.installment_amounts.reduce((sum, value) => Number((sum + value).toFixed(2)), 0), sale.total);
+
+  const listed = listSales({ limit: 10 }).find((item) => item.id === sale.id);
+  assert.equal(listed.payment_installments, 3);
+});
+
+test('venda da Livraria rejeita parcelamento em dinheiro ou PIX', () => {
+  const category = createCategory({ name: 'Parcelamento Bloqueado' });
+  const product = saveProduct({
+    name: 'Livro Sem Parcelamento',
+    category_id: category.id,
+    sku: 'TEST-NO-PARCEL',
+    price: 50,
+    cost_price: 20,
+    stock_quantity: 2,
+    min_stock: 1,
+    published: true
+  });
+
+  assert.throws(() => createSale({
+    customer_name: 'Cliente PIX',
+    payment_method: 'pix',
+    payment_installments: 2,
+    idempotency_key: 'sale-installments-blocked-001',
+    items: [{ product_id: product.id, quantity: 1 }]
+  }, { id: 1 }), (error) => {
+    assert.equal(error.status, 400);
+    assert.match(error.message, /nao permite parcelamento/);
+    return true;
+  });
+});
+
 test('carrinho assistido cria referencia publica, nao baixa estoque e usa round-robin persistido', () => {
   const category = createCategory({ name: 'Round Robin' });
   const product = saveProduct({

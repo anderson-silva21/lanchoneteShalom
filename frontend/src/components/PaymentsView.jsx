@@ -11,6 +11,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../services/api'
 import { decimal, formatDate, formatDateTime, money } from '../utils/formatters'
 import { PaginationControls } from './PaginationControls'
+import { OfferComboManager } from './finance/OfferComboManager'
 
 const confirmedPaymentMethods = ['pix', 'cartao', 'dinheiro']
 const PAGE_SIZE = 10
@@ -215,6 +216,7 @@ export function PaymentsView({ refreshKey, onChanged }) {
 
   return (
     <div className="min-w-0 space-y-5">
+      <OfferComboManager />
       <section className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard icon={WalletCards} label="Faturamento" value={money.format(summary.gross_total)} detail={`${summary.sales_count} vendas`} />
         <SummaryCard icon={CheckCircle2} label="Pago" value={money.format(summary.paid_total)} detail={formatDate(closing?.date)} tone="green" />

@@ -1,5 +1,5 @@
 export const viewAccess = {
-  cashier: ['sales', 'payments', 'sheet'],
+  cashier: ['sales', 'sheet'],
   manager: ['sales', 'payments', 'setup', 'products', 'inventory', 'sheet'],
   finance: ['dashboard', 'setup', 'sales', 'payments', 'products', 'inventory', 'sheet', 'reports', 'library'],
   admin: ['dashboard', 'setup', 'sales', 'payments', 'products', 'inventory', 'sheet', 'reports', 'library', 'settings'],

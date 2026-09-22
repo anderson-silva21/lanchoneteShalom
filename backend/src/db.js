@@ -140,6 +140,24 @@ function ensureAuditLogSchema() {
   `);
 }
 
+function ensureSaleItemCostAuditSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sale_item_cost_corrections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+      sale_item_id INTEGER NOT NULL REFERENCES sale_items(id) ON DELETE CASCADE,
+      previous_unit_cost REAL NOT NULL,
+      new_unit_cost REAL NOT NULL,
+      changed_by INTEGER REFERENCES users(id),
+      reason TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sale_item_cost_corrections_item
+      ON sale_item_cost_corrections(sale_item_id, created_at);
+  `);
+}
+
 function ensureLibrarySchema() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS library_categories (
@@ -194,6 +212,7 @@ function ensureLibrarySchema() {
       total_cost REAL NOT NULL DEFAULT 0 CHECK (total_cost >= 0),
       gross_profit REAL NOT NULL DEFAULT 0,
       payment_method TEXT NOT NULL DEFAULT 'manual',
+      payment_installments INTEGER NOT NULL DEFAULT 1 CHECK (payment_installments >= 1),
       customer_name TEXT,
       notes TEXT,
       idempotency_key TEXT UNIQUE,
@@ -287,6 +306,7 @@ function ensureLibrarySchema() {
 
   addColumnIfMissing('library_sales', 'assisted_request_id', 'INTEGER REFERENCES library_assisted_requests(id)');
   addColumnIfMissing('library_sales', 'seller_id', 'INTEGER REFERENCES library_sellers(id)');
+  addColumnIfMissing('library_sales', 'payment_installments', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing('library_assisted_requests', 'customer_name', 'TEXT');
   addColumnIfMissing('library_assisted_requests', 'customer_contact', 'TEXT');
   addColumnIfMissing('library_sellers', 'archived_at', 'TEXT');
@@ -927,6 +947,7 @@ function repairLegacyUserForeignKeys() {
 function runMigrations() {
   ensureAppSettingsSchema();
   ensureAuditLogSchema();
+  ensureSaleItemCostAuditSchema();
   ensureCashClosingSchema();
   ensureLibrarySchema();
   addColumnIfMissing('users', 'username', 'TEXT');
@@ -938,6 +959,8 @@ function runMigrations() {
   addColumnIfMissing('users', 'login_locked_until', 'TEXT');
   addColumnIfMissing('products', 'expiration_date', 'TEXT');
   addColumnIfMissing('products', 'is_donation', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('products', 'image_url', 'TEXT');
+  addColumnIfMissing('products', 'visible_in_pos', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing('combos', 'is_promotion', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('combos', 'expires_at', 'TEXT');
   addColumnIfMissing('combos', 'created_by', 'INTEGER REFERENCES users(id)');
@@ -950,6 +973,7 @@ function runMigrations() {
   addColumnIfMissing('sale_items', 'combo_id', 'INTEGER');
   addColumnIfMissing('sale_items', 'unit_cost', 'REAL NOT NULL DEFAULT 0');
   addColumnIfMissing('sale_items', 'line_profit', 'REAL NOT NULL DEFAULT 0');
+  ensureSaleItemCostAuditSchema();
   addColumnIfMissing('inventory_movements', 'expiration_date', 'TEXT');
   addColumnIfMissing('inventory_movements', 'batch_id', 'INTEGER REFERENCES stock_batches(id)');
   repairLegacyUserForeignKeys();

@@ -94,6 +94,28 @@ function canWrite(user) {
   return ['admin', 'library'].includes(user?.role)
 }
 
+const libraryPaymentMethods = [
+  { value: 'manual', label: 'Manual', installments: false },
+  { value: 'dinheiro', label: 'Dinheiro', installments: false },
+  { value: 'pix', label: 'PIX', installments: false },
+  { value: 'cartao_credito', label: 'Cartao de credito', installments: true },
+  { value: 'cartao_debito', label: 'Cartao de debito', installments: false }
+]
+
+function allowsInstallments(paymentMethod) {
+  return libraryPaymentMethods.some((method) => method.value === paymentMethod && method.installments)
+}
+
+function installmentPreview(total, count) {
+  const installments = Math.max(Number(count || 1), 1)
+  if (installments <= 1) return ''
+  const cents = Math.round(Number(total || 0) * 100)
+  const base = Math.floor(cents / installments)
+  const remainder = cents % installments
+  const first = (base + (remainder > 0 ? 1 : 0)) / 100
+  return `${installments}x de ${money.format(first)}`
+}
+
 function whatsappContactUrl(contact) {
   const phone = String(contact || '').replace(/\D/g, '')
   return phone ? `https://wa.me/${phone}` : ''
@@ -153,7 +175,7 @@ export function LibraryManager({ user }) {
   const [editingProductId, setEditingProductId] = useState(null)
   const [categoryDraft, setCategoryDraft] = useState({ name: '', description: '' })
   const [stockDraft, setStockDraft] = useState({ product_id: '', type: 'replenishment', operation: 'in', quantity: 1, reason: '' })
-  const [saleDraft, setSaleDraft] = useState({ customer_name: '', payment_method: 'manual', notes: '', items: [] })
+  const [saleDraft, setSaleDraft] = useState({ customer_name: '', payment_method: 'manual', payment_installments: 1, notes: '', items: [] })
   const [saleKey, setSaleKey] = useState(newSaleKey)
   const [saleItem, setSaleItem] = useState({ product_id: '', quantity: 1 })
   const [reviewSale, setReviewSale] = useState(false)
@@ -385,9 +407,10 @@ export function LibraryManager({ user }) {
     try {
       await api.createLibrarySale({
         ...saleDraft,
+        payment_installments: allowsInstallments(saleDraft.payment_method) ? Number(saleDraft.payment_installments || 1) : 1,
         idempotency_key: saleKey
       })
-      setSaleDraft({ customer_name: '', payment_method: 'manual', notes: '', items: [] })
+      setSaleDraft({ customer_name: '', payment_method: 'manual', payment_installments: 1, notes: '', items: [] })
       setSaleKey(newSaleKey())
       setReviewSale(false)
       await loadData()
@@ -459,7 +482,11 @@ export function LibraryManager({ user }) {
     setSaving(true)
     setMessage('')
     try {
-      await api.convertLibraryRequest(request.reference, draftForLibraryRequest(requestSaleDrafts, request.reference))
+      const draft = draftForLibraryRequest(requestSaleDrafts, request.reference)
+      await api.convertLibraryRequest(request.reference, {
+        ...draft,
+        payment_installments: allowsInstallments(draft.payment_method) ? Number(draft.payment_installments || 1) : 1
+      })
       setRequestSaleDrafts((current) => clearLibraryRequestDraft(current, request.reference))
       await loadData()
       setMessage(`Carrinho ${request.reference} convertido em venda.`)
@@ -741,10 +768,20 @@ export function LibraryManager({ user }) {
                     </div>
                   </div>
                   {writable && ['pending', 'in_progress'].includes(request.status) ? (
-                    <div className="mt-4 grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_150px_150px]">
+                    <div className="mt-4 grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_170px_120px_150px_150px]">
                       <input className="mission-input min-w-0 px-3 py-2" value={requestDraft.customer_name} onChange={(event) => updateRequestDraft(request.reference, { customer_name: event.target.value })} placeholder={request.customer_name || 'Nome do cliente para venda'} />
+                      <select className="mission-input min-w-0 px-3 py-2" value={requestDraft.payment_method} onChange={(event) => updateRequestDraft(request.reference, { payment_method: event.target.value, payment_installments: allowsInstallments(event.target.value) ? requestDraft.payment_installments : 1 })}>
+                        {libraryPaymentMethods.map((method) => <option key={method.value} value={method.value}>{method.label}</option>)}
+                      </select>
+                      <label className="min-w-0 text-xs font-medium">
+                        Parcelas
+                        <input type="number" min="1" max="24" step="1" className="mission-input mt-1 w-full px-3 py-2 disabled:opacity-60" value={requestDraft.payment_installments || 1} onChange={(event) => updateRequestDraft(request.reference, { payment_installments: event.target.value })} disabled={!allowsInstallments(requestDraft.payment_method)} />
+                      </label>
                       <button type="button" className="mission-btn mission-btn-primary px-3 py-2 font-semibold disabled:opacity-55" onClick={() => convertRequest(request)} disabled={saving}>Finalizar Venda</button>
                       <button type="button" className="mission-btn border border-line/80 px-3 py-2 font-semibold disabled:opacity-55 dark:border-shalom-gold/10" onClick={() => cancelRequest(request)} disabled={saving}>Cancelar</button>
+                      {allowsInstallments(requestDraft.payment_method) && Number(requestDraft.payment_installments || 1) > 1 ? (
+                        <p className="mission-muted text-xs lg:col-span-5">{installmentPreview(request.current_total, requestDraft.payment_installments)}</p>
+                      ) : null}
                     </div>
                   ) : null}
                   {user?.role === 'admin' && ['pending', 'in_progress'].includes(request.status) ? (
@@ -861,10 +898,19 @@ export function LibraryManager({ user }) {
                   {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
                 </select>
                 <textarea className="mission-input px-3 py-2" value={productDraft.description} onChange={(event) => setProductDraft({ ...productDraft, description: event.target.value })} placeholder="Descricao publica" disabled={!writable} rows={3} />
-                <div className="grid grid-cols-2 gap-2">
-                  <input type="number" min="0" step="0.01" className="mission-input px-3 py-2" value={productDraft.price} onChange={(event) => setProductDraft({ ...productDraft, price: event.target.value })} placeholder="Preco" disabled={!writable} />
-                  <input type="number" min="0" step="0.01" className="mission-input px-3 py-2" value={productDraft.cost_price} onChange={(event) => setProductDraft({ ...productDraft, cost_price: event.target.value })} placeholder="Custo" disabled={!writable} />
-                  <input type="number" min="0" step="0.001" className="mission-input px-3 py-2" value={productDraft.stock_quantity} onChange={(event) => setProductDraft({ ...productDraft, stock_quantity: event.target.value })} placeholder="Estoque inicial" disabled={!writable} />
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <label className="text-sm font-medium">
+                    Preco
+                    <input type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2" value={productDraft.price} onChange={(event) => setProductDraft({ ...productDraft, price: event.target.value })} disabled={!writable} />
+                  </label>
+                  <label className="text-sm font-medium">
+                    Custo
+                    <input type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2" value={productDraft.cost_price} onChange={(event) => setProductDraft({ ...productDraft, cost_price: event.target.value })} disabled={!writable} />
+                  </label>
+                  <label className="text-sm font-medium sm:col-span-2">
+                    Quantidade
+                    <input type="number" min="0" step="0.001" className="mission-input mt-1 w-full px-3 py-2" value={productDraft.stock_quantity} onChange={(event) => setProductDraft({ ...productDraft, stock_quantity: event.target.value })} disabled={!writable} />
+                  </label>
                 </div>
                 <input className="mission-input px-3 py-2" value={productDraft.image_url} onChange={(event) => setProductDraft({ ...productDraft, image_url: event.target.value })} placeholder="URL da imagem" disabled={!writable} />
                 <label className="flex items-center justify-between rounded-xl border border-line/80 px-3 py-2 text-sm font-semibold dark:border-shalom-gold/10">
@@ -937,6 +983,18 @@ export function LibraryManager({ user }) {
             </div>
             <div className="mt-3 grid gap-3">
               <input className="mission-input min-w-0 px-3 py-2" value={saleDraft.customer_name} onChange={(event) => setSaleDraft({ ...saleDraft, customer_name: event.target.value })} placeholder="Cliente atendido" disabled={!writable} />
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_120px]">
+                <label className="text-sm font-medium">
+                  Pagamento
+                  <select className="mission-input mt-1 w-full px-3 py-2" value={saleDraft.payment_method} onChange={(event) => setSaleDraft({ ...saleDraft, payment_method: event.target.value, payment_installments: allowsInstallments(event.target.value) ? saleDraft.payment_installments : 1 })} disabled={!writable}>
+                    {libraryPaymentMethods.map((method) => <option key={method.value} value={method.value}>{method.label}</option>)}
+                  </select>
+                </label>
+                <label className="text-sm font-medium">
+                  Parcelas
+                  <input type="number" min="1" max="24" step="1" className="mission-input mt-1 w-full px-3 py-2 disabled:opacity-60" value={saleDraft.payment_installments} onChange={(event) => setSaleDraft({ ...saleDraft, payment_installments: event.target.value })} disabled={!writable || !allowsInstallments(saleDraft.payment_method)} />
+                </label>
+              </div>
               <form className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_90px_48px]" onSubmit={addSaleItem}>
                 <select className="mission-input min-w-0 px-3 py-2" value={saleItem.product_id} onChange={(event) => setSaleItem({ ...saleItem, product_id: event.target.value })} disabled={!writable}>
                   <option value="">Produto</option>
@@ -957,6 +1015,7 @@ export function LibraryManager({ user }) {
                   <span>Total</span>
                   <span>{money.format(saleTotal)}</span>
                 </div>
+                {allowsInstallments(saleDraft.payment_method) && Number(saleDraft.payment_installments || 1) > 1 ? <p className="mission-muted mt-1 text-right text-xs">{installmentPreview(saleTotal, saleDraft.payment_installments)}</p> : null}
               </div>
               <textarea className="mission-input min-w-0 px-3 py-2" value={saleDraft.notes} onChange={(event) => setSaleDraft({ ...saleDraft, notes: event.target.value })} placeholder="Observacoes do atendimento" rows={3} disabled={!writable} />
               <button type="button" className="mission-btn mission-btn-primary inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" onClick={() => {
@@ -984,6 +1043,7 @@ export function LibraryManager({ user }) {
                         {sale.seller_name ? `Vendedor: ${sale.seller_name}` : 'Sem vendedor vinculado'}
                         {sale.assisted_request_id ? ` - Atendimento #${sale.assisted_request_id}` : ''}
                       </p>
+                      <p className="mission-muted mt-1 text-xs">{sale.payment_method}{Number(sale.payment_installments || 1) > 1 ? ` - ${sale.payment_installments}x` : ''}</p>
                       {sale.notes ? <p className="mission-muted mt-1 text-xs">{sale.notes}</p> : null}
                     </div>
                     <div className="lg:text-right">
@@ -1216,6 +1276,7 @@ export function LibraryManager({ user }) {
                       ['lucro', 'Lucro'],
                       ['margem', 'Margem'],
                       ['forma_pagamento', 'Pagamento'],
+                      ['parcelas', 'Parcelas'],
                       ['vendedor', 'Vendedor'],
                       ['status', 'Status']
                     ].map(([key, label]) => (
@@ -1243,6 +1304,7 @@ export function LibraryManager({ user }) {
                       <td className="whitespace-nowrap border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">{money.format(row.lucro)}</td>
                       <td className="whitespace-nowrap border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">{decimal.format(row.margem)}%</td>
                       <td className="whitespace-nowrap border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">{row.forma_pagamento}</td>
+                      <td className="whitespace-nowrap border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">{decimal.format(row.parcelas || 1)}x</td>
                       <td className="whitespace-nowrap border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">{row.vendedor}</td>
                       <td className="whitespace-nowrap border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">Concluida</td>
                     </tr>
@@ -1364,6 +1426,7 @@ export function LibraryManager({ user }) {
               <span>Total</span>
               <span>{money.format(saleTotal)}</span>
             </div>
+            {allowsInstallments(saleDraft.payment_method) && Number(saleDraft.payment_installments || 1) > 1 ? <p className="mission-muted mt-1 text-right text-sm">{installmentPreview(saleTotal, saleDraft.payment_installments)}</p> : null}
             <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button type="button" className="mission-btn border border-line/80 px-4 py-3 font-semibold dark:border-shalom-gold/10" onClick={() => setReviewSale(false)} disabled={saving}>Voltar</button>
               <button type="button" className="mission-btn mission-btn-primary px-4 py-3 font-semibold" onClick={confirmSale} disabled={saving}>{saving ? 'Registrando...' : 'Confirmar e baixar estoque'}</button>

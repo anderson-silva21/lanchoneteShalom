@@ -20,7 +20,9 @@ function createEmptyProduct(category = '') {
     min_stock: 0,
     supplier: '',
     unit: 'unidade',
-    expiration_date: ''
+    expiration_date: '',
+    image_url: '',
+    visible_in_pos: true
   }
 }
 
@@ -138,6 +140,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   const [categories, setCategories] = useState([])
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('')
+  const [posVisibility, setPosVisibility] = useState('all')
   const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' })
   const [draft, setDraft] = useState(() => createEmptyProduct())
   const [adjustment, setAdjustment] = useState(() => createEmptyAdjustment())
@@ -252,11 +255,16 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase()
-    if (!term) return products
-    return products.filter((product) => [product.name, product.category, product.internal_code, product.supplier]
+    return products.filter((product) => {
+      const effectivelyVisibleInPos = Boolean(product.visible_in_pos) && Number(product.sale_price) > 0
+      if (posVisibility === 'visible' && !effectivelyVisibleInPos) return false
+      if (posVisibility === 'hidden' && effectivelyVisibleInPos) return false
+      if (!term) return true
+      return [product.name, product.category, product.internal_code, product.supplier]
       .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(term)))
-  }, [products, query])
+      .some((value) => String(value).toLowerCase().includes(term))
+    })
+  }, [posVisibility, products, query])
 
   const sortedProducts = useMemo(() => {
     if (!sortConfig.key) return filtered
@@ -481,6 +489,49 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
     }
   }
 
+  async function updatePosVisibility(product, visible) {
+    const previous = Boolean(product.visible_in_pos)
+    setProducts((current) => current.map((item) => item.id === product.id ? { ...item, visible_in_pos: visible ? 1 : 0 } : item))
+    setMessage('')
+    try {
+      await api.updateProductPosVisibility(product.id, visible)
+      onChanged()
+      setMessage(`${product.name} ${visible ? 'sera exibido' : 'foi ocultado'} no PDV.`)
+    } catch (err) {
+      setProducts((current) => current.map((item) => item.id === product.id ? { ...item, visible_in_pos: previous ? 1 : 0 } : item))
+      setMessage(err.message)
+    }
+  }
+
+  async function updateHistoricalSaleItemCost(saleItem, nextUnitCost) {
+    setMessage('')
+    const unitCost = Number(nextUnitCost)
+    if (!Number.isFinite(unitCost) || unitCost < 0) {
+      setMessage('O custo da venda deve ser um numero maior ou igual a zero.')
+      return
+    }
+
+    const confirmation = `CORRIGIR CUSTO VENDA ${saleItem.sale_id}`
+    const typed = window.prompt(`Confirme a correcao do custo historico.\n\nVenda #${saleItem.sale_id}\nCusto atual: ${money.format(saleItem.unit_cost)}\nNovo custo: ${money.format(unitCost)}\n\nDigite ${confirmation}`)
+    if (typed !== confirmation) {
+      setMessage(`Digite ${confirmation} para confirmar a correcao.`)
+      return
+    }
+
+    try {
+      await api.updateSaleItemCost(saleItem.sale_id, saleItem.id, {
+        unit_cost: unitCost,
+        confirmation,
+        reason: `Correcao pelo historico do produto ${selectedProduct?.name || selectedProductId}`
+      })
+      if (selectedProductId) setProductHistory(await api.productHistory(selectedProductId))
+      onChanged()
+      setMessage('Custo historico da venda corrigido.')
+    } catch (err) {
+      setMessage(err.message)
+    }
+  }
+
   const getProductPriceValues = useCallback((productId) => {
     const product = products.find((item) => String(item.id) === String(productId))
     return {
@@ -561,6 +612,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   const needsMovementBatch = movementMode === 'adjustment_out' || movementMode === 'waste'
   const showsMovementExpiration = movementMode === 'purchase' || (movementMode === 'adjustment_in' && !adjustment.batch_id)
   const canDeleteProducts = user?.role === 'admin' && !setupMode
+  const canManagePosVisibility = ['admin', 'finance'].includes(user?.role)
 
   useEffect(() => {
     if (movementMode !== 'purchase' || !adjustment.product_id) return
@@ -616,6 +668,14 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 <option value="low">Baixo</option>
                 <option value="critical">Critico</option>
               </select>
+              <select className="mission-input w-full px-3 py-2 sm:w-auto" value={posVisibility} onChange={(event) => {
+                setPosVisibility(event.target.value)
+                setProductPage(1)
+              }} aria-label="Filtrar visibilidade no PDV">
+                <option value="all">Todos no PDV</option>
+                <option value="visible">Visiveis no PDV</option>
+                <option value="hidden">Ocultos no PDV</option>
+              </select>
             </div>
           </div>
 
@@ -634,9 +694,11 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
               categories={categories}
               selectedProductId={selectedProductId}
               canDeleteProducts={canDeleteProducts}
+              canManagePosVisibility={canManagePosVisibility}
               onChangeProduct={updateRow}
               onDeleteProduct={openDeleteProduct}
               onSaveProduct={saveProduct}
+              onUpdatePosVisibility={updatePosVisibility}
               onSelectProduct={selectProductForDetails}
               onStartStockMovement={startStockMovement}
             />
@@ -658,6 +720,8 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                   {renderSortableHeader('stock_quantity', 'Estoque')}
                   {renderSortableHeader('min_stock', 'Minimo')}
                   {renderSortableHeader('expiration_date', 'Prox. validade')}
+                  <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Imagem</th>
+                  <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">PDV</th>
                   {renderSortableHeader('stock_status', 'Status')}
                   <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10"></th>
                 </tr>
@@ -680,7 +744,13 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                         Doacao
                       </label>
                     </td>
-                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{product.is_donation ? 'Doacao' : money.format(product.cost_price)}</td>
+                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
+                      {product.is_donation ? (
+                        <span>Doacao</span>
+                      ) : (
+                        <input type="number" inputMode="decimal" min="0" step="0.01" className="mission-input w-24 px-2 py-1" value={product.cost_price} onChange={(event) => updateRow(product.id, 'cost_price', Number(event.target.value))} />
+                      )}
+                    </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
                       <input type="number" inputMode="decimal" min="0" step="0.01" className="mission-input w-24 px-2 py-1" value={product.sale_price} onChange={(event) => updateRow(product.id, 'sale_price', Number(event.target.value))} />
                     </td>
@@ -691,6 +761,10 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                       <input type="number" inputMode="decimal" min="0" step="0.001" className="mission-input w-20 px-2 py-1" value={product.min_stock} onChange={(event) => updateRow(product.id, 'min_stock', Number(event.target.value))} />
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{formatDate(product.expiration_date)}</td>
+                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10"><input type="url" className="mission-input w-48 px-2 py-1" value={product.image_url || ''} onChange={(event) => updateRow(product.id, 'image_url', event.target.value)} placeholder="https://..." /></td>
+                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
+                      {Number(product.sale_price) <= 0 ? <span className="mission-muted block max-w-28 text-xs">Sem preco de venda</span> : canManagePosVisibility ? <button type="button" role="switch" aria-checked={Boolean(product.visible_in_pos)} aria-label={`Exibir ${product.name} no PDV`} className={`relative h-7 w-12 rounded-full transition ${product.visible_in_pos ? 'bg-shalom-blue dark:bg-shalom-gold' : 'bg-slate-300 dark:bg-slate-600'}`} onClick={() => updatePosVisibility(product, !product.visible_in_pos)}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${product.visible_in_pos ? 'left-6' : 'left-1'}`} /></button> : <span className="mission-muted text-xs">{product.visible_in_pos ? 'Visivel' : 'Oculto'}</span>}
+                    </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10"><StatusPill status={product.stock_status} /></td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
                       <div className="flex items-center gap-1.5">
@@ -711,7 +785,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 ))}
                 {!sortedProducts.length ? (
                   <tr>
-                    <td className="border-b border-line/80 px-3 py-4 mission-muted dark:border-shalom-gold/10" colSpan={10}>
+                    <td className="border-b border-line/80 px-3 py-4 mission-muted dark:border-shalom-gold/10" colSpan={12}>
                       Nenhum produto cadastrado.
                     </td>
                   </tr>
@@ -792,6 +866,12 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 Fornecedor
                 <input className="mission-input mt-1 w-full px-3 py-2" value={draft.supplier} onChange={(event) => setDraft({ ...draft, supplier: event.target.value })} />
               </label>
+              <label className="text-sm font-medium">
+                URL da imagem
+                <input type="url" className="mission-input mt-1 w-full px-3 py-2" value={draft.image_url || ''} onChange={(event) => setDraft({ ...draft, image_url: event.target.value })} placeholder="https://exemplo.com/produto.jpg" />
+              </label>
+              {draft.image_url ? <div key={draft.image_url} className="overflow-hidden rounded-md bg-shalom-cream/60"><img className="aspect-video w-full object-cover" src={draft.image_url} alt="Preview do produto" onError={(event) => { event.currentTarget.hidden = true; event.currentTarget.nextElementSibling.hidden = false }} /><p className="mission-muted hidden p-3 text-sm">Nao foi possivel carregar a imagem.</p></div> : null}
+              {canManagePosVisibility && Number(draft.sale_price) > 0 ? <label className="flex items-center justify-between gap-3 rounded-xl border border-line/80 px-3 py-2 text-sm font-medium dark:border-shalom-gold/10"><span><span className="block">Exibir no PDV</span><span className="mission-muted block text-xs font-normal">Ocultar nao remove estoque ou historico.</span></span><input type="checkbox" className="h-5 w-5 accent-shalom-orange" checked={Boolean(draft.visible_in_pos)} onChange={(event) => setDraft({ ...draft, visible_in_pos: event.target.checked })} /></label> : canManagePosVisibility ? <p className="mission-muted text-sm">Informe um preco de venda para habilitar este produto no PDV.</p> : null}
               <label className="flex items-center justify-between gap-3 rounded-xl border border-line/80 px-3 py-2 text-sm font-medium dark:border-shalom-gold/10">
                 <span>Produto recebido por doacao</span>
                 <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={Boolean(draft.is_donation)} onChange={(event) => setDraft({ ...draft, is_donation: event.target.checked, cost_price: event.target.checked ? 0 : draft.cost_price })} />
@@ -939,6 +1019,8 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       />
 
       <ProductHistoryPanel
+        canEditHistoricalCosts={['admin', 'finance'].includes(user?.role)}
+        onUpdateSaleItemCost={updateHistoricalSaleItemCost}
         productHistory={productHistory}
         selectedProduct={selectedProduct}
         selectedProductId={selectedProductId}

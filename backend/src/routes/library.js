@@ -100,6 +100,7 @@ const stockSchema = z.object({
 
 const saleSchema = z.object({
   payment_method: z.string().trim().min(2).default('manual'),
+  payment_installments: z.coerce.number().int().positive().max(24).default(1),
   customer_name: z.string().trim().optional().nullable(),
   notes: z.string().trim().optional().nullable(),
   idempotency_key: z.string().trim().min(8).max(120).optional().nullable(),
@@ -126,6 +127,7 @@ const assistedItemsSchema = z.object({
 
 const convertRequestSchema = z.object({
   payment_method: z.string().trim().min(2).default('manual'),
+  payment_installments: z.coerce.number().int().positive().max(24).default(1),
   customer_name: z.string().trim().optional().nullable(),
   notes: z.string().trim().optional().nullable()
 });
