@@ -109,13 +109,6 @@ export function AppShell({ activeView, setActiveView, user, darkMode, setDarkMod
           )}
         </div>
 
-        {!sidebarCollapsed && (
-          <div className="relative mb-6 flex-none rounded-2xl border border-shalom-gold/35 bg-white/75 p-4 text-shalom-deep shadow-sm dark:border-white/20 dark:bg-white/10 dark:text-white">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-shalom-orange dark:text-shalom-gold">Centro missionario</p>
-            <p className="mt-2 text-sm leading-6 text-shalom-deep/82 dark:text-white/90">Organizacao simples para cuidar bem de cada venda, compra e pessoa servida.</p>
-          </div>
-        )}
-
         <nav className={`scrollbar-thin relative min-h-0 flex-1 space-y-1.5 overflow-y-auto ${sidebarCollapsed ? '' : 'pr-1'}`}>
           {allowedNavItems.map((item) => {
             const Icon = item.icon
