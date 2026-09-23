@@ -149,6 +149,15 @@ button:disabled {
   border-radius: 999px;
 }
 
+.scrollbar-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
 @layer base {
   h1,
   h2,
@@ -164,6 +173,57 @@ button:disabled {
 }
 
 @layer components {
+  .pos-category-tab {
+    position: relative;
+    display: inline-flex;
+    min-height: 44px;
+    flex: 0 0 auto;
+    align-items: center;
+    padding: 0 2px;
+    color: rgba(20, 47, 83, 0.62);
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: color 180ms ease, font-weight 180ms ease;
+  }
+
+  .pos-category-tab::after {
+    position: absolute;
+    right: 2px;
+    bottom: 0;
+    left: 2px;
+    height: 3px;
+    border-radius: 999px;
+    background: #184e7f;
+    content: '';
+    opacity: 0;
+    transform: scaleX(0.55);
+    transition: opacity 180ms ease, transform 180ms ease;
+  }
+
+  .pos-category-tab:hover {
+    color: #184e7f;
+  }
+
+  .pos-category-tab-active {
+    color: #184e7f;
+    font-weight: 650;
+  }
+
+  .pos-category-tab-active::after {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+
+  .dark .pos-category-tab {
+    color: rgba(226, 232, 240, 0.72);
+  }
+
+  .dark .pos-category-tab:hover,
+  .dark .pos-category-tab-active {
+    color: #ffffff;
+  }
+
   .app-bg {
     background:
       radial-gradient(circle at 9% 10%, rgba(250, 224, 136, 0.34), transparent 21rem),

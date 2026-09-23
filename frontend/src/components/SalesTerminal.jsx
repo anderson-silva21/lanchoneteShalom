@@ -91,9 +91,9 @@ function PosCatalog({ products, combos, cart, total, itemCount, message, catalog
           <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 mission-muted" size={19} aria-hidden="true" />
           <input className="mission-input h-11 w-full pl-10 pr-3" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar produto ou codigo" type="search" />
         </label>
-        <div className="scrollbar-thin -mx-3 mt-2 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:px-0 lg:mt-4 lg:gap-3" role="tablist" aria-label="Categorias de produtos">
+        <div className="scrollbar-hidden -mx-3 mt-2 flex gap-5 overflow-x-auto px-3 sm:mx-0 sm:px-0 lg:mt-4 lg:gap-7" role="tablist" aria-label="Categorias de produtos">
           {categoryNames.map((name) => (
-            <button key={name} type="button" role="tab" aria-selected={category === name} className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-semibold ${category === name ? 'bg-shalom-blue text-white dark:bg-shalom-gold dark:text-shalom-deep' : 'bg-white/70 text-shalom-deep dark:bg-white/10 dark:text-slate-100'}`} onClick={() => setCategory(name)}>{name}</button>
+            <button key={name} type="button" role="tab" aria-selected={category === name} className={`pos-category-tab ${category === name ? 'pos-category-tab-active' : ''}`} onClick={() => setCategory(name)}>{name}</button>
           ))}
         </div>
       </div>
