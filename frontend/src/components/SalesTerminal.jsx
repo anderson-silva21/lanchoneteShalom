@@ -93,7 +93,7 @@ function PosCatalog({ products, combos, cart, total, itemCount, message, catalog
         </label>
         <div className="scrollbar-hidden -mx-3 mt-2 flex gap-5 overflow-x-auto px-3 sm:mx-0 sm:px-0 lg:mt-4 lg:gap-7" role="tablist" aria-label="Categorias de produtos">
           {categoryNames.map((name) => (
-            <button key={name} type="button" role="tab" aria-selected={category === name} className={`pos-category-tab ${category === name ? 'pos-category-tab-active' : ''}`} onClick={() => setCategory(name)}>{name}</button>
+            <button key={name} type="button" role="tab" aria-selected={category === name} className={`section-text-tab ${category === name ? 'section-text-tab-active' : ''}`} onClick={() => setCategory(name)}>{name}</button>
           ))}
         </div>
       </div>
