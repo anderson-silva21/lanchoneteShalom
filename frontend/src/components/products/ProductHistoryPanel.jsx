@@ -1,4 +1,4 @@
-import { FileClock, Save } from 'lucide-react'
+import { Save } from 'lucide-react'
 import { useState } from 'react'
 import { formatDateTime, formatQuantityWithUnit, money } from '../../utils/formatters'
 
@@ -9,20 +9,12 @@ export function ProductHistoryPanel({ canEditHistoricalCosts = false, onUpdateSa
   const [costDrafts, setCostDrafts] = useState({})
 
   return (
-    <section className="mission-panel min-w-0 p-4">
-      <div className="flex items-center gap-2">
-        <FileClock size={20} />
-        <div className="min-w-0">
-          <h2 className="font-display text-lg font-semibold">Historico do produto</h2>
-          <p className="mission-muted break-words text-sm">{selectedProduct ? selectedProduct.name : 'Selecione um produto'}</p>
-        </div>
-      </div>
-
+    <section className="min-w-0">
       {selectedProductId && productHistory === null ? (
-        <p className="mt-4 rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">Carregando historico...</p>
+        <p className="mission-muted px-3 py-6 text-sm">Carregando historico...</p>
       ) : selectedProduct ? (
-        <div className="mt-4 grid min-w-0 gap-4 xl:grid-cols-3">
-          <div className="mission-card min-w-0 p-4">
+        <div className="grid min-w-0 xl:grid-cols-3 xl:divide-x xl:divide-line/70 dark:xl:divide-shalom-gold/10">
+          <div className="min-w-0 border-b border-line/70 px-3 py-4 dark:border-shalom-gold/10 xl:border-b-0">
             <h3 className="font-semibold">Movimentacoes</h3>
             <div className="mt-3 max-h-64 overflow-y-auto scrollbar-thin">
               {historyMovements.slice(0, 12).map((movement) => (
@@ -36,7 +28,7 @@ export function ProductHistoryPanel({ canEditHistoricalCosts = false, onUpdateSa
             </div>
           </div>
 
-          <div className="mission-card min-w-0 p-4">
+          <div className="min-w-0 border-b border-line/70 px-3 py-4 dark:border-shalom-gold/10 xl:border-b-0">
             <h3 className="font-semibold">Vendas</h3>
             <div className="mt-3 max-h-64 overflow-y-auto scrollbar-thin">
               {historySales.slice(0, 12).map((sale) => (
@@ -75,7 +67,7 @@ export function ProductHistoryPanel({ canEditHistoricalCosts = false, onUpdateSa
             </div>
           </div>
 
-          <div className="mission-card min-w-0 p-4">
+          <div className="min-w-0 px-3 py-4">
             <h3 className="font-semibold">Auditoria</h3>
             <div className="mt-3 max-h-64 overflow-y-auto scrollbar-thin">
               {historyAudit.slice(0, 12).map((log) => (
@@ -89,7 +81,7 @@ export function ProductHistoryPanel({ canEditHistoricalCosts = false, onUpdateSa
           </div>
         </div>
       ) : (
-        <p className="mission-muted mt-4 rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">Selecione um produto para ver o historico.</p>
+        <p className="mission-muted px-3 py-6 text-sm">Selecione um produto para ver o historico.</p>
       )}
     </section>
   )

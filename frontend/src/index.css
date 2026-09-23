@@ -27,6 +27,20 @@
   bottom: calc(var(--mobile-bottom-nav-height) + 0.5rem);
 }
 
+.offer-editor-actions {
+  bottom: var(--mobile-bottom-nav-height);
+  box-shadow: none;
+  filter: none;
+}
+
+.offer-editor-actions::before,
+.offer-editor-actions::after,
+.offer-editor-actions .mission-btn-primary,
+.offer-editor-actions .mission-btn-primary:hover {
+  box-shadow: none;
+  filter: none;
+}
+
 @media (min-width: 768px) {
   .pos-action-bar {
     bottom: 1rem;

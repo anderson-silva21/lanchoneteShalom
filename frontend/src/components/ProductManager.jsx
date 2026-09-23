@@ -8,6 +8,7 @@ import { StatusPill } from './StatusPill'
 import { ProductHistoryPanel } from './products/ProductHistoryPanel'
 import { ProductMobileList } from './products/ProductMobileList'
 import { ProductStockLots } from './products/ProductStockLots'
+import { ProductWorkspace } from './products/ProductWorkspace'
 
 function createEmptyProduct(category = '') {
   return {
@@ -155,6 +156,9 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
   const [deletingProduct, setDeletingProduct] = useState(false)
   const [productPage, setProductPage] = useState(1)
+  const [mobileContextOpen, setMobileContextOpen] = useState(false)
+  const [detailMode, setDetailMode] = useState('product')
+  const [productSection, setProductSection] = useState('details')
   const movementFormRef = useRef(null)
   const movementProductRef = useRef(null)
   const productTableTopScrollRef = useRef(null)
@@ -231,6 +235,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
     if (intent.action === 'viewStock') {
       setQuery('')
       setStatus(intent.status || 'low')
+      setMobileContextOpen(false)
       return
     }
 
@@ -245,6 +250,9 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
         product_id: intent.productId ? String(intent.productId) : current.product_id
       }))
       if (intent.productId) setSelectedProductId(String(intent.productId))
+      setDetailMode('product')
+      setProductSection('stock')
+      setMobileContextOpen(true)
 
       window.setTimeout(() => {
         movementFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -543,9 +551,9 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
 
   function selectProductForDetails(productId) {
     setSelectedProductId(String(productId))
-    window.setTimeout(() => {
-      document.getElementById('product-lots-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 80)
+    setDetailMode('product')
+    setProductSection('details')
+    setMobileContextOpen(true)
   }
 
   function startStockMovement(productId) {
@@ -561,10 +569,20 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       cost_price: prices.cost_price,
       sale_price: prices.sale_price
     }))
+    setDetailMode('product')
+    setProductSection('stock')
+    setMobileContextOpen(true)
     window.setTimeout(() => {
-      movementFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       movementProductRef.current?.focus({ preventScroll: true })
     }, 80)
+  }
+
+  function selectProductSection(section) {
+    if (section === 'stock' && selectedProductId) {
+      startStockMovement(selectedProductId)
+      return
+    }
+    setProductSection(section)
   }
 
   function toggleSort(sortKey) {
@@ -575,34 +593,6 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       }
       return { key: sortKey, direction: 'asc' }
     })
-  }
-
-  function syncProductTableScroll(sourceRef, targetRef) {
-    if (sourceRef.current && targetRef.current) {
-      targetRef.current.scrollLeft = sourceRef.current.scrollLeft
-    }
-  }
-
-  function renderSortableHeader(sortKey, label) {
-    const isActive = sortConfig.key === sortKey
-    const SortIcon = isActive ? (sortConfig.direction === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
-
-    return (
-      <th
-        className="border-b border-line px-3 py-2 dark:border-shalom-gold/10"
-        scope="col"
-        aria-sort={isActive ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
-      >
-        <button
-          type="button"
-          className="flex w-full items-center gap-1.5 text-left transition hover:text-shalom-blue dark:hover:text-shalom-gold"
-          onClick={() => toggleSort(sortKey)}
-        >
-          <span>{label}</span>
-          <SortIcon className={isActive ? 'opacity-90' : 'opacity-40'} size={13} aria-hidden="true" />
-        </button>
-      </th>
-    )
   }
 
   const movementMode = getMovementMode(adjustment)
@@ -636,6 +626,120 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       }
     })
   }, [adjustment.cost_price, adjustment.product_id, adjustment.sale_price, getProductPriceValues, movementMode])
+
+  function changeMovementMode(nextMode) {
+    setAdjustment((current) => ({
+      ...current,
+      type: nextMode === 'purchase' ? 'purchase' : nextMode === 'waste' ? 'waste' : 'adjustment',
+      operation: nextMode === 'adjustment_out' || nextMode === 'waste' ? 'out' : 'in',
+      batch_id: nextMode === 'purchase' ? '' : current.batch_id,
+      is_donation: nextMode === 'purchase' ? getProductPriceValues(current.product_id).is_donation : current.is_donation,
+      cost_price: nextMode === 'purchase' && current.cost_price === '' ? getProductPriceValues(current.product_id).cost_price : current.cost_price,
+      sale_price: nextMode === 'purchase' && current.sale_price === '' ? getProductPriceValues(current.product_id).sale_price : current.sale_price
+    }))
+  }
+
+  function syncProductTableScroll(sourceRef, targetRef) {
+    if (sourceRef.current && targetRef.current) {
+      targetRef.current.scrollLeft = sourceRef.current.scrollLeft
+    }
+  }
+
+  function renderSortableHeader(sortKey, label) {
+    const isActive = sortConfig.key === sortKey
+    const SortIcon = isActive ? (sortConfig.direction === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
+
+    return (
+      <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10" scope="col" aria-sort={isActive ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+        <button type="button" className="flex w-full items-center gap-1.5 text-left transition hover:text-shalom-blue dark:hover:text-shalom-gold" onClick={() => toggleSort(sortKey)}>
+          <span>{label}</span>
+          <SortIcon className={isActive ? 'opacity-90' : 'opacity-40'} size={13} aria-hidden="true" />
+        </button>
+      </th>
+    )
+  }
+
+  if (!setupMode) {
+    return (
+      <>
+        <ProductWorkspace
+          catalog={{
+            categories,
+            page: productPage,
+            pageSize: PAGE_SIZE,
+            paginatedProducts,
+            posVisibility,
+            products,
+            query,
+            sortConfig,
+            status,
+            totalItems: sortedProducts.length
+          }}
+          selection={{ productHistory, selectedBatches, selectedProduct, selectedProductId, selectedStock }}
+          creation={{ draft, setDraft }}
+          stock={{ adjustment, movementBatches, movementMode, movementProductRef, needsMovementBatch, setAdjustment, showsMovementExpiration }}
+          permissions={{
+            canDeleteProducts,
+            canEditHistoricalCosts: ['admin', 'finance'].includes(user?.role),
+            canManagePosVisibility
+          }}
+          ui={{ detailMode, message, mobileContextOpen, productSection }}
+          actions={{
+            onBackToList: () => setMobileContextOpen(false),
+            onBatchChange: updateSelectedBatch,
+            onChangeProduct: updateRow,
+            onCreateMovement: createMovement,
+            onCreateProduct: createProduct,
+            onDeleteProduct: openDeleteProduct,
+            onMovementModeChange: changeMovementMode,
+            onOpenCreate: () => {
+              setDetailMode('create')
+              setMobileContextOpen(true)
+            },
+            onPageChange: (page) => setProductPage(clampPage(page, sortedProducts.length)),
+            onPosVisibilityChange: (value) => {
+              setPosVisibility(value)
+              setProductPage(1)
+            },
+            onQueryChange: (value) => {
+              setQuery(value)
+              setProductPage(1)
+            },
+            onSaveBatch: saveBatch,
+            onSaveProduct: saveProduct,
+            onSelectProduct: selectProductForDetails,
+            onSelectSection: selectProductSection,
+            onSortChange: (nextSort) => {
+              setSortConfig(nextSort)
+              setProductPage(1)
+            },
+            onStartStockMovement: startStockMovement,
+            onStatusChange: (value) => {
+              setStatus(value)
+              setProductPage(1)
+            },
+            onUpdatePosVisibility: updatePosVisibility,
+            onUpdateSaleItemCost: updateHistoricalSaleItemCost
+          }}
+        />
+
+        {productToDelete ? (
+          <DeleteProductModal
+            product={productToDelete}
+            confirmation={deleteConfirmation}
+            deleting={deletingProduct}
+            onConfirmationChange={setDeleteConfirmation}
+            onClose={() => {
+              if (deletingProduct) return
+              setProductToDelete(null)
+              setDeleteConfirmation('')
+            }}
+            onConfirm={deleteSelectedProduct}
+          />
+        ) : null}
+      </>
+    )
+  }
 
   return (
     <div className="min-w-0 space-y-5">

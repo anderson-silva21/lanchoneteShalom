@@ -1,8 +1,7 @@
-import { ArrowLeft, BadgePercent, ChevronRight, Minus, PackagePlus, Plus, Search, ShoppingCart, Trash2, UserRound, X } from 'lucide-react'
+import { ArrowLeft, BadgePercent, ChevronRight, Minus, PackagePlus, Plus, Search, ShoppingCart, Trash2, UserRound } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useState, useRef } from 'react'
-import { createPortal } from 'react-dom'
 import { api } from '../services/api'
-import { formatQuantityWithUnit, money } from '../utils/formatters'
+import { decimal, formatQuantityWithUnit, money } from '../utils/formatters'
 import { addPosCartItem, changePosCartQuantity, getPosCartSummary } from '../utils/posCart'
 import { SaleConfirmationModal } from './sales/SaleConfirmationModal'
 
@@ -162,26 +161,30 @@ export function ComboCreatorModal({ products, onClose, onCreated, initialCombo =
   } : { ...createEmptyComboDraft(), kind: initialKind, active: true })
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [productQuery, setProductQuery] = useState('')
 
   const selectedItems = products
     .map((product) => ({ product, quantity: Number(draft.quantities[product.id] || 0) }))
     .filter((item) => item.quantity > 0)
   const regularPrice = selectedItems.reduce((sum, item) => sum + item.product.sale_price * item.quantity, 0)
+  const salePrice = Number(String(draft.sale_price).replace(',', '.')) || 0
+  const savings = regularPrice - salePrice
+  const discountPercentage = regularPrice > 0 ? (savings / regularPrice) * 100 : 0
+  const normalizedProductQuery = productQuery.trim().toLocaleLowerCase('pt-BR')
+  const availableProducts = products.filter((product) => {
+    if (Number(draft.quantities[product.id] || 0) > 0) return false
+    if (!normalizedProductQuery) return true
+    return `${product.name} ${product.category || ''}`.toLocaleLowerCase('pt-BR').includes(normalizedProductQuery)
+  })
 
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-
-    function handleKeyDown(event) {
-      if (event.key === 'Escape') onClose()
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [onClose])
+  function updateProductQuantity(product, nextValue) {
+    const maximum = Math.max(0, Math.floor(Number(product.stock_quantity) || 0))
+    const quantity = Math.min(maximum, Math.max(0, Math.floor(Number(nextValue) || 0)))
+    setDraft((current) => ({
+      ...current,
+      quantities: { ...current.quantities, [product.id]: quantity || '' }
+    }))
+  }
 
   async function submit(event) {
     event.preventDefault()
@@ -214,81 +217,116 @@ export function ComboCreatorModal({ products, onClose, onCreated, initialCombo =
     }
   }
 
-  return createPortal(
-    <div className="dashboard-modal-overlay" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="dashboard-modal-panel mission-panel text-ink shadow-blue dark:text-slate-50" role="dialog" aria-modal="true" aria-labelledby="combo-modal-title">
-        <div className="flex min-w-0 items-start justify-between gap-3 border-b border-line/80 p-4 dark:border-shalom-gold/10">
-          <div className="min-w-0">
-            <h2 id="combo-modal-title" className="font-display text-xl font-semibold">Criar combo ou promocao</h2>
-            <p className="mission-muted mt-1 text-sm">Monte uma oferta usando os produtos disponiveis no estoque.</p>
-          </div>
-          <button type="button" className="mission-btn shrink-0 border border-line/80 bg-white/70 p-2 dark:border-shalom-gold/10 dark:bg-white/10" onClick={onClose} aria-label="Fechar">
-            <X size={18} />
+  return (
+      <section className="mx-auto min-w-0 w-full max-w-4xl" aria-labelledby="combo-modal-title">
+        <div className="flex min-w-0 items-center gap-2 border-b border-line/80 px-4 py-3 dark:border-shalom-gold/10">
+          <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center text-shalom-blue dark:text-shalom-gold" onClick={onClose} aria-label="Voltar" title="Voltar">
+            <ArrowLeft size={21} />
           </button>
+          <div className="min-w-0">
+            <h2 id="combo-modal-title" className="truncate font-display text-xl font-semibold">{initialCombo ? 'Editar' : 'Criar'} {draft.kind === 'promotion' ? 'promocao' : 'combo'}</h2>
+            <p className="mission-muted truncate text-sm">Configure os itens e o preco de venda.</p>
+          </div>
         </div>
 
-        <form className="dashboard-modal-body scrollbar-thin space-y-4 p-4" onSubmit={submit}>
-          <label className="block text-sm font-medium">
-            Tipo
-            <select className="mission-input mt-2 w-full px-3 py-2.5" value={draft.kind} onChange={(event) => setDraft((current) => ({ ...current, kind: event.target.value }))}>
-              <option value="promotion">Promocao rapida, expira hoje</option>
-              <option value="combo">Combo permanente</option>
-            </select>
-          </label>
-
-          <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
-            <label className="block text-sm font-medium">
-              Nome
-              <input className="mission-input mt-2 w-full px-3 py-2.5" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: Queima de salgados" required />
-            </label>
-            <label className="block text-sm font-medium">
-              {draft.kind === 'promotion' ? 'Preco da promocao' : 'Preco do combo'}
-              <input className="mission-input mt-2 w-full px-3 py-2.5" inputMode="decimal" value={draft.sale_price} onChange={(event) => setDraft((current) => ({ ...current, sale_price: event.target.value }))} placeholder="0,00" required />
-            </label>
-          </div>
-          {initialCombo ? <label className="flex min-h-11 items-center justify-between gap-3 text-sm font-medium">Ativo<input type="checkbox" className="h-5 w-5 accent-shalom-orange" checked={draft.active} onChange={(event) => setDraft((current) => ({ ...current, active: event.target.checked }))} /></label> : null}
-
-          <div>
-            <div className="mb-2 flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-              <h3 className="font-display font-semibold">Produtos do combo</h3>
-              <span className="mission-muted break-words text-sm">Preco normal: {money.format(regularPrice)}</span>
-            </div>
-            <div className="max-h-72 divide-y divide-line/70 overflow-y-auto rounded-2xl border border-line/80 px-3 dark:divide-shalom-gold/10 dark:border-shalom-gold/10">
-              {products.map((product) => (
-                <label key={product.id} className="flex min-w-0 flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
-                  <span className="min-w-0">
-                    <strong className="block break-words text-sm">{product.name}</strong>
-                    <span className="mission-muted block break-words text-xs">{money.format(product.sale_price)} - {formatQuantityWithUnit(product.stock_quantity, product.unit)} disponiveis</span>
-                  </span>
-                  <input
-                    className="mission-input w-full px-3 py-2 text-right sm:w-24"
-                    type="number"
-                    inputMode="numeric"
-                    min="0"
-                    max={product.stock_quantity}
-                    step="1"
-                    value={draft.quantities[product.id] || ''}
-                    onChange={(event) => setDraft((current) => ({
-                      ...current,
-                      quantities: { ...current.quantities, [product.id]: event.target.value }
-                    }))}
-                    placeholder="Qtd."
-                  />
-                </label>
+        <form className="px-4 pb-24 lg:pb-0" onSubmit={submit}>
+          <section className="py-5">
+            <h3 className="font-semibold">Informacoes basicas</h3>
+            <div className="scrollbar-hidden mt-2 flex gap-6 overflow-x-auto" role="tablist" aria-label="Tipo da oferta">
+              {[['combo', 'Combo'], ['promotion', 'Promocao']].map(([kind, label]) => (
+                <button key={kind} type="button" role="tab" aria-selected={draft.kind === kind} className={`section-text-tab ${draft.kind === kind ? 'section-text-tab-active' : ''}`} onClick={() => setDraft((current) => ({ ...current, kind }))}>{label}</button>
               ))}
             </div>
+            <div className="mt-3 grid min-w-0 gap-4 sm:grid-cols-[minmax(0,1fr)_180px]">
+              <label className="block text-sm font-medium">
+                Nome {draft.kind === 'promotion' ? 'da promocao' : 'do combo'}
+                <input className="mission-input mt-1 w-full px-3 py-2.5" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder={draft.kind === 'promotion' ? 'Ex.: Oferta do dia' : 'Ex.: Combo lanche'} required />
+              </label>
+              {initialCombo ? <label className="flex min-h-11 items-center justify-between gap-3 self-end border-y border-line/70 py-2 text-sm font-medium dark:border-shalom-gold/10">Ativo<input type="checkbox" className="h-5 w-5 accent-shalom-orange" checked={draft.active} onChange={(event) => setDraft((current) => ({ ...current, active: event.target.checked }))} /></label> : null}
+            </div>
+          </section>
+
+          <section className="border-t border-line/80 py-5 dark:border-shalom-gold/10">
+            <div className="flex items-baseline justify-between gap-3">
+              <h3 className="font-semibold">Produtos selecionados</h3>
+              <span className="mission-muted text-sm">{selectedItems.length} itens</span>
+            </div>
+            {selectedItems.length ? (
+              <div className="mt-2 divide-y divide-line/70 dark:divide-shalom-gold/10">
+                {selectedItems.map(({ product, quantity }) => (
+                  <div key={product.id} className="flex min-w-0 items-center gap-3 py-3">
+                    <div className="min-w-0 flex-1">
+                      <strong className="block truncate text-sm">{product.name}</strong>
+                      <span className="mission-muted text-xs">{money.format(product.sale_price)} cada - {money.format(product.sale_price * quantity)}</span>
+                    </div>
+                    <div className="flex h-11 shrink-0 items-center border-y border-line/80 dark:border-shalom-gold/15">
+                      <button type="button" className="flex h-11 w-11 items-center justify-center" onClick={() => updateProductQuantity(product, quantity - 1)} aria-label={`Diminuir quantidade de ${product.name}`}><Minus size={17} /></button>
+                      <input className="w-10 bg-transparent text-center text-sm font-semibold outline-none" type="number" inputMode="numeric" min="0" max={Math.floor(Number(product.stock_quantity) || 0)} step="1" value={quantity} onChange={(event) => updateProductQuantity(product, event.target.value)} aria-label={`Quantidade de ${product.name}`} />
+                      <button type="button" className="flex h-11 w-11 items-center justify-center disabled:opacity-35" onClick={() => updateProductQuantity(product, quantity + 1)} disabled={quantity >= Math.floor(Number(product.stock_quantity) || 0)} aria-label={`Aumentar quantidade de ${product.name}`}><Plus size={17} /></button>
+                    </div>
+                    <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center text-shalom-wine dark:text-rose-200" onClick={() => updateProductQuantity(product, 0)} aria-label={`Remover ${product.name}`} title="Remover"><Trash2 size={17} /></button>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="mission-muted py-4 text-sm">Nenhum produto adicionado.</p>}
+            {message === 'Selecione ao menos um produto.' ? <p className="text-sm text-shalom-wine dark:text-rose-200">{message}</p> : null}
+
+            <div className="mt-4 border-t border-line/70 pt-4 dark:border-shalom-gold/10">
+              <label className="relative block">
+                <span className="mb-1 block text-sm font-medium">Buscar produto</span>
+                <Search className="pointer-events-none absolute bottom-3 left-3 text-shalom-orange/70" size={17} aria-hidden="true" />
+                <input type="search" className="mission-input h-11 w-full pl-10 pr-3" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Nome ou categoria" />
+              </label>
+              <div className="mt-2 max-h-56 divide-y divide-line/70 overflow-y-auto scrollbar-thin dark:divide-shalom-gold/10">
+                {availableProducts.map((product) => (
+                  <div key={product.id} className="flex min-w-0 items-center gap-3 py-3">
+                    <span className="min-w-0 flex-1"><strong className="block truncate text-sm">{product.name}</strong><span className="mission-muted block truncate text-xs">{money.format(product.sale_price)} - {formatQuantityWithUnit(product.stock_quantity, product.unit)} disponiveis</span></span>
+                    <button type="button" className="flex min-h-11 items-center gap-2 px-2 text-sm font-semibold text-shalom-blue disabled:opacity-35 dark:text-shalom-gold" onClick={() => updateProductQuantity(product, 1)} disabled={Number(product.stock_quantity) < 1}><Plus size={17} />Adicionar</button>
+                  </div>
+                ))}
+                {!availableProducts.length ? <p className="mission-muted py-4 text-sm">Nenhum produto disponivel.</p> : null}
+              </div>
+            </div>
+          </section>
+
+          <section className="border-t border-line/80 py-5 dark:border-shalom-gold/10">
+            <h3 className="font-semibold">Preco e condicao</h3>
+            <div className="mt-3 grid min-w-0 gap-4 sm:grid-cols-2">
+              <div><p className="mission-muted text-xs">Preco normal</p><strong className="mt-1 block font-display text-xl text-shalom-blue dark:text-shalom-gold">{money.format(regularPrice)}</strong></div>
+              <label className="block text-sm font-medium">
+                {draft.kind === 'promotion' ? 'Preco promocional' : 'Preco do combo'}
+                <input className="mission-input mt-1 w-full px-3 py-2.5" inputMode="decimal" value={draft.sale_price} onChange={(event) => setDraft((current) => ({ ...current, sale_price: event.target.value }))} placeholder="0,00" required />
+              </label>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-x-8 gap-y-1 border-t border-line/60 pt-3 text-sm dark:border-shalom-gold/10">
+              <span><span className="mission-muted">Economia: </span><strong>{money.format(savings)}</strong></span>
+              {draft.kind === 'promotion' ? <span><span className="mission-muted">Desconto: </span><strong>{decimal.format(discountPercentage)}%</strong></span> : null}
+            </div>
+          </section>
+
+          {draft.kind === 'promotion' ? <section className="border-t border-line/80 py-5 dark:border-shalom-gold/10"><h3 className="font-semibold">Periodo</h3><p className="mission-muted mt-2 text-sm">A promocao expira automaticamente ao final do dia.</p></section> : null}
+
+          <section className="border-t border-line/80 py-5 dark:border-shalom-gold/10">
+            <h3 className="font-semibold">Resumo</h3>
+            <dl className="mt-3 grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+              <div className="flex justify-between gap-3"><dt className="mission-muted">Produtos</dt><dd className="font-semibold">{selectedItems.length}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="mission-muted">Preco normal</dt><dd className="font-semibold">{money.format(regularPrice)}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="mission-muted">Preco final</dt><dd className="font-semibold">{money.format(salePrice)}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="mission-muted">Economia</dt><dd className="font-semibold">{money.format(savings)}</dd></div>
+            </dl>
+          </section>
+
+          {message && message !== 'Selecione ao menos um produto.' ? <p className="border-l-2 border-shalom-wine px-3 py-1 text-sm text-shalom-wine dark:text-rose-100">{message}</p> : null}
+
+          <div className="offer-editor-actions fixed inset-x-0 z-30 flex gap-2 border-t border-line/80 bg-white/95 px-3 py-2 backdrop-blur dark:border-shalom-gold/10 dark:bg-shalom-night/95 lg:static lg:mx-0 lg:mt-4 lg:justify-end lg:px-0 lg:py-3">
+            <button type="button" className="min-h-11 px-4 py-2.5 text-sm font-semibold text-shalom-deep dark:text-slate-200" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="mission-btn mission-btn-primary flex min-h-11 flex-1 items-center justify-center gap-2 px-5 py-2.5 font-semibold lg:flex-none" disabled={saving}>
+              {draft.kind === 'promotion' ? <BadgePercent size={18} /> : <PackagePlus size={18} />}
+              {saving ? 'Salvando...' : initialCombo ? 'Salvar alteracoes' : draft.kind === 'promotion' ? 'Criar promocao' : 'Criar combo'}
+            </button>
           </div>
-
-          {message ? <p className="rounded-xl bg-shalom-wine/10 px-3 py-2 text-sm text-shalom-wine dark:text-rose-100">{message}</p> : null}
-
-          <button type="submit" className="mission-btn mission-btn-primary flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" disabled={saving}>
-            {draft.kind === 'promotion' ? <BadgePercent size={18} /> : <PackagePlus size={18} />}
-            {saving ? 'Salvando...' : initialCombo ? 'Salvar alteracoes' : draft.kind === 'promotion' ? 'Criar promocao rapida' : 'Criar combo'}
-          </button>
         </form>
       </section>
-    </div>,
-    document.body
   )
 }
 
