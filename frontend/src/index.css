@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  --mobile-bottom-nav-height: calc(4.35rem + env(safe-area-inset-bottom));
+  --mobile-bottom-nav-height: calc(3.75rem + env(safe-area-inset-bottom));
   --pos-action-height: 3.5rem;
   --pos-action-gap: 0.75rem;
   color: #142f53;
@@ -21,6 +21,10 @@
 
 .pos-view-with-action {
   padding-bottom: calc(var(--pos-action-height) + (var(--pos-action-gap) * 2));
+}
+
+.mobile-more-menu {
+  bottom: calc(var(--mobile-bottom-nav-height) + 0.5rem);
 }
 
 @media (min-width: 768px) {
@@ -173,6 +177,58 @@ button:disabled {
 }
 
 @layer components {
+  .mobile-nav-item {
+    position: relative;
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: rgba(20, 47, 83, 0.62);
+    box-shadow: none;
+    transition: color 180ms ease;
+  }
+
+  .mobile-nav-item::after {
+    position: absolute;
+    right: 9px;
+    bottom: 0;
+    left: 9px;
+    height: 3px;
+    border-radius: 999px;
+    background: #184e7f;
+    content: '';
+    opacity: 0;
+    transform: scaleX(0.55);
+    transition: opacity 180ms ease, transform 180ms ease;
+  }
+
+  .mobile-nav-item:hover,
+  .mobile-nav-item-active {
+    color: #184e7f;
+  }
+
+  .mobile-nav-item-active::after {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+
+  .dark .mobile-nav-item {
+    color: rgba(226, 232, 240, 0.72);
+  }
+
+  .dark .mobile-nav-item:hover {
+    color: #ffffff;
+  }
+
+  .dark .mobile-nav-item-active {
+    color: #184e7f;
+  }
+
   .pos-category-tab {
     position: relative;
     display: inline-flex;
