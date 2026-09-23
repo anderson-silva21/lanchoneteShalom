@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import {
+  ArrowLeft,
   BarChart3,
   BookOpen,
   Boxes,
@@ -49,7 +50,7 @@ const mobilePrimaryLabels = {
 
 const mobilePrimaryOrder = ['sales', 'sheet', 'products', 'payments', 'library']
 
-export function AppShell({ activeView, setActiveView, user, darkMode, setDarkMode, setupEnabled = false, onLogout, children }) {
+export function AppShell({ activeView, setActiveView, pageTitle, onBack, user, darkMode, setDarkMode, setupEnabled = false, onLogout, children }) {
   const allowedNavItems = navItems.filter((item) => canAccessView(user?.role, item.key, { setupEnabled }))
   const mobilePrimaryItems = mobilePrimaryOrder
     .map((key) => allowedNavItems.find((item) => item.key === key))
@@ -175,17 +176,19 @@ export function AppShell({ activeView, setActiveView, user, darkMode, setDarkMod
       <div className={`transition-[padding] duration-200 ${sidebarCollapsed ? 'lg:pl-[88px]' : 'lg:pl-72'}`}>
         <header className="sticky top-0 z-20 border-b border-shalom-gold/30 bg-white/78 px-3 py-2 shadow-sm backdrop-blur-2xl dark:border-shalom-gold/15 dark:bg-gradient-to-r dark:from-shalom-night/95 dark:via-[#0A2443]/92 dark:to-shalom-deep/88 dark:shadow-[0_18px_52px_rgba(0,0,0,0.24)] sm:px-4 lg:px-8 lg:py-3">
           <div className="flex items-center gap-3 lg:hidden">
+            {onBack ? <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center text-shalom-blue dark:text-shalom-gold" onClick={onBack} aria-label="Voltar" title="Voltar"><ArrowLeft size={21} /></button> : null}
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-shalom-orange dark:text-shalom-gold/90">SH82</p>
-              <h1 className="truncate font-display text-xl font-semibold leading-tight text-shalom-deep dark:text-white">{allowedNavItems.find((item) => item.key === activeView)?.label}</h1>
+              <h1 className="truncate font-display text-xl font-semibold leading-tight text-shalom-deep dark:text-white">{pageTitle || allowedNavItems.find((item) => item.key === activeView)?.label}</h1>
             </div>
           </div>
 
           <div className="hidden lg:flex lg:items-center lg:justify-between">
             <div className="flex items-start justify-between gap-3">
+              {onBack ? <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center text-shalom-blue dark:text-shalom-gold" onClick={onBack} aria-label="Voltar" title="Voltar"><ArrowLeft size={21} /></button> : null}
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-shalom-orange dark:text-shalom-gold/90 sm:text-sm">Gestao da difusao</p>
-                <h1 className="font-display text-xl font-semibold text-shalom-deep dark:text-white sm:text-2xl">{allowedNavItems.find((item) => item.key === activeView)?.label}</h1>
+                <h1 className="font-display text-xl font-semibold text-shalom-deep dark:text-white sm:text-2xl">{pageTitle || allowedNavItems.find((item) => item.key === activeView)?.label}</h1>
               </div>
             </div>
             <div className="flex items-center gap-2">

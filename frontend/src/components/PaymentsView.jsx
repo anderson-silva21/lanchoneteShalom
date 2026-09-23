@@ -1,7 +1,9 @@
 import { CheckCircle2, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
 import { decimal, formatDate, formatDateTime, money } from '../utils/formatters'
+import { BackToDashboard } from './BackToDashboard'
 import { PaginationControls } from './PaginationControls'
 import { OfferComboManager } from './finance/OfferComboManager'
 
@@ -14,6 +16,13 @@ const financeSections = [
   ['sales', 'Vendas'],
   ['offers', 'Ofertas']
 ]
+const financeSectionPaths = {
+  overview: '/financeiro',
+  closing: '/financeiro/fechamento',
+  pending: '/financeiro/pagamentos-pendentes',
+  sales: '/financeiro/vendas',
+  offers: '/financeiro/ofertas'
+}
 
 const paymentLabels = {
   pix: 'Pix',
@@ -89,7 +98,8 @@ function SaleItemsList({ items }) {
   )
 }
 
-export function PaymentsView({ refreshKey, onChanged }) {
+export function PaymentsView({ refreshKey, onChanged, initialSection = 'overview' }) {
+  const navigate = useNavigate()
   const [pendingPayments, setPendingPayments] = useState([])
   const [closing, setClosing] = useState(null)
   const [events, setEvents] = useState([])
@@ -103,9 +113,14 @@ export function PaymentsView({ refreshKey, onChanged }) {
   const [message, setMessage] = useState('')
   const [pendingPage, setPendingPage] = useState(1)
   const [salesPage, setSalesPage] = useState(1)
-  const [activeSection, setActiveSection] = useState('overview')
+  const [activeSection, setActiveSection] = useState(initialSection)
   const [expandedPendingId, setExpandedPendingId] = useState('')
   const [expandedSaleId, setExpandedSaleId] = useState('')
+
+  function selectSection(section) {
+    setActiveSection(section)
+    navigate(financeSectionPaths[section] || '/financeiro')
+  }
 
   const closingParams = useMemo(() => {
     const params = { date: closingDate }
@@ -129,6 +144,7 @@ export function PaymentsView({ refreshKey, onChanged }) {
   }, [closingParams])
 
   useEffect(() => { loadData() }, [loadData, refreshKey])
+  useEffect(() => { setActiveSection(initialSection) }, [initialSection])
 
   async function confirmPayment(saleId) {
     const paymentMethod = selectedMethods[saleId]
@@ -186,7 +202,7 @@ export function PaymentsView({ refreshKey, onChanged }) {
     <div className="-mx-3 -mt-4 min-w-0 sm:-mx-5 lg:mx-0 lg:mt-0">
       <div className="scrollbar-hidden flex gap-5 overflow-x-auto border-b border-line/80 px-3 pt-1 dark:border-shalom-gold/10 sm:px-5 lg:px-0 lg:pt-0" role="tablist" aria-label="Areas do financeiro">
         {financeSections.map(([key, label]) => (
-          <button key={key} type="button" role="tab" aria-selected={activeSection === key} className={`section-text-tab ${activeSection === key ? 'section-text-tab-active' : ''}`} onClick={() => setActiveSection(key)}>{label}</button>
+          <button key={key} type="button" role="tab" aria-selected={activeSection === key} className={`section-text-tab ${activeSection === key ? 'section-text-tab-active' : ''}`} onClick={() => selectSection(key)}>{label}</button>
         ))}
       </div>
 
@@ -203,7 +219,7 @@ export function PaymentsView({ refreshKey, onChanged }) {
 
           <div className="grid min-w-0 lg:grid-cols-2 lg:divide-x lg:divide-line/70 dark:lg:divide-shalom-gold/10">
             <section className="border-b border-line/70 px-3 py-4 dark:border-shalom-gold/10 sm:px-5 lg:border-b-0 lg:px-0 lg:pr-5">
-              <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold">Fechamento atual</h2><p className="mission-muted text-sm">{closing?.event ? closing.event.name : 'Geral do dia'} - {formatDate(closing?.date)}</p></div><button type="button" className="flex h-11 w-11 items-center justify-center text-shalom-blue" onClick={() => setActiveSection('closing')} aria-label="Abrir fechamento" title="Abrir fechamento"><ChevronRight size={20} /></button></div>
+              <div className="flex items-center justify-between gap-3"><div><h2 className="font-semibold">Fechamento atual</h2><p className="mission-muted text-sm">{closing?.event ? closing.event.name : 'Geral do dia'} - {formatDate(closing?.date)}</p></div><button type="button" className="flex h-11 w-11 items-center justify-center text-shalom-blue" onClick={() => selectSection('closing')} aria-label="Abrir fechamento" title="Abrir fechamento"><ChevronRight size={20} /></button></div>
               {closing?.registered_closing ? <p className="mt-3 border-l-2 border-emerald-500 px-3 text-sm text-emerald-700 dark:text-emerald-200">Registrado em {formatDateTime(closing.registered_closing.created_at)}.</p> : <p className="mission-muted mt-3 text-sm">Ainda nao registrado para este periodo.</p>}
               <div className="mt-3 divide-y divide-line/70 dark:divide-shalom-gold/10">
                 {paymentMethods.slice(0, 4).map((item) => <div key={`${item.payment_method}-${item.payment_status}`} className="flex items-center justify-between gap-3 py-2 text-sm"><span>{getPaymentLabel(item.payment_method)} <span className="mission-muted">({getStatusLabel(item.payment_status)})</span></span><strong>{money.format(item.total)}</strong></div>)}
@@ -212,9 +228,9 @@ export function PaymentsView({ refreshKey, onChanged }) {
             </section>
 
             <section className="px-3 py-4 sm:px-5 lg:px-0 lg:pl-5">
-              <button type="button" className="flex min-h-16 w-full items-center justify-between gap-3 border-b border-line/70 py-2 text-left dark:border-shalom-gold/10" onClick={() => setActiveSection('pending')}><span><strong className="block">Pagamentos pendentes</strong><span className="mission-muted text-sm">{pendingPayments.length} registros - {money.format(summary.pending_total)}</span></span><ChevronRight size={20} className="shrink-0 opacity-45" /></button>
-              <button type="button" className="flex min-h-16 w-full items-center justify-between gap-3 border-b border-line/70 py-2 text-left dark:border-shalom-gold/10" onClick={() => setActiveSection('sales')}><span><strong className="block">Vendas do fechamento</strong><span className="mission-muted text-sm">{sales.length} registros no periodo</span></span><ChevronRight size={20} className="shrink-0 opacity-45" /></button>
-              <button type="button" className="flex min-h-16 w-full items-center justify-between gap-3 py-2 text-left" onClick={() => setActiveSection('offers')}><span><strong className="block">Ofertas e combos</strong><span className="mission-muted text-sm">Configuracoes exibidas no PDV</span></span><ChevronRight size={20} className="shrink-0 opacity-45" /></button>
+              <button type="button" className="flex min-h-16 w-full items-center justify-between gap-3 border-b border-line/70 py-2 text-left dark:border-shalom-gold/10" onClick={() => selectSection('pending')}><span><strong className="block">Pagamentos pendentes</strong><span className="mission-muted text-sm">{pendingPayments.length} registros - {money.format(summary.pending_total)}</span></span><ChevronRight size={20} className="shrink-0 opacity-45" /></button>
+              <button type="button" className="flex min-h-16 w-full items-center justify-between gap-3 border-b border-line/70 py-2 text-left dark:border-shalom-gold/10" onClick={() => selectSection('sales')}><span><strong className="block">Vendas do fechamento</strong><span className="mission-muted text-sm">{sales.length} registros no periodo</span></span><ChevronRight size={20} className="shrink-0 opacity-45" /></button>
+              <button type="button" className="flex min-h-16 w-full items-center justify-between gap-3 py-2 text-left" onClick={() => selectSection('offers')}><span><strong className="block">Ofertas e combos</strong><span className="mission-muted text-sm">Configuracoes exibidas no PDV</span></span><ChevronRight size={20} className="shrink-0 opacity-45" /></button>
             </section>
           </div>
         </div>
@@ -267,6 +283,7 @@ export function PaymentsView({ refreshKey, onChanged }) {
             </article>
           }) : <p className="mission-muted px-3 py-8 text-sm sm:px-5 lg:px-0">Nenhum pagamento pendente.</p>}
           <div className="px-3 sm:px-5 lg:px-0"><PaginationControls page={pendingPage} pageSize={PAGE_SIZE} totalItems={pendingPayments.length} itemLabel="pendencias" onPageChange={(page) => setPendingPage(clampPage(page, pendingPayments.length))} /></div>
+          <div className="mx-3 border-t border-line/70 pt-3 dark:border-shalom-gold/10 sm:mx-5 lg:mx-0"><BackToDashboard /></div>
         </section>
       ) : null}
 

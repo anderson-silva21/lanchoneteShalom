@@ -1,10 +1,10 @@
-import { ArrowUpDown, BookOpen, Boxes, CheckCircle2, Download, Eye, FileSpreadsheet, Inbox, MessageCircle, PackagePlus, Pencil, Plus, ReceiptText, Save, Search, Trash2, TrendingUp, UserRound, X } from 'lucide-react'
+import { ArrowUpDown, CheckCircle2, ChevronRight, Download, Eye, MessageCircle, PackagePlus, Pencil, Plus, Save, Search, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Area, CartesianGrid, ComposedChart, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { api } from '../services/api'
 import { decimal, formatDateTime, money } from '../utils/formatters'
 import { clearLibraryRequestDraft, draftForLibraryRequest, formatLibraryCustomerContact, updateLibraryRequestDraft } from '../utils/libraryRequestDrafts'
-import { MetricCard } from './MetricCard'
 
 const emptyProduct = {
   name: '',
@@ -21,13 +21,13 @@ const emptyProduct = {
 }
 
 const tabs = [
-  { key: 'overview', label: 'Visao geral', icon: TrendingUp },
-  { key: 'requests', label: 'Atendimentos', icon: Inbox },
-  { key: 'products', label: 'Catalogo', icon: BookOpen },
-  { key: 'inventory', label: 'Estoque', icon: Boxes },
-  { key: 'sales', label: 'Vendas', icon: ReceiptText },
-  { key: 'sellers', label: 'Vendedores', icon: UserRound },
-  { key: 'spreadsheet', label: 'Planilha', icon: FileSpreadsheet }
+  { key: 'overview', label: 'Visao geral' },
+  { key: 'requests', label: 'Atendimentos' },
+  { key: 'products', label: 'Catalogo' },
+  { key: 'inventory', label: 'Estoque' },
+  { key: 'sales', label: 'Vendas' },
+  { key: 'sellers', label: 'Vendedores' },
+  { key: 'spreadsheet', label: 'Planilha' }
 ]
 
 const periodOptions = [
@@ -85,6 +85,16 @@ function variationText(value) {
   return `${prefix}${decimal.format(value)}% vs. periodo anterior`
 }
 
+function LibraryMetric({ label, value, detail }) {
+  return (
+    <div className="min-w-0 border-l-2 border-shalom-blue/20 py-1 pl-3 dark:border-shalom-gold/25">
+      <p className="mission-muted text-xs font-medium">{label}</p>
+      <strong className="mt-1 block min-w-0 break-words font-display text-xl font-semibold leading-tight text-shalom-deep dark:text-white">{value}</strong>
+      {detail ? <p className="mission-muted mt-1 truncate text-xs">{detail}</p> : null}
+    </div>
+  )
+}
+
 function newSaleKey() {
   if (window.crypto?.randomUUID) return window.crypto.randomUUID()
   return `sale-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -123,7 +133,10 @@ function whatsappContactUrl(contact) {
 
 export function LibraryManager({ user }) {
   const writable = canWrite(user)
+  const location = useLocation()
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
+  const [catalogMenuOpen, setCatalogMenuOpen] = useState(false)
   const [dashboard, setDashboard] = useState(null)
   const [categories, setCategories] = useState([])
   const [products, setProducts] = useState([])
@@ -194,6 +207,16 @@ export function LibraryManager({ user }) {
 
   const saleTotal = saleLines.reduce((sum, line) => sum + line.line_total, 0)
   const dashboardRange = useMemo(() => periodToRange(dashboardPeriod, dashboardCustomRange), [dashboardPeriod, dashboardCustomRange])
+  const catalogProductMatch = location.pathname.match(/^\/gestao-livraria\/catalogo\/produtos\/([^/]+)$/)
+  const catalogProductId = catalogProductMatch?.[1] === 'novo' ? null : catalogProductMatch?.[1]
+  const isNewProductRoute = location.pathname === '/gestao-livraria/catalogo/produtos/novo'
+  const isNewCategoryRoute = location.pathname === '/gestao-livraria/catalogo/categorias/nova'
+  const isProductFormRoute = isNewProductRoute || Boolean(catalogProductId)
+  const isCatalogChildRoute = isProductFormRoute || isNewCategoryRoute
+
+  useEffect(() => {
+    if (location.pathname.startsWith('/gestao-livraria/catalogo')) setActiveTab('products')
+  }, [location.pathname])
 
   const loadData = useCallback(async () => {
     setMessage('')
@@ -302,6 +325,7 @@ export function LibraryManager({ user }) {
       setCategoryDraft({ name: '', description: '' })
       await loadData()
       setMessage('Categoria da Livraria criada.')
+      navigate('/gestao-livraria/catalogo')
     } catch (err) {
       setMessage(err.message)
     } finally {
@@ -328,6 +352,7 @@ export function LibraryManager({ user }) {
       setEditingProductId(null)
       await loadData()
       setMessage(editingProductId ? 'Produto da Livraria atualizado.' : 'Produto da Livraria salvo.')
+      navigate('/gestao-livraria/catalogo')
     } catch (err) {
       setMessage(err.message)
     } finally {
@@ -373,6 +398,59 @@ export function LibraryManager({ user }) {
   function cancelProductEdit() {
     setEditingProductId(null)
     setProductDraft(emptyProduct)
+  }
+
+  useEffect(() => {
+    if (!catalogProductId || String(editingProductId) === String(catalogProductId)) return
+    const product = products.find((candidate) => String(candidate.id) === String(catalogProductId))
+    if (!product) return
+    setEditingProductId(product.id)
+    setProductDraft({
+      name: product.name,
+      description: product.description || '',
+      category_id: product.category_id || '',
+      sku: product.sku,
+      price: product.price,
+      cost_price: product.cost_price,
+      stock_quantity: product.stock_quantity,
+      min_stock: product.min_stock,
+      active: Boolean(product.active),
+      published: Boolean(product.published),
+      image_url: product.images?.[0]?.url || ''
+    })
+  }, [catalogProductId, editingProductId, products])
+
+  useEffect(() => {
+    if (!isNewProductRoute) return
+    setEditingProductId(null)
+    setProductDraft(emptyProduct)
+  }, [isNewProductRoute])
+
+  function selectTab(tab) {
+    setActiveTab(tab)
+    setCatalogMenuOpen(false)
+    if (tab === 'products') {
+      navigate('/gestao-livraria/catalogo')
+    } else if (location.pathname.startsWith('/gestao-livraria/catalogo')) {
+      navigate('/gestao-livraria')
+    }
+  }
+
+  function openNewProduct() {
+    cancelProductEdit()
+    setCatalogMenuOpen(false)
+    navigate('/gestao-livraria/catalogo/produtos/novo')
+  }
+
+  function openNewCategory() {
+    setCategoryDraft({ name: '', description: '' })
+    setCatalogMenuOpen(false)
+    navigate('/gestao-livraria/catalogo/categorias/nova')
+  }
+
+  function openProduct(product) {
+    startProductEdit(product)
+    navigate(`/gestao-livraria/catalogo/produtos/${product.id}`)
   }
 
   async function saveMovement(event) {
@@ -549,40 +627,22 @@ export function LibraryManager({ user }) {
   }
 
   return (
-    <div className="grid gap-5">
-      <section className="mission-panel p-4">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-shalom-orange dark:text-shalom-gold">Shalom Store</p>
-            <h2 className="font-display text-2xl font-semibold">Gestao da Livraria</h2>
-            <p className="mission-muted mt-1 text-sm">Catalogo, estoque e vendas assistidas separados da Lanchonete.</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {tabs.map((tab) => {
-              const Icon = tab.icon
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  className={`mission-btn inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold ${activeTab === tab.key ? 'mission-btn-primary' : 'border border-shalom-gold/30 bg-white/75 dark:border-shalom-gold/10 dark:bg-white/10'}`}
-                  onClick={() => setActiveTab(tab.key)}
-                >
-                  <Icon size={16} />
-                  {tab.label}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-        {message ? <p className="mt-4 rounded-xl border border-shalom-gold/30 bg-shalom-cream/70 px-4 py-3 text-sm font-medium dark:bg-white/10" aria-live="polite">{message}</p> : null}
-        {!writable ? (
-          <p className="mt-4 rounded-xl border border-shalom-gold/30 bg-white/70 px-4 py-3 text-sm font-medium dark:bg-white/10">Seu perfil permite acompanhamento financeiro e operacional, sem alteracoes no catalogo, estoque ou vendas.</p>
-        ) : null}
-      </section>
+    <div className="mx-auto grid w-full max-w-[1400px] gap-6 pb-4">
+      {!isCatalogChildRoute ? (
+        <nav className="scrollbar-hidden flex gap-5 overflow-x-auto border-b border-line/80 dark:border-shalom-gold/10" role="tablist" aria-label="Areas da Livraria">
+          {tabs.map((tab) => (
+            <button key={tab.key} type="button" role="tab" aria-selected={activeTab === tab.key} className={`section-text-tab shrink-0 ${activeTab === tab.key ? 'section-text-tab-active' : ''}`} onClick={() => selectTab(tab.key)}>
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      ) : null}
+      {message ? <p className="border-l-2 border-shalom-orange px-3 py-1 text-sm font-medium dark:border-shalom-gold" aria-live="polite">{message}</p> : null}
+      {!writable ? <p className="mission-muted text-xs">Perfil somente leitura: acompanhamento financeiro e operacional.</p> : null}
 
       {activeTab === 'overview' ? (
-        <div className="grid gap-5">
-          <section className="mission-panel p-4">
+        <div className="grid gap-7">
+          <section className="border-b border-line/80 pb-5 dark:border-shalom-gold/10">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <h3 className="font-display text-lg font-semibold">Periodo de analise</h3>
@@ -604,21 +664,21 @@ export function LibraryManager({ user }) {
             </div>
           </section>
 
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard icon={TrendingUp} label="Receita" value={money.format(dashboard?.revenue || 0)} detail={variationText(dashboard?.comparisons?.revenue) || 'Periodo atual'} tone="green" />
-            <MetricCard icon={ReceiptText} label="Lucro bruto" value={money.format(dashboard?.gross_profit || 0)} detail={variationText(dashboard?.comparisons?.gross_profit) || `${money.format(dashboard?.cost || 0)} de custo`} />
-            <MetricCard icon={TrendingUp} label="Margem bruta" value={`${decimal.format(dashboard?.margin || 0)}%`} detail="Lucro / receita" tone="amber" />
-            <MetricCard icon={ReceiptText} label="Ticket medio" value={money.format(dashboard?.average_ticket || 0)} detail={variationText(dashboard?.comparisons?.average_ticket) || `${decimal.format(dashboard?.sales_count || 0)} vendas`} />
-            <MetricCard icon={ReceiptText} label="Vendas" value={decimal.format(dashboard?.sales_count || 0)} detail={variationText(dashboard?.comparisons?.sales_count) || 'Vendas validas'} />
-            <MetricCard icon={Boxes} label="Itens vendidos" value={decimal.format(dashboard?.items_sold || 0)} detail={variationText(dashboard?.comparisons?.items_sold) || 'Unidades no periodo'} />
-            <MetricCard icon={BookOpen} label="Produtos ativos" value={decimal.format(dashboard?.active_products_count || 0)} detail={`${decimal.format(dashboard?.published_count || 0)} publicados`} />
-            <MetricCard icon={Boxes} label="Unidades em estoque" value={decimal.format(dashboard?.units_in_stock || 0)} detail={`${money.format(dashboard?.inventory_value || 0)} em custo`} />
+          <section className="grid grid-cols-1 gap-x-4 gap-y-5 min-[350px]:grid-cols-2 lg:grid-cols-4 lg:gap-x-6">
+            <LibraryMetric label="Receita" value={money.format(dashboard?.revenue || 0)} detail={variationText(dashboard?.comparisons?.revenue) || 'Periodo atual'} />
+            <LibraryMetric label="Lucro bruto" value={money.format(dashboard?.gross_profit || 0)} detail={variationText(dashboard?.comparisons?.gross_profit) || `${money.format(dashboard?.cost || 0)} de custo`} />
+            <LibraryMetric label="Margem bruta" value={`${decimal.format(dashboard?.margin || 0)}%`} detail="Lucro / receita" />
+            <LibraryMetric label="Ticket medio" value={money.format(dashboard?.average_ticket || 0)} detail={variationText(dashboard?.comparisons?.average_ticket) || `${decimal.format(dashboard?.sales_count || 0)} vendas`} />
+            <LibraryMetric label="Vendas" value={decimal.format(dashboard?.sales_count || 0)} detail={variationText(dashboard?.comparisons?.sales_count) || 'Vendas validas'} />
+            <LibraryMetric label="Itens vendidos" value={decimal.format(dashboard?.items_sold || 0)} detail={variationText(dashboard?.comparisons?.items_sold) || 'Unidades no periodo'} />
+            <LibraryMetric label="Produtos ativos" value={decimal.format(dashboard?.active_products_count || 0)} detail={`${decimal.format(dashboard?.published_count || 0)} publicados`} />
+            <LibraryMetric label="Unidades em estoque" value={decimal.format(dashboard?.units_in_stock || 0)} detail={`${money.format(dashboard?.inventory_value || 0)} em custo`} />
           </section>
 
-          <section className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)]">
-            <div className="mission-panel p-4">
+          <section className="grid min-w-0 gap-7 border-t border-line/80 pt-6 dark:border-shalom-gold/10 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.8fr)] xl:gap-10">
+            <div className="min-w-0">
               <h3 className="font-display text-lg font-semibold">Receita, custo e lucro</h3>
-              <div className="mt-4 h-72">
+              <div className="mt-3 h-60 sm:h-72">
                 {dashboard?.series?.length ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={dashboard.series}>
@@ -633,25 +693,25 @@ export function LibraryManager({ user }) {
                     </ComposedChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-shalom-gold/45 text-center font-medium">Nenhuma venda encontrada neste periodo.</div>
+                  <div className="mission-muted flex h-full items-center justify-center border-y border-line/70 text-center text-sm dark:border-shalom-gold/10">Nenhuma venda encontrada neste periodo.</div>
                 )}
               </div>
             </div>
 
-            <div className="mission-panel p-4">
+            <div className="min-w-0 xl:border-l xl:border-line/80 xl:pl-10 dark:xl:border-shalom-gold/10">
               <h3 className="font-display text-lg font-semibold">Estoque atual</h3>
-              <div className="mt-4 grid gap-3 text-sm">
-                <div className="flex justify-between gap-3"><span>Produtos ativos</span><strong>{decimal.format(dashboard?.active_products_count || 0)}</strong></div>
-                <div className="flex justify-between gap-3"><span>Produtos publicados</span><strong>{decimal.format(dashboard?.published_count || 0)}</strong></div>
-                <div className="flex justify-between gap-3"><span>Total de SKUs</span><strong>{decimal.format(dashboard?.products_count || 0)}</strong></div>
-                <div className="flex justify-between gap-3"><span>Unidades em estoque</span><strong>{decimal.format(dashboard?.units_in_stock || 0)}</strong></div>
-                <div className="flex justify-between gap-3"><span>Lucro potencial</span><strong>{money.format(dashboard?.potential_profit || 0)}</strong></div>
-                <div className="flex justify-between gap-3"><span>Sem movimentacao</span><strong>{decimal.format(dashboard?.no_movement_count || 0)}</strong></div>
+              <div className="mt-3 divide-y divide-line/70 text-sm dark:divide-shalom-gold/10">
+                <div className="flex justify-between gap-3 py-2"><span>Produtos ativos</span><strong>{decimal.format(dashboard?.active_products_count || 0)}</strong></div>
+                <div className="flex justify-between gap-3 py-2"><span>Produtos publicados</span><strong>{decimal.format(dashboard?.published_count || 0)}</strong></div>
+                <div className="flex justify-between gap-3 py-2"><span>Total de SKUs</span><strong>{decimal.format(dashboard?.products_count || 0)}</strong></div>
+                <div className="flex justify-between gap-3 py-2"><span>Unidades em estoque</span><strong>{decimal.format(dashboard?.units_in_stock || 0)}</strong></div>
+                <div className="flex justify-between gap-3 py-2"><span>Lucro potencial</span><strong>{money.format(dashboard?.potential_profit || 0)}</strong></div>
+                <div className="flex justify-between gap-3 py-2"><span>Sem movimentacao</span><strong>{decimal.format(dashboard?.no_movement_count || 0)}</strong></div>
                 <div className="border-t border-line/70 pt-3 dark:border-shalom-gold/10">
                   <p className="mission-muted">Menor estoque</p>
                   <p className="font-semibold">{dashboard?.lowest_stock_product?.name || '-'} ({decimal.format(dashboard?.lowest_stock_product?.stock_quantity || 0)})</p>
                 </div>
-                <div>
+                <div className="pt-3">
                   <p className="mission-muted">Maior estoque</p>
                   <p className="font-semibold">{dashboard?.highest_stock_product?.name || '-'} ({decimal.format(dashboard?.highest_stock_product?.stock_quantity || 0)})</p>
                 </div>
@@ -659,8 +719,8 @@ export function LibraryManager({ user }) {
             </div>
           </section>
 
-          <section className="grid gap-5 xl:grid-cols-3">
-            <div className="mission-panel p-4">
+          <section className="grid gap-7 border-t border-line/80 pt-6 dark:border-shalom-gold/10 xl:grid-cols-3 xl:gap-0 xl:divide-x xl:divide-line/80 dark:xl:divide-shalom-gold/10">
+            <div className="min-w-0 xl:pr-6">
               <h3 className="font-display text-lg font-semibold">Produtos mais vendidos</h3>
               <div className="mt-3 divide-y divide-line/70 dark:divide-shalom-gold/10">
                 {(dashboard?.top_products || []).slice(0, 6).map((item) => (
@@ -672,7 +732,7 @@ export function LibraryManager({ user }) {
                 {!dashboard?.top_products?.length ? <p className="mission-muted py-4 text-sm">Nenhum produto vendido no periodo.</p> : null}
               </div>
             </div>
-            <div className="mission-panel p-4">
+            <div className="min-w-0 xl:px-6">
               <h3 className="font-display text-lg font-semibold">Ranking por faturamento</h3>
               <div className="mt-3 divide-y divide-line/70 dark:divide-shalom-gold/10">
                 {(dashboard?.top_revenue_products || []).slice(0, 6).map((item) => (
@@ -684,7 +744,7 @@ export function LibraryManager({ user }) {
                 {!dashboard?.top_revenue_products?.length ? <p className="mission-muted py-4 text-sm">Nenhuma receita no periodo.</p> : null}
               </div>
             </div>
-            <div className="mission-panel p-4">
+            <div className="min-w-0 xl:pl-6">
               <h3 className="font-display text-lg font-semibold">Vendas por vendedor</h3>
               <div className="mt-3 divide-y divide-line/70 dark:divide-shalom-gold/10">
                 {(dashboard?.seller_performance || []).slice(0, 6).map((item) => (
@@ -702,7 +762,7 @@ export function LibraryManager({ user }) {
 
       {activeTab === 'requests' ? (
         <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
-          <div className="mission-panel min-w-0 p-4">
+          <div className="min-w-0">
             <div className="grid gap-3 md:grid-cols-[1fr_180px]">
               <label className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 translate-y-[-10%] text-shalom-blue/60" size={18} />
@@ -716,11 +776,11 @@ export function LibraryManager({ user }) {
                 <option value="cancelled">Cancelados</option>
               </select>
             </div>
-            <div className="mt-4 grid gap-3">
+            <div className="mt-4 divide-y divide-line/70 dark:divide-shalom-gold/10">
               {requests.map((request) => {
                 const requestDraft = draftForLibraryRequest(requestSaleDrafts, request.reference)
                 return (
-                <article key={request.reference} className="min-w-0 rounded-xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
+                <article key={request.reference} className="min-w-0 py-4 text-sm">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -743,7 +803,7 @@ export function LibraryManager({ user }) {
                       </div>
                       <div className="mt-3 grid gap-2">
                         {request.items.map((item) => (
-                          <div key={item.id || item.product_id} className="grid min-w-0 gap-2 rounded-lg border border-line/70 px-3 py-2 dark:border-shalom-gold/10 sm:grid-cols-[minmax(0,1fr)_88px_120px] sm:items-center">
+                          <div key={item.id || item.product_id} className="grid min-w-0 gap-2 border-b border-line/60 py-2 last:border-0 dark:border-shalom-gold/10 sm:grid-cols-[minmax(0,1fr)_88px_120px] sm:items-center">
                             <span className="min-w-0 break-words font-medium">{item.product_name}</span>
                             <input
                               type="number"
@@ -795,15 +855,15 @@ export function LibraryManager({ user }) {
                 </article>
                 )
               })}
-              {!requests.length ? <p className="rounded-xl border border-line/80 bg-white/70 px-4 py-5 font-medium dark:border-shalom-gold/10 dark:bg-white/10">Nenhum carrinho assistido encontrado.</p> : null}
+              {!requests.length ? <p className="mission-muted py-5 text-sm">Nenhum carrinho assistido encontrado.</p> : null}
             </div>
           </div>
-          <aside className="mission-panel min-w-0 p-4">
+          <aside className="min-w-0 border-t border-line/80 pt-5 dark:border-shalom-gold/10 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
             <h3 className="font-display text-lg font-semibold">Monitoramento rapido</h3>
             <p className="mission-muted mt-1 text-sm">{monitoring.unassigned_pending || 0} carrinho(s) sem vendedor.</p>
-            <div className="mt-4 grid gap-3">
+            <div className="mt-3 divide-y divide-line/70 dark:divide-shalom-gold/10">
               {monitoring.sellers?.map((seller) => (
-                <article key={seller.id} className="rounded-xl border border-line/70 p-3 text-sm dark:border-shalom-gold/10">
+                <article key={seller.id} className="py-3 text-sm">
                   <div className="flex items-center justify-between gap-3">
                     <strong>{seller.display_name}</strong>
                     <span className={seller.active && seller.eligible ? 'text-emerald-700 dark:text-emerald-200' : 'text-shalom-wine dark:text-rose-100'}>{seller.active && seller.eligible ? 'Na rotacao' : 'Fora da rotacao'}</span>
@@ -816,124 +876,193 @@ export function LibraryManager({ user }) {
         </section>
       ) : null}
 
-      {activeTab === 'products' ? (
-        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="mission-panel p-4">
-            <div className="grid gap-3 md:grid-cols-[1fr_180px]">
-              <label className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 translate-y-[-10%] text-shalom-blue/60" size={18} />
-                <input className="mission-input mt-1 w-full px-10 py-2" value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} placeholder="Buscar catalogo" />
-              </label>
-              <select className="mission-input mt-1 w-full px-3 py-2" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}>
-                <option value="">Ativos</option>
-                <option value="published">Publicados</option>
-                <option value="draft">Nao publicados</option>
-                <option value="inactive">Inativos</option>
-              </select>
-            </div>
-            <div className="mt-4 overflow-x-auto scrollbar-thin">
-              <table className="min-w-[860px] w-full border-separate border-spacing-0 text-left text-sm">
-                <thead className="text-xs uppercase tracking-[0.12em] text-shalom-blue/70 dark:text-shalom-gold/80">
-                  <tr>
-                    <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Produto</th>
-                    <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Categoria</th>
-                    <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Preco</th>
-                    <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Estoque</th>
-                    <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Publico</th>
-                    <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Acoes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {products.map((product) => (
-                    <tr key={product.id}>
-                      <td className="border-b border-line/80 px-3 py-2 font-semibold dark:border-shalom-gold/10">{product.name}<span className="mission-muted block text-xs">{product.sku}</span></td>
-                      <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{product.category || '-'}</td>
-                      <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{money.format(product.price)}</td>
-                      <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{decimal.format(product.stock_quantity)}</td>
-                      <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{product.published ? 'Publicado' : 'Interno'}</td>
-                      <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
-                        <div className="flex flex-wrap gap-2">
-                          <button type="button" className="mission-btn inline-flex items-center gap-2 border border-line/80 px-3 py-2 font-semibold disabled:opacity-55 dark:border-shalom-gold/10" onClick={() => startProductEdit(product)} disabled={!writable || saving}>
-                            <Pencil size={16} />
-                            Editar
-                          </button>
-                          <button type="button" className="mission-btn inline-flex items-center gap-2 border border-line/80 px-3 py-2 font-semibold disabled:opacity-55 dark:border-shalom-gold/10" onClick={() => togglePublication(product)} disabled={!writable || saving}>
-                            <Eye size={16} />
-                            {product.published ? 'Retirar' : 'Publicar'}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+      {activeTab === 'products' && !isCatalogChildRoute ? (
+        <section className="min-w-0">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-display text-lg font-semibold">Catalogo</h2>
+            {writable ? (
+              <div className="relative">
+                <button type="button" className="mission-btn inline-flex h-10 w-10 items-center justify-center text-shalom-blue dark:text-shalom-gold" onClick={() => setCatalogMenuOpen((current) => !current)} aria-label="Adicionar ao catalogo" title="Adicionar ao catalogo" aria-expanded={catalogMenuOpen}>
+                  <Plus size={21} />
+                </button>
+                {catalogMenuOpen ? (
+                  <div className="absolute right-0 top-11 z-20 min-w-44 rounded-md border border-line bg-white py-1 shadow-lg dark:border-shalom-gold/15 dark:bg-[#182536]" role="menu">
+                    <button type="button" className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-shalom-mist/70 dark:hover:bg-white/5" onClick={openNewProduct} role="menuitem">Novo produto</button>
+                    <button type="button" className="w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-shalom-mist/70 dark:hover:bg-white/5" onClick={openNewCategory} role="menuitem">Nova categoria</button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
-          <aside className="grid gap-4">
-            <form className="mission-panel p-4" onSubmit={saveCategory}>
-              <h3 className="font-display text-lg font-semibold">Nova categoria</h3>
-              <input className="mission-input mt-3 w-full px-3 py-2" value={categoryDraft.name} onChange={(event) => setCategoryDraft({ ...categoryDraft, name: event.target.value })} placeholder="Nome" disabled={!writable} required />
-              <textarea className="mission-input mt-3 w-full px-3 py-2" value={categoryDraft.description} onChange={(event) => setCategoryDraft({ ...categoryDraft, description: event.target.value })} placeholder="Descricao" disabled={!writable} rows={3} />
-              <button type="submit" className="mission-btn mission-btn-primary mt-3 inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" disabled={!writable || saving}>
+          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_180px]">
+            <label className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-shalom-blue/60" size={18} />
+              <input className="mission-input w-full px-10 py-2" value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} placeholder="Buscar catalogo" aria-label="Buscar catalogo" />
+            </label>
+            <select className="mission-input w-full px-3 py-2" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })} aria-label="Filtrar produtos por status">
+              <option value="">Ativos</option>
+              <option value="published">Publicados</option>
+              <option value="draft">Nao publicados</option>
+              <option value="inactive">Inativos</option>
+            </select>
+          </div>
+
+          <div className="mt-3 divide-y divide-line/80 dark:divide-shalom-gold/10 xl:hidden">
+            {products.map((product) => (
+              <button key={product.id} type="button" className="flex w-full min-w-0 items-center gap-3 py-3 text-left" onClick={() => openProduct(product)} aria-label={`Abrir ${product.name}`}>
+                <span className="flex h-14 w-11 shrink-0 items-center justify-center overflow-hidden rounded border border-line/80 bg-shalom-mist text-[10px] text-shalom-blue/60 dark:border-shalom-gold/10 dark:bg-white/5 dark:text-shalom-gold/60">
+                  {product.images?.[0]?.url ? <img src={product.images[0].url} alt="" className="h-full w-full object-cover" /> : 'Sem foto'}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">{product.name}</span>
+                  <span className="mission-muted mt-0.5 block truncate text-xs">{product.category || 'Sem categoria'}</span>
+                  <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
+                    <strong>{money.format(product.price)}</strong>
+                    <span className="mission-muted">Estoque: {decimal.format(product.stock_quantity)}</span>
+                    <span className={product.published ? 'text-emerald-700 dark:text-emerald-200' : 'mission-muted'}>{product.published ? 'Publicado' : 'Interno'}</span>
+                  </span>
+                </span>
+                <ChevronRight className="shrink-0 text-shalom-blue/50 dark:text-shalom-gold/60" size={19} aria-hidden="true" />
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 hidden xl:block">
+            <table className="w-full border-separate border-spacing-0 text-left text-sm">
+              <thead className="text-xs uppercase tracking-[0.12em] text-shalom-blue/70 dark:text-shalom-gold/80">
+                <tr>
+                  <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Produto</th>
+                  <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Categoria</th>
+                  <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Preco</th>
+                  <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Estoque</th>
+                  <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Publico</th>
+                  <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Acoes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map((product) => (
+                  <tr key={product.id}>
+                    <td className="border-b border-line/80 px-3 py-2 font-semibold dark:border-shalom-gold/10">{product.name}<span className="mission-muted block text-xs">{product.sku}</span></td>
+                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{product.category || '-'}</td>
+                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{money.format(product.price)}</td>
+                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{decimal.format(product.stock_quantity)}</td>
+                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{product.published ? 'Publicado' : 'Interno'}</td>
+                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
+                      <div className="flex gap-1">
+                        <button type="button" className="mission-btn inline-flex h-9 w-9 items-center justify-center text-shalom-blue disabled:opacity-55 dark:text-shalom-gold" onClick={() => openProduct(product)} disabled={saving} title={writable ? 'Editar produto' : 'Ver produto'} aria-label={writable ? 'Editar produto' : 'Ver produto'}>
+                          <Pencil size={16} />
+                        </button>
+                        <button type="button" className="mission-btn inline-flex h-9 w-9 items-center justify-center text-shalom-blue disabled:opacity-55 dark:text-shalom-gold" onClick={() => togglePublication(product)} disabled={!writable || saving} title={product.published ? 'Retirar do catalogo publico' : 'Publicar no catalogo'} aria-label={product.published ? 'Retirar do catalogo publico' : 'Publicar no catalogo'}>
+                          <Eye size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {!products.length ? (
+            <div className="py-10 text-center text-sm">
+              <p className="mission-muted">{filters.q ? `Nenhum produto encontrado para "${filters.q}".` : 'Nenhum produto encontrado.'}</p>
+              {writable && !filters.q ? <button type="button" className="mt-3 font-semibold text-shalom-blue dark:text-shalom-gold" onClick={openNewProduct}>Adicionar produto</button> : null}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {activeTab === 'products' && isNewCategoryRoute ? (
+        <section className="mx-auto w-full max-w-2xl">
+          <form onSubmit={saveCategory}>
+            <div className="grid gap-4">
+              <label className="text-sm font-medium">
+                Nome
+                <input className="mission-input mt-1 w-full px-3 py-2.5" value={categoryDraft.name} onChange={(event) => setCategoryDraft({ ...categoryDraft, name: event.target.value })} disabled={!writable} required autoFocus />
+              </label>
+              <label className="text-sm font-medium">
+                Descricao
+                <textarea className="mission-input mt-1 w-full px-3 py-2.5" value={categoryDraft.description} onChange={(event) => setCategoryDraft({ ...categoryDraft, description: event.target.value })} disabled={!writable} rows={4} />
+              </label>
+            </div>
+            <div className="mt-6 flex items-center justify-end gap-3 border-t border-line/80 pt-4 dark:border-shalom-gold/10">
+              <button type="button" className="mission-btn px-4 py-2.5 font-semibold" onClick={() => navigate('/gestao-livraria/catalogo')}>Cancelar</button>
+              <button type="submit" className="mission-btn mission-btn-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 font-semibold" disabled={!writable || saving}>
                 <Plus size={17} />
                 Criar categoria
               </button>
-            </form>
+            </div>
+          </form>
+        </section>
+      ) : null}
 
-            <form className="mission-panel p-4" onSubmit={saveProduct}>
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="font-display text-lg font-semibold">{editingProductId ? 'Editar produto' : 'Novo produto'}</h3>
-                {editingProductId ? (
-                  <button type="button" className="mission-btn border border-line/80 p-2 dark:border-shalom-gold/10" onClick={cancelProductEdit} title="Cancelar edicao" aria-label="Cancelar edicao">
-                    <X size={16} />
-                  </button>
-                ) : null}
-              </div>
-              <div className="mt-3 grid gap-3">
-                <input className="mission-input px-3 py-2" value={productDraft.name} onChange={(event) => setProductDraft({ ...productDraft, name: event.target.value })} placeholder="Nome" disabled={!writable} required />
-                <input className="mission-input px-3 py-2" value={productDraft.sku} onChange={(event) => setProductDraft({ ...productDraft, sku: event.target.value })} placeholder="SKU opcional" disabled={!writable} />
-                <select className="mission-input px-3 py-2" value={productDraft.category_id} onChange={(event) => setProductDraft({ ...productDraft, category_id: event.target.value })} disabled={!writable}>
+      {activeTab === 'products' && isProductFormRoute ? (
+        <section className="mx-auto w-full max-w-3xl">
+          <form onSubmit={saveProduct}>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="text-sm font-medium sm:col-span-2">
+                Nome
+                <input className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.name} onChange={(event) => setProductDraft({ ...productDraft, name: event.target.value })} disabled={!writable} required autoFocus={isNewProductRoute} />
+              </label>
+              <label className="text-sm font-medium">
+                SKU
+                <input className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.sku} onChange={(event) => setProductDraft({ ...productDraft, sku: event.target.value })} placeholder="Opcional" disabled={!writable} />
+              </label>
+              <label className="text-sm font-medium">
+                Categoria
+                <select className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.category_id} onChange={(event) => setProductDraft({ ...productDraft, category_id: event.target.value })} disabled={!writable}>
                   <option value="">Sem categoria</option>
                   {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
                 </select>
-                <textarea className="mission-input px-3 py-2" value={productDraft.description} onChange={(event) => setProductDraft({ ...productDraft, description: event.target.value })} placeholder="Descricao publica" disabled={!writable} rows={3} />
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <label className="text-sm font-medium">
-                    Preco
-                    <input type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2" value={productDraft.price} onChange={(event) => setProductDraft({ ...productDraft, price: event.target.value })} disabled={!writable} />
-                  </label>
-                  <label className="text-sm font-medium">
-                    Custo
-                    <input type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2" value={productDraft.cost_price} onChange={(event) => setProductDraft({ ...productDraft, cost_price: event.target.value })} disabled={!writable} />
-                  </label>
-                  <label className="text-sm font-medium sm:col-span-2">
-                    Quantidade
-                    <input type="number" min="0" step="0.001" className="mission-input mt-1 w-full px-3 py-2" value={productDraft.stock_quantity} onChange={(event) => setProductDraft({ ...productDraft, stock_quantity: event.target.value })} disabled={!writable} />
-                  </label>
-                </div>
-                <input className="mission-input px-3 py-2" value={productDraft.image_url} onChange={(event) => setProductDraft({ ...productDraft, image_url: event.target.value })} placeholder="URL da imagem" disabled={!writable} />
-                <label className="flex items-center justify-between rounded-xl border border-line/80 px-3 py-2 text-sm font-semibold dark:border-shalom-gold/10">
-                  Publicar no catalogo
-                  <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={productDraft.published} onChange={(event) => setProductDraft({ ...productDraft, published: event.target.checked })} disabled={!writable} />
-                </label>
-                <label className="flex items-center justify-between rounded-xl border border-line/80 px-3 py-2 text-sm font-semibold dark:border-shalom-gold/10">
-                  Produto ativo
-                  <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={productDraft.active} onChange={(event) => setProductDraft({ ...productDraft, active: event.target.checked })} disabled={!writable} />
-                </label>
-              </div>
-              <button type="submit" className="mission-btn mission-btn-primary mt-3 inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" disabled={!writable || saving}>
+              </label>
+              <label className="text-sm font-medium sm:col-span-2">
+                Descricao publica
+                <textarea className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.description} onChange={(event) => setProductDraft({ ...productDraft, description: event.target.value })} disabled={!writable} rows={4} />
+              </label>
+              <label className="text-sm font-medium">
+                Preco
+                <input type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.price} onChange={(event) => setProductDraft({ ...productDraft, price: event.target.value })} disabled={!writable} />
+              </label>
+              <label className="text-sm font-medium">
+                Custo
+                <input type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.cost_price} onChange={(event) => setProductDraft({ ...productDraft, cost_price: event.target.value })} disabled={!writable} />
+              </label>
+              <label className="text-sm font-medium">
+                Quantidade
+                <input type="number" min="0" step="0.001" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.stock_quantity} onChange={(event) => setProductDraft({ ...productDraft, stock_quantity: event.target.value })} disabled={!writable} />
+              </label>
+              <label className="text-sm font-medium">
+                Estoque minimo
+                <input type="number" min="0" step="0.001" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.min_stock} onChange={(event) => setProductDraft({ ...productDraft, min_stock: event.target.value })} disabled={!writable} />
+              </label>
+              <label className="text-sm font-medium sm:col-span-2">
+                URL da imagem
+                <input className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.image_url} onChange={(event) => setProductDraft({ ...productDraft, image_url: event.target.value })} disabled={!writable} />
+              </label>
+              <label className="flex items-center justify-between border-y border-line/80 py-3 text-sm font-semibold dark:border-shalom-gold/10">
+                Publicar no catalogo
+                <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={productDraft.published} onChange={(event) => setProductDraft({ ...productDraft, published: event.target.checked })} disabled={!writable} />
+              </label>
+              <label className="flex items-center justify-between border-y border-line/80 py-3 text-sm font-semibold dark:border-shalom-gold/10">
+                Produto ativo
+                <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={productDraft.active} onChange={(event) => setProductDraft({ ...productDraft, active: event.target.checked })} disabled={!writable} />
+              </label>
+            </div>
+            <div className="mt-6 flex items-center justify-end gap-3 border-t border-line/80 pt-4 dark:border-shalom-gold/10">
+              <button type="button" className="mission-btn px-4 py-2.5 font-semibold" onClick={() => navigate('/gestao-livraria/catalogo')}>Cancelar</button>
+              <button type="submit" className="mission-btn mission-btn-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 font-semibold" disabled={!writable || saving}>
                 <Save size={17} />
                 {editingProductId ? 'Atualizar produto' : 'Salvar produto'}
               </button>
-            </form>
-          </aside>
+            </div>
+          </form>
         </section>
       ) : null}
 
       {activeTab === 'inventory' ? (
         <section className="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
-          <form className="mission-panel p-4" onSubmit={saveMovement}>
+          <form className="min-w-0" onSubmit={saveMovement}>
             <h3 className="font-display text-lg font-semibold">Movimentar estoque</h3>
             <div className="mt-3 grid gap-3">
               <select className="mission-input px-3 py-2" value={stockDraft.product_id} onChange={(event) => setStockDraft({ ...stockDraft, product_id: event.target.value })} disabled={!writable} required>
@@ -952,9 +1081,9 @@ export function LibraryManager({ user }) {
               Registrar
             </button>
           </form>
-          <div className="mission-panel p-4">
+          <div className="min-w-0 border-t border-line/80 pt-5 dark:border-shalom-gold/10 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
             <h3 className="font-display text-lg font-semibold">Historico de estoque</h3>
-            <div className="mt-4 max-h-[520px] overflow-y-auto scrollbar-thin">
+            <div className="mt-3">
               {movements.map((movement) => (
                 <article key={movement.id} className="border-b border-line/70 py-3 text-sm dark:border-shalom-gold/10">
                   <div className="flex items-start justify-between gap-3">
@@ -976,7 +1105,7 @@ export function LibraryManager({ user }) {
 
       {activeTab === 'sales' ? (
         <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
-          <div className="mission-panel min-w-0 p-4">
+          <div className="min-w-0">
             <div>
               <h3 className="font-display text-lg font-semibold">Venda assistida manual</h3>
               <p className="mission-muted mt-1 text-sm">Use esta area para vendas presenciais. Carrinhos vindos da vitrine ficam em Atendimentos.</p>
@@ -1003,7 +1132,7 @@ export function LibraryManager({ user }) {
                 <input type="number" min="0.001" step="0.001" className="mission-input min-w-0 px-3 py-2" value={saleItem.quantity} onChange={(event) => setSaleItem({ ...saleItem, quantity: event.target.value })} disabled={!writable} />
                 <button type="submit" className="mission-btn mission-btn-primary flex min-h-11 items-center justify-center px-3 py-2" disabled={!writable} aria-label="Adicionar item"><Plus size={17} /></button>
               </form>
-              <div className="rounded-xl border border-line/80 p-3 dark:border-shalom-gold/10">
+              <div className="border-y border-line/80 py-2 dark:border-shalom-gold/10">
                 {saleLines.map((line, index) => (
                   <div key={`${line.product_id}-${index}`} className="grid gap-1 border-b border-line/60 py-2 last:border-0 dark:border-shalom-gold/10 sm:grid-cols-[1fr_auto] sm:items-center">
                     <span className="min-w-0 text-sm font-semibold">{line.product?.name || 'Produto'} x {decimal.format(line.quantity)}</span>
@@ -1027,14 +1156,14 @@ export function LibraryManager({ user }) {
               </button>
             </div>
           </div>
-          <div className="mission-panel min-w-0 p-4">
+          <div className="min-w-0 border-t border-line/80 pt-5 dark:border-shalom-gold/10 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
             <div>
               <h3 className="font-display text-lg font-semibold">Vendas recentes</h3>
               <p className="mission-muted mt-1 text-sm">Historico com origem de atendimento, vendedor e totais.</p>
             </div>
-            <div className="mt-4 max-h-[560px] overflow-y-auto scrollbar-thin">
+            <div className="mt-3 divide-y divide-line/70 dark:divide-shalom-gold/10">
               {sales.map((sale) => (
-                <article key={sale.id} className="rounded-xl border border-line/70 bg-white/65 p-3 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
+                <article key={sale.id} className="py-3 text-sm">
                   <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
                     <div className="min-w-0">
                       <p className="font-semibold">Venda #{sale.id} {sale.customer_name ? `- ${sale.customer_name}` : ''}</p>
@@ -1053,7 +1182,7 @@ export function LibraryManager({ user }) {
                   </div>
                 </article>
               ))}
-              {!sales.length ? <p className="rounded-xl border border-line/80 bg-white/70 px-4 py-5 font-medium dark:border-shalom-gold/10 dark:bg-white/10">Nenhuma venda da Livraria registrada.</p> : null}
+              {!sales.length ? <p className="mission-muted py-5 text-sm">Nenhuma venda da Livraria registrada.</p> : null}
             </div>
           </div>
         </section>
@@ -1061,7 +1190,7 @@ export function LibraryManager({ user }) {
 
       {activeTab === 'sellers' ? (
         <section className="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
-          <form className="mission-panel p-4" onSubmit={saveSellerRecord}>
+          <form className="min-w-0" onSubmit={saveSellerRecord}>
             <div className="flex items-center justify-between gap-3">
               <h3 className="font-display text-lg font-semibold">{editingSellerId ? 'Editar vendedor' : 'Novo vendedor'}</h3>
               {editingSellerId ? (
@@ -1090,7 +1219,7 @@ export function LibraryManager({ user }) {
               {editingSellerId ? 'Atualizar vendedor' : 'Salvar vendedor'}
             </button>
           </form>
-          <div className="mission-panel p-4">
+          <div className="min-w-0 border-t border-line/80 pt-5 dark:border-shalom-gold/10 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h3 className="font-display text-lg font-semibold">Vendedores da Livraria</h3>
@@ -1145,7 +1274,7 @@ export function LibraryManager({ user }) {
                   })}
                 </tbody>
               </table>
-              {!sellers.length ? <p className="mt-4 rounded-xl border border-line/80 bg-white/70 px-4 py-5 font-medium dark:border-shalom-gold/10 dark:bg-white/10">Nenhum vendedor configurado.</p> : null}
+              {!sellers.length ? <p className="mission-muted mt-4 py-5 text-sm">Nenhum vendedor configurado.</p> : null}
             </div>
           </div>
         </section>
@@ -1153,10 +1282,9 @@ export function LibraryManager({ user }) {
 
       {activeTab === 'spreadsheet' ? (
         <section className="grid gap-5">
-          <div className="mission-panel p-4">
+          <div className="min-w-0 border-b border-line/80 pb-5 dark:border-shalom-gold/10">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
               <div>
-                <h3 className="font-display text-lg font-semibold">Planilha da Livraria</h3>
                 <p className="mission-muted text-sm">{spreadsheetSection === 'sales' ? 'Vendas detalhadas, uma linha por item vendido.' : 'Estoque atual consolidado, uma linha por produto/SKU.'}</p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1169,7 +1297,7 @@ export function LibraryManager({ user }) {
               </div>
             </div>
 
-            <div className="mt-4 flex flex-wrap gap-2">
+            <div className="scrollbar-hidden mt-4 flex gap-5 overflow-x-auto border-b border-line/80 dark:border-shalom-gold/10" role="tablist" aria-label="Planilhas da Livraria">
               {[
                 ['sales', 'Vendas'],
                 ['stock', 'Estoque']
@@ -1177,7 +1305,9 @@ export function LibraryManager({ user }) {
                 <button
                   key={key}
                   type="button"
-                  className={`mission-btn px-4 py-2 text-sm font-semibold ${spreadsheetSection === key ? 'mission-btn-primary' : 'border border-shalom-gold/30 bg-white/70 dark:border-shalom-gold/10 dark:bg-white/10'}`}
+                  role="tab"
+                  aria-selected={spreadsheetSection === key}
+                  className={`section-text-tab shrink-0 ${spreadsheetSection === key ? 'section-text-tab-active' : ''}`}
                   onClick={() => setSpreadsheetSection(key)}
                 >
                   {label}
@@ -1245,14 +1375,14 @@ export function LibraryManager({ user }) {
 
           {spreadsheetSection === 'sales' ? (
           <>
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard icon={TrendingUp} label="Receita" value={money.format(spreadsheet.summary?.revenue || 0)} detail="Filtros ativos" tone="green" />
-            <MetricCard icon={ReceiptText} label="Lucro" value={money.format(spreadsheet.summary?.gross_profit || 0)} detail={`${money.format(spreadsheet.summary?.cost || 0)} de custo`} />
-            <MetricCard icon={TrendingUp} label="Margem" value={`${decimal.format(spreadsheet.summary?.margin || 0)}%`} detail={`${decimal.format(spreadsheet.summary?.sales_count || 0)} vendas`} tone="amber" />
-            <MetricCard icon={Boxes} label="Itens vendidos" value={decimal.format(spreadsheet.summary?.items_sold || 0)} detail={`Ticket ${money.format(spreadsheet.summary?.average_ticket || 0)}`} />
+          <section className="grid grid-cols-1 gap-x-4 gap-y-5 min-[350px]:grid-cols-2 lg:grid-cols-4 lg:gap-x-6">
+            <LibraryMetric label="Receita" value={money.format(spreadsheet.summary?.revenue || 0)} detail="Filtros ativos" />
+            <LibraryMetric label="Lucro" value={money.format(spreadsheet.summary?.gross_profit || 0)} detail={`${money.format(spreadsheet.summary?.cost || 0)} de custo`} />
+            <LibraryMetric label="Margem" value={`${decimal.format(spreadsheet.summary?.margin || 0)}%`} detail={`${decimal.format(spreadsheet.summary?.sales_count || 0)} vendas`} />
+            <LibraryMetric label="Itens vendidos" value={decimal.format(spreadsheet.summary?.items_sold || 0)} detail={`Ticket ${money.format(spreadsheet.summary?.average_ticket || 0)}`} />
           </section>
 
-          <div className="mission-panel min-w-0 p-4">
+          <div className="min-w-0">
             <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="mission-muted text-sm">
                 {spreadsheetLoading ? 'Carregando planilha...' : `${decimal.format(spreadsheet.pagination?.total || 0)} registros encontrados`}
@@ -1261,7 +1391,7 @@ export function LibraryManager({ user }) {
                 {[25, 50, 100, 200].map((size) => <option key={size} value={size}>{size} por pagina</option>)}
               </select>
             </div>
-            <div className="overflow-x-auto rounded-xl border border-line/80 scrollbar-thin dark:border-shalom-gold/10">
+            <div className="overflow-x-auto border-y border-line/80 scrollbar-thin dark:border-shalom-gold/10">
               <table className="min-w-[1280px] w-full border-separate border-spacing-0 text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-shalom-cream/95 dark:bg-shalom-deep/95">
                   <tr>
@@ -1326,15 +1456,15 @@ export function LibraryManager({ user }) {
           </>
           ) : (
           <>
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <MetricCard icon={BookOpen} label="Produtos" value={decimal.format(stockSpreadsheet.summary?.products_count || 0)} detail="Produtos ativos filtrados" />
-            <MetricCard icon={Boxes} label="Unidades" value={decimal.format(stockSpreadsheet.summary?.units_in_stock || 0)} detail="Estoque atual" />
-            <MetricCard icon={ReceiptText} label="Valor em estoque" value={money.format(stockSpreadsheet.summary?.inventory_value || 0)} detail="Quantidade x custo" />
-            <MetricCard icon={TrendingUp} label="Valor potencial" value={money.format(stockSpreadsheet.summary?.inventory_sale_value || 0)} detail="Quantidade x preco" tone="green" />
-            <MetricCard icon={TrendingUp} label="Lucro potencial" value={money.format(stockSpreadsheet.summary?.potential_profit || 0)} detail="Potencial - custo" tone="amber" />
+          <section className="grid grid-cols-1 gap-x-4 gap-y-5 min-[350px]:grid-cols-2 lg:grid-cols-5 lg:gap-x-6">
+            <LibraryMetric label="Produtos" value={decimal.format(stockSpreadsheet.summary?.products_count || 0)} detail="Produtos ativos filtrados" />
+            <LibraryMetric label="Unidades" value={decimal.format(stockSpreadsheet.summary?.units_in_stock || 0)} detail="Estoque atual" />
+            <LibraryMetric label="Valor em estoque" value={money.format(stockSpreadsheet.summary?.inventory_value || 0)} detail="Quantidade x custo" />
+            <LibraryMetric label="Valor potencial" value={money.format(stockSpreadsheet.summary?.inventory_sale_value || 0)} detail="Quantidade x preco" />
+            <LibraryMetric label="Lucro potencial" value={money.format(stockSpreadsheet.summary?.potential_profit || 0)} detail="Potencial - custo" />
           </section>
 
-          <div className="mission-panel min-w-0 p-4">
+          <div className="min-w-0">
             <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <p className="mission-muted text-sm">
                 {spreadsheetLoading ? 'Carregando estoque...' : `${decimal.format(stockSpreadsheet.pagination?.total || 0)} produtos encontrados`}
@@ -1343,7 +1473,7 @@ export function LibraryManager({ user }) {
                 {[25, 50, 100, 200].map((size) => <option key={size} value={size}>{size} por pagina</option>)}
               </select>
             </div>
-            <div className="overflow-x-auto rounded-xl border border-line/80 scrollbar-thin dark:border-shalom-gold/10">
+            <div className="overflow-x-auto border-y border-line/80 scrollbar-thin dark:border-shalom-gold/10">
               <table className="min-w-[1280px] w-full border-separate border-spacing-0 text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-shalom-cream/95 dark:bg-shalom-deep/95">
                   <tr>
