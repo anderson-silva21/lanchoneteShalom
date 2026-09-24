@@ -162,7 +162,7 @@ export function AppShell({ activeView, setActiveView, pageTitle, onBack, user, d
         </div>
       </aside>
 
-      <div className={`transition-[padding] duration-200 ${sidebarCollapsed ? 'lg:pl-[88px]' : 'lg:pl-72'}`}>
+      <div className={`flex h-[100dvh] flex-col pb-[var(--mobile-bottom-nav-height)] transition-[padding] duration-200 lg:block lg:h-auto lg:min-h-screen lg:pb-0 ${sidebarCollapsed ? 'lg:pl-[88px]' : 'lg:pl-72'}`}>
         <header className="sticky top-0 z-20 border-b border-shalom-gold/30 bg-white/78 px-3 py-2 shadow-sm backdrop-blur-2xl dark:border-shalom-gold/15 dark:bg-gradient-to-r dark:from-shalom-night/95 dark:via-[#0A2443]/92 dark:to-shalom-deep/88 dark:shadow-[0_18px_52px_rgba(0,0,0,0.24)] sm:px-4 lg:px-8 lg:py-3">
           <div className="flex items-center gap-3 lg:hidden">
             {onBack ? <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center text-shalom-blue dark:text-shalom-gold" onClick={onBack} aria-label="Voltar" title="Voltar"><ArrowLeft size={21} /></button> : null}
@@ -193,7 +193,7 @@ export function AppShell({ activeView, setActiveView, pageTitle, onBack, user, d
           </div>
         </header>
 
-        <main className="h-[calc(100dvh_-_8.2rem_-_env(safe-area-inset-bottom))] min-w-0 overflow-y-auto px-3 pb-6 pt-4 scrollbar-thin sm:px-5 lg:h-auto lg:overflow-visible lg:px-8 lg:pb-5 lg:pt-5">{children}</main>
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 pb-0 pt-4 scrollbar-thin sm:px-5 lg:h-auto lg:overflow-visible lg:px-8 lg:pb-5 lg:pt-5">{children}</main>
       </div>
 
       {mobileMenuOpen ? (
