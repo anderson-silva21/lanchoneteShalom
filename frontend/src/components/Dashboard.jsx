@@ -1,20 +1,14 @@
 import {
-  AlertTriangle,
-  Banknote,
   Boxes,
-  CalendarClock,
   CalendarPlus,
+  ChevronRight,
   ExternalLink,
-  LineChart,
   PackagePlus,
   Pencil,
-  ReceiptText,
-  Save,
-  TrendingUp,
-  X
+  Save
 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import {
   Area,
   Bar,
@@ -29,8 +23,8 @@ import {
   YAxis
 } from 'recharts'
 import { api } from '../services/api'
-import { decimal, formatDate, formatDateTime, formatQuantityWithUnit, money } from '../utils/formatters'
-import { MetricCard } from './MetricCard'
+import { decimal, formatDate, formatQuantityWithUnit, money } from '../utils/formatters'
+import { BackToDashboard } from './BackToDashboard'
 import { StatusPill } from './StatusPill'
 
 function formatDays(value) {
@@ -53,78 +47,53 @@ function createEmptyEventDraft() {
   }
 }
 
-const confirmedPaymentMethods = ['pix', 'cartao', 'dinheiro']
-
-const paymentLabels = {
-  pix: 'Pix',
-  cartao: 'Cartao',
-  dinheiro: 'Dinheiro'
-}
-
-function getPaymentLabel(value) {
-  return paymentLabels[value] || value
-}
-
 function validityLabel(item) {
   if (item.expiration_status === 'expired') return `Vencido ha ${Math.abs(Number(item.days_to_expire || 0))} dias`
   if (Number(item.days_to_expire) === 0) return 'Vence hoje'
   return `Vence em ${decimal.format(item.days_to_expire)} dias`
 }
 
-function DashboardModal({ title, description, children, footer, onClose }) {
-  useEffect(() => {
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+function DashboardMetric({ label, value, detail }) {
+  return (
+    <div className="min-w-0 border-l-2 border-shalom-blue/20 py-1 pl-3 dark:border-shalom-gold/25">
+      <dt className="mission-muted text-xs font-medium">{label}</dt>
+      <dd className="mt-1 min-w-0 break-words font-display text-xl font-semibold leading-tight text-shalom-deep dark:text-white sm:text-2xl">{value}</dd>
+      {detail ? <p className="mission-muted mt-1 truncate text-xs">{detail}</p> : null}
+    </div>
+  )
+}
 
-    return () => {
-      document.body.style.overflow = previousOverflow
-    }
-  }, [])
+function DashboardActionRow({ label, detail, value, critical = false, to }) {
+  return (
+    <Link className="group flex min-h-14 w-full items-center gap-3 border-b border-line/70 py-2.5 text-left transition-colors hover:text-shalom-blue dark:border-shalom-gold/10 dark:hover:text-shalom-gold" to={to} state={{ from: '/dashboard' }}>
+      <span className="min-w-0 flex-1">
+        <strong className="block truncate text-sm font-semibold">{label}</strong>
+        <span className="mission-muted block truncate text-xs">{detail}</span>
+      </span>
+      <span className={`shrink-0 text-sm font-semibold ${critical ? 'text-shalom-wine dark:text-rose-200' : 'text-shalom-deep dark:text-slate-100'}`}>{value}</span>
+      <ChevronRight className="shrink-0 opacity-40 transition-transform group-hover:translate-x-0.5" size={18} aria-hidden="true" />
+    </Link>
+  )
+}
 
-  return createPortal(
-    <div
-      className="dashboard-modal-overlay"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
-    >
-      <section
-        className="dashboard-modal-panel mission-panel text-ink shadow-blue dark:text-slate-50"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dashboard-modal-title"
-      >
-        <div className="flex items-start justify-between gap-3 border-b border-line/80 p-4 dark:border-shalom-gold/10">
-          <div>
-            <h2 id="dashboard-modal-title" className="font-display text-lg font-semibold sm:text-xl">{title}</h2>
-            {description ? <p className="mission-muted mt-1 text-sm">{description}</p> : null}
-          </div>
-          <button
-            type="button"
-            className="mission-btn border border-line/80 bg-white/70 p-2 text-shalom-deep hover:bg-shalom-cream dark:border-shalom-gold/10 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
-            onClick={onClose}
-            aria-label="Fechar modal"
-            autoFocus
-          >
-            <X size={18} />
-          </button>
-        </div>
-        <div className="dashboard-modal-body scrollbar-thin p-4">
-          {children}
-        </div>
-        {footer ? <div className="border-t border-line/80 p-4 dark:border-shalom-gold/10">{footer}</div> : null}
-      </section>
-    </div>,
-    document.body
+function DashboardPage({ description, children, footer }) {
+  return (
+    <section className="mx-auto w-full max-w-5xl pb-4">
+      {description ? <p className="mission-muted border-b border-line/70 pb-4 text-sm dark:border-shalom-gold/10">{description}</p> : null}
+      <div className="py-4">{children}</div>
+      <div className="flex flex-col items-start gap-2 border-t border-line/80 pt-3 dark:border-shalom-gold/10 sm:flex-row sm:items-center sm:justify-between">
+        {footer}
+        <BackToDashboard className={footer ? '' : 'sm:ml-auto'} />
+      </div>
+    </section>
   )
 }
 
 export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
+  const location = useLocation()
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
-  const [activeModal, setActiveModal] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
   const [eventDraft, setEventDraft] = useState(createEmptyEventDraft)
   const [eventSaving, setEventSaving] = useState(false)
@@ -135,9 +104,6 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
   const [editingEventId, setEditingEventId] = useState('')
   const [eventEditDraft, setEventEditDraft] = useState(createEmptyEventDraft)
   const [eventUpdatingId, setEventUpdatingId] = useState('')
-  const [pendingPaymentMethods, setPendingPaymentMethods] = useState({})
-  const [pendingPaymentConfirming, setPendingPaymentConfirming] = useState('')
-  const [pendingPaymentMessage, setPendingPaymentMessage] = useState('')
   const retriedEventRevenueRef = useRef(false)
 
   useEffect(() => {
@@ -167,21 +133,11 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
     setReloadKey((key) => key + 1)
   }, [data, loading])
 
-  useEffect(() => {
-    if (!activeModal) return undefined
-    function handleKeyDown(event) {
-      if (event.key === 'Escape') setActiveModal('')
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [activeModal])
-
   function openProducts(intent) {
-    setActiveModal('')
     onNavigateToProducts?.(intent)
   }
 
-  async function loadEvents() {
+  const loadEvents = useCallback(async () => {
     setEventsLoading(true)
     try {
       const eventData = await api.events()
@@ -191,15 +147,17 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
     } finally {
       setEventsLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    if (location.pathname === '/dashboard/eventos') loadEvents()
+  }, [loadEvents, location.pathname])
 
   function openEventModal() {
     setEventDraft(createEmptyEventDraft())
     setEventMessage('')
     setRegisteredEvent(null)
     setEditingEventId('')
-    setActiveModal('event')
-    loadEvents()
   }
 
   async function registerEvent(event) {
@@ -250,38 +208,9 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
     }
   }
 
-  async function confirmPendingPayment(saleId) {
-    const paymentMethod = pendingPaymentMethods[saleId]
-    if (!paymentMethod) {
-      setPendingPaymentMessage('Escolha o metodo de pagamento.')
-      return
-    }
-
-    setPendingPaymentConfirming(String(saleId))
-    setPendingPaymentMessage('')
-
-    try {
-      await api.confirmSheetSalePayment(saleId, {
-        pagamento: paymentMethod,
-        status_pagamento: 'pago'
-      })
-      setPendingPaymentMethods((current) => {
-        const next = { ...current }
-        delete next[saleId]
-        return next
-      })
-      setReloadKey((key) => key + 1)
-      setPendingPaymentMessage('Pagamento confirmado.')
-    } catch (err) {
-      setPendingPaymentMessage(err.message)
-    } finally {
-      setPendingPaymentConfirming('')
-    }
-  }
-
   if (error) {
     return (
-      <div className="mission-panel p-4 text-shalom-wine dark:text-rose-100">
+      <div className="border-l-2 border-shalom-wine py-1 pl-4 text-shalom-wine dark:text-rose-100" role="alert">
         <p className="font-semibold">Nao foi possivel carregar a dashboard.</p>
         <p className="mt-1 text-sm">{error}</p>
         <button type="button" className="mission-btn mission-btn-primary mt-4 px-4 py-2 text-sm font-semibold" onClick={() => setReloadKey((key) => key + 1)}>
@@ -292,7 +221,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
   }
 
   if (loading || !data) {
-    return <div className="mission-panel p-6">Carregando dashboard...</div>
+    return <p className="mission-muted py-6 text-sm" role="status">Carregando dashboard...</p>
   }
 
   const suggestions = data.purchase_suggestions || []
@@ -300,142 +229,141 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
   const expirationAlerts = data.expiration_alerts || []
   const missingExpirationProducts = data.missing_expiration_products || []
   const eventRevenue = data.event_revenue || []
-  const pendingPayments = data.pending_payments || []
   const canOpenTelegramGroup = user?.role === 'finance' && data.telegram_group_url
   const eventNameOptions = Array.from(new Set(events.map((event) => event.name).filter(Boolean))).sort((a, b) => a.localeCompare(b))
+  const isDashboardHome = location.pathname === '/dashboard' || location.pathname === '/'
 
   return (
-    <div className="space-y-5">
-      {canOpenTelegramGroup ? (
-        <section className="flex justify-end">
-          <a
-            className="mission-btn mission-btn-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold"
-            href={data.telegram_group_url}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <ExternalLink size={16} />
-            Acessar grupo do Telegram
-          </a>
-        </section>
-      ) : null}
-      <section className="grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard icon={Banknote} label="Faturamento hoje" value={money.format(data.kpis.revenue_today)} detail={`${data.kpis.sales_today} vendas`} tone="green" />
-        <MetricCard icon={ReceiptText} label="Ticket medio" value={money.format(data.kpis.average_ticket_today)} detail="Media do dia" tone="blue" />
-        <MetricCard icon={TrendingUp} label="Lucro estimado" value={money.format(data.kpis.estimated_profit_today)} detail="Baseado em custo" />
-        <MetricCard icon={LineChart} label="Produto mais vendido" value={data.top_products[0]?.name || '-'} detail={data.top_products[0] ? `${decimal.format(data.top_products[0].quantity)} vendidos` : 'Sem vendas'} />
-      </section>
-
-      <section className="grid items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          icon={AlertTriangle}
-          label="Estoque baixo"
-          value={data.kpis.low_stock_count}
-          detail={`${data.kpis.critical_stock_count} criticos`}
-          tone={data.kpis.critical_stock_count ? 'red' : 'amber'}
-          onClick={() => setActiveModal('lowStock')}
-          ariaLabel="Abrir produtos com estoque baixo"
-        />
-        <MetricCard
-          icon={Boxes}
-          label="Sugestoes"
-          value={suggestions.length}
-          detail="Compras indicadas"
-          onClick={() => setActiveModal('suggestions')}
-          ariaLabel="Abrir sugestoes de compra"
-        />
-        <MetricCard
-          icon={CalendarClock}
-          label="Validades"
-          value={data.kpis.validity_attention_count}
-          detail={`${data.kpis.expired_count} vencidos`}
-          tone={data.kpis.expired_count ? 'red' : 'amber'}
-          onClick={() => setActiveModal('expiration')}
-          ariaLabel="Abrir alertas de validade"
-        />
-        <MetricCard
-          icon={Banknote}
-          label="Pagamentos pendentes"
-          value={data.kpis.pending_payment_count || 0}
-          detail={money.format(data.kpis.pending_payment_total || 0)}
-          tone={data.kpis.pending_payment_count ? 'red' : 'green'}
-          onClick={() => setActiveModal('pendingPayments')}
-          ariaLabel="Abrir pagamentos pendentes"
-        />
-      </section>
-
-      <section className="grid gap-5 xl:grid-cols-3">
-        <div className="mission-panel p-4 xl:col-span-2">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="font-display text-lg font-semibold">Vendas por periodo</h2>
-              <p className="mission-muted text-sm">Faturamento e lucro</p>
-            </div>
+    <div className="mx-auto w-full max-w-[1400px] space-y-7 pb-4">
+      {isDashboardHome ? <>
+      <section aria-labelledby="dashboard-summary-title">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 id="dashboard-summary-title" className="font-display text-lg font-semibold">Hoje</h2>
+            <p className="mission-muted text-sm">Resumo da operacao</p>
           </div>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={data.sales_by_day}>
-                <defs>
-                  <linearGradient id="revenue" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="0%" stopColor="#184E7F" stopOpacity={0.32} />
-                    <stop offset="100%" stopColor="#FAE088" stopOpacity={0.04} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E7DFCD" />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} />
-                <YAxis tickLine={false} axisLine={false} width={46} />
-                <Tooltip formatter={(value) => money.format(value)} />
-                <Legend />
-                <Area type="monotone" name="Faturamento" dataKey="revenue" stroke="#184E7F" fill="url(#revenue)" strokeWidth={2.4} />
-                <Area type="monotone" name="Lucro" dataKey="profit" stroke="#F27C23" fill="#F27C2320" strokeWidth={2.4} />
-              </ComposedChart>
-            </ResponsiveContainer>
+          {canOpenTelegramGroup ? (
+            <a
+              className="inline-flex min-h-11 items-center justify-center gap-2 px-2 text-sm font-semibold text-shalom-blue hover:text-shalom-orange dark:text-shalom-gold"
+              href={data.telegram_group_url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <ExternalLink size={16} />
+              <span className="hidden sm:inline">Grupo do Telegram</span>
+            </a>
+          ) : null}
+        </div>
+        <dl className="mt-4 grid grid-cols-1 gap-x-4 gap-y-5 min-[350px]:grid-cols-2 lg:grid-cols-4 lg:gap-x-6">
+          <DashboardMetric label="Faturamento" value={money.format(data.kpis.revenue_today)} detail="Total vendido hoje" />
+          <DashboardMetric label="Vendas" value={decimal.format(data.kpis.sales_today)} detail="Vendas concluidas" />
+          <DashboardMetric label="Ticket medio" value={money.format(data.kpis.average_ticket_today)} detail="Media por venda" />
+          <DashboardMetric label="Lucro estimado" value={money.format(data.kpis.estimated_profit_today)} detail="Baseado em custo" />
+        </dl>
+      </section>
+
+      <section className="grid gap-7 border-t border-line/80 pt-6 dark:border-shalom-gold/10 lg:grid-cols-2 lg:gap-10" aria-label="Pendencias e estoque">
+        <div className="min-w-0">
+          <h2 className="font-display text-lg font-semibold">Pendencias</h2>
+          <div className="mt-2">
+            <DashboardActionRow
+              label="Estoque baixo"
+              detail={`${data.kpis.critical_stock_count} criticos`}
+              value={decimal.format(data.kpis.low_stock_count)}
+              critical={Boolean(data.kpis.critical_stock_count)}
+              to="/dashboard/estoque-baixo"
+            />
+            <DashboardActionRow
+              label="Sugestoes de compra"
+              detail="Compras indicadas"
+              value={decimal.format(suggestions.length)}
+              to="/dashboard/sugestoes-compra"
+            />
+            <DashboardActionRow
+              label="Validades em atencao"
+              detail={`${data.kpis.expired_count} vencidos`}
+              value={decimal.format(data.kpis.validity_attention_count)}
+              critical={Boolean(data.kpis.expired_count)}
+              to="/dashboard/validades"
+            />
+            <DashboardActionRow
+              label="Pagamentos pendentes"
+              detail={money.format(data.kpis.pending_payment_total || 0)}
+              value={decimal.format(data.kpis.pending_payment_count || 0)}
+              critical={Boolean(data.kpis.pending_payment_count)}
+              to="/financeiro/pagamentos-pendentes"
+            />
           </div>
         </div>
 
-        <div className="mission-panel p-4">
-          <h2 className="font-display text-lg font-semibold">Alertas de estoque</h2>
-          <div className="mt-4 space-y-3">
+        <div className="min-w-0 lg:border-l lg:border-line/80 lg:pl-10 dark:lg:border-shalom-gold/10">
+          <h2 className="font-display text-lg font-semibold">Estoque em atencao</h2>
+          <div className="mt-2 divide-y divide-line/70 dark:divide-shalom-gold/10">
             {data.alerts.slice(0, 6).map((item) => (
-              <div key={item.id} className="mission-card flex items-center justify-between gap-3 p-3">
-                <div>
-                  <p className="font-medium">{item.name}</p>
-                  <p className="mission-muted text-sm">
+              <div key={item.id} className="flex min-h-14 items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{item.name}</p>
+                  <p className="mission-muted truncate text-xs">
                     {formatQuantityWithUnit(item.stock_quantity, item.unit)} em estoque
                   </p>
                 </div>
                 <StatusPill status={item.status} />
               </div>
             ))}
+            {!data.alerts.length ? <p className="mission-muted py-4 text-sm">Nenhum alerta de estoque.</p> : null}
           </div>
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-3">
-        <div className="mission-panel p-4">
-          <h2 className="font-display text-lg font-semibold">Mais vendidos</h2>
-          <div className="mt-4 h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.top_products} layout="vertical" margin={{ left: 8, right: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E7DFCD" />
-                <XAxis type="number" hide />
-                <YAxis dataKey="name" type="category" width={108} tickLine={false} axisLine={false} />
-                <Tooltip formatter={(value) => decimal.format(value)} />
-                <Bar dataKey="quantity" fill="#184E7F" radius={[0, 8, 8, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+      <section className="border-t border-line/80 pt-6 dark:border-shalom-gold/10" aria-labelledby="dashboard-performance-title">
+        <h2 id="dashboard-performance-title" className="font-display text-lg font-semibold">Desempenho</h2>
+        <div className="mt-4 grid min-w-0 gap-7 xl:grid-cols-2 xl:gap-10">
+          <div className="min-w-0">
+            <h3 className="font-semibold">Vendas por periodo</h3>
+            <p className="mission-muted text-sm">Faturamento e lucro</p>
+            <div className="mt-3 h-60 sm:h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={data.sales_by_day}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E7DFCD" />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} />
+                  <YAxis tickLine={false} axisLine={false} width={46} fontSize={12} />
+                  <Tooltip formatter={(value) => money.format(value)} />
+                  <Legend />
+                  <Area type="monotone" name="Faturamento" dataKey="revenue" stroke="#184E7F" fill="#184E7F18" strokeWidth={2.4} />
+                  <Area type="monotone" name="Lucro" dataKey="profit" stroke="#F27C23" fill="#F27C2314" strokeWidth={2.4} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="min-w-0 xl:border-l xl:border-line/80 xl:pl-10 dark:xl:border-shalom-gold/10">
+            <h3 className="font-semibold">Mais vendidos</h3>
+            <p className="mission-muted text-sm">Produtos com maior saida</p>
+            <div className="mt-3 h-60 sm:h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data.top_products} layout="vertical" margin={{ left: 8, right: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E7DFCD" />
+                  <XAxis type="number" hide />
+                  <YAxis dataKey="name" type="category" width={108} tickLine={false} axisLine={false} fontSize={12} />
+                  <Tooltip formatter={(value) => decimal.format(value)} />
+                  <Bar dataKey="quantity" fill="#184E7F" radius={[0, 8, 8, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
+      </section>
 
-        <div className="dashboard-chart-panel mission-panel p-4">
-          <h2 className="font-display text-lg font-semibold">Saidas de estoque por vendas</h2>
+      <section className="grid min-w-0 gap-7 border-t border-line/80 pt-6 dark:border-shalom-gold/10 xl:grid-cols-2 xl:gap-10" aria-label="Operacao de estoque">
+        <div className="min-w-0">
+          <h2 className="font-display text-lg font-semibold">Saidas de estoque</h2>
           <p className="mission-muted text-sm">8 produtos mais consumidos nos ultimos 14 dias, incluindo combos</p>
-          <div className="mt-4 h-72">
+          <div className="mt-3 h-60 sm:h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data.stock_consumption} layout="vertical" margin={{ left: 8, right: 18 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E7DFCD" />
-                <XAxis type="number" tickLine={false} axisLine={false} />
-                <YAxis dataKey="name" type="category" width={108} tickLine={false} axisLine={false} />
+                <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} />
+                <YAxis dataKey="name" type="category" width={108} tickLine={false} axisLine={false} fontSize={12} />
                 <Tooltip
                   allowEscapeViewBox={{ x: true, y: true }}
                   wrapperStyle={{ zIndex: 50 }}
@@ -450,32 +378,33 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
           </div>
         </div>
 
-        <div className="mission-panel p-4">
+        <div className="min-w-0 xl:border-l xl:border-line/80 xl:pl-10 dark:xl:border-shalom-gold/10">
           <h2 className="font-display text-lg font-semibold">Produtos parados</h2>
           <p className="mission-muted text-sm">6 produtos com menos vendas diretas nos ultimos 30 dias</p>
-          <div className="mt-4 divide-y divide-line/70 dark:divide-shalom-gold/10">
+          <div className="mt-3 divide-y divide-line/70 dark:divide-shalom-gold/10">
             {data.slow_products.map((item) => (
               <div key={item.id} className="flex items-center justify-between gap-3 py-3">
-                <div>
-                  <p className="font-medium">{item.name}</p>
-                  <p className="mission-muted text-sm">{item.category}</p>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{item.name}</p>
+                  <p className="mission-muted truncate text-xs">{item.category}</p>
                 </div>
-                <span className="rounded-full bg-shalom-gold/30 px-2.5 py-1 text-sm font-semibold text-shalom-deep dark:bg-shalom-gold/20 dark:text-shalom-gold">{decimal.format(item.sold_quantity)}</span>
+                <span className="shrink-0 text-sm font-semibold">{decimal.format(item.sold_quantity)} vendidos</span>
               </div>
             ))}
+            {!data.slow_products.length ? <p className="mission-muted py-4 text-sm">Nenhum produto para exibir.</p> : null}
           </div>
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-2">
-        <div className="mission-panel p-4">
+      <section className="grid min-w-0 gap-7 border-t border-line/80 pt-6 dark:border-shalom-gold/10 xl:grid-cols-2 xl:gap-10" aria-label="Receitas detalhadas">
+        <div className="min-w-0">
           <h2 className="font-display text-lg font-semibold">Receita por categoria</h2>
-          <div className="mt-4 h-72">
+          <div className="mt-3 h-60 sm:h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data.category_revenue}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#E7DFCD" />
-                <XAxis dataKey="category" tickLine={false} axisLine={false} />
-                <YAxis tickLine={false} axisLine={false} />
+                <XAxis dataKey="category" tickLine={false} axisLine={false} fontSize={12} />
+                <YAxis tickLine={false} axisLine={false} fontSize={12} width={44} />
                 <Tooltip formatter={(value) => money.format(value)} />
                 <Bar dataKey="revenue" name="Faturamento" fill="#184E7F" radius={[8, 8, 0, 0]} />
                 <Bar dataKey="profit" name="Lucro" fill="#F27C23" radius={[8, 8, 0, 0]} />
@@ -484,24 +413,24 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
           </div>
         </div>
 
-        <div className="dashboard-chart-panel mission-panel p-4">
+        <div className="min-w-0 xl:border-l xl:border-line/80 xl:pl-10 dark:xl:border-shalom-gold/10">
           <div className="flex items-start justify-between gap-3">
-            <div>
+            <div className="min-w-0">
               <h2 className="font-display text-lg font-semibold">Receita por evento</h2>
               <p className="mission-muted text-sm">Faturamento das vendas vinculadas a cada evento neste ano</p>
             </div>
-            <button type="button" className="mission-btn mission-btn-primary flex shrink-0 items-center gap-2 px-3 py-2 text-sm font-semibold" onClick={openEventModal}>
+            <Link to="/dashboard/eventos" state={{ from: '/dashboard' }} className="mission-btn mission-btn-primary flex shrink-0 items-center gap-2 px-3 py-2 text-sm font-semibold" onClick={openEventModal}>
               <CalendarPlus size={17} />
               Registrar
-            </button>
+            </Link>
           </div>
-          <div className="mt-4 h-72">
+          <div className="mt-3 h-60 sm:h-72">
             {eventRevenue.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={eventRevenue} layout="vertical" margin={{ left: 8, right: 96 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E7DFCD" />
-                  <XAxis type="number" tickLine={false} axisLine={false} />
-                  <YAxis dataKey="name" type="category" width={132} tickLine={false} axisLine={false} />
+                  <XAxis type="number" tickLine={false} axisLine={false} fontSize={12} />
+                  <YAxis dataKey="name" type="category" width={110} tickLine={false} axisLine={false} fontSize={12} />
                   <Tooltip
                     allowEscapeViewBox={{ x: true, y: true }}
                     wrapperStyle={{ zIndex: 50 }}
@@ -513,10 +442,10 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex h-full flex-col items-center justify-center rounded-2xl border border-dashed border-shalom-gold/50 p-6 text-center">
+              <div className="flex h-full flex-col items-center justify-center border-y border-line/70 py-6 text-center dark:border-shalom-gold/10">
                 <p className="font-semibold">Nenhuma receita por evento encontrada.</p>
                 <p className="mission-muted mt-1 text-sm">Vincule um evento ao registrar vendas no PDV.</p>
-                <button type="button" className="mission-btn mission-btn-primary mt-4 px-4 py-2 text-sm font-semibold" onClick={() => setReloadKey((key) => key + 1)}>
+                <button type="button" className="mt-3 min-h-11 px-3 text-sm font-semibold text-shalom-blue dark:text-shalom-gold" onClick={() => setReloadKey((key) => key + 1)}>
                   Atualizar dados
                 </button>
               </div>
@@ -524,12 +453,11 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
           </div>
         </div>
       </section>
+      </> : null}
 
-      {activeModal === 'event' ? (
-        <DashboardModal
-          title="Registrar evento"
+      {location.pathname === '/dashboard/eventos' ? (
+        <DashboardPage
           description="Todas as vendas realizadas nesta data serao vinculadas automaticamente ao evento."
-          onClose={() => setActiveModal('')}
         >
           <form className="space-y-4" onSubmit={registerEvent}>
             <label className="block text-sm font-medium">
@@ -574,10 +502,10 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
               />
             </label>
 
-            {eventMessage ? <p className="rounded-xl bg-shalom-wine/10 px-3 py-2 text-sm text-shalom-wine dark:text-rose-100">{eventMessage}</p> : null}
+            {eventMessage ? <p className="border-l-2 border-shalom-wine px-3 py-1 text-sm text-shalom-wine dark:text-rose-100">{eventMessage}</p> : null}
 
             {registeredEvent ? (
-              <div className="rounded-xl bg-shalom-mist/70 p-3 text-sm dark:bg-white/10">
+              <div className="border-l-2 border-emerald-500 px-3 py-1 text-sm">
                 <p className="font-semibold">Evento {registeredEvent.reassigned_sales !== undefined ? 'atualizado' : 'registrado'} para {formatDate(registeredEvent.event_date)}.</p>
                 <p className="mission-muted mt-1">
                   {registeredEvent.assigned_sales} vendas vinculadas, totalizando {money.format(registeredEvent.assigned_revenue)}.
@@ -588,7 +516,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
               </div>
             ) : null}
 
-            <button type="submit" className="mission-btn mission-btn-primary flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" disabled={eventSaving}>
+            <button type="submit" className="mission-btn mission-btn-primary flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold sm:w-auto" disabled={eventSaving}>
               <CalendarPlus size={18} />
               {eventSaving ? 'Registrando...' : 'Registrar evento'}
             </button>
@@ -603,14 +531,12 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
             </div>
 
             {eventsLoading ? (
-              <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
-                Carregando eventos...
-              </div>
+              <p className="mission-muted py-4 text-sm">Carregando eventos...</p>
             ) : events.length ? (
-              <div className="space-y-3">
+              <div className="divide-y divide-line/70 dark:divide-shalom-gold/10">
                 {events.map((item) => (
                   editingEventId === String(item.id) ? (
-                    <form key={item.id} className="mission-card space-y-3 p-3" onSubmit={saveEventEdit}>
+                    <form key={item.id} className="space-y-3 py-4" onSubmit={saveEventEdit}>
                       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
                         <label className="text-sm font-medium">
                           Nome
@@ -652,7 +578,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
                       </div>
                     </form>
                   ) : (
-                    <article key={item.id} className="mission-card p-3">
+                    <article key={item.id} className="py-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="truncate font-semibold">{item.name}</p>
@@ -673,19 +599,15 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
-                Nenhum evento registrado.
-              </div>
+              <p className="mission-muted py-4 text-sm">Nenhum evento registrado.</p>
             )}
           </div>
-        </DashboardModal>
+        </DashboardPage>
       ) : null}
 
-      {activeModal === 'suggestions' ? (
-        <DashboardModal
-          title="Sugestoes de compra"
+      {location.pathname === '/dashboard/sugestoes-compra' ? (
+        <DashboardPage
           description="Itens com reposicao recomendada com base no estoque minimo e no consumo recente."
-          onClose={() => setActiveModal('')}
           footer={(
             <button
               type="button"
@@ -697,17 +619,17 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
             </button>
           )}
         >
-          <div className="space-y-3">
-            <div className="rounded-xl bg-shalom-mist/70 p-3 text-sm dark:bg-white/10">
+          <div>
+            <div className="border-y border-line/70 py-3 text-sm dark:border-shalom-gold/10">
               <p className="font-semibold">Como calculamos</p>
               <p className="mission-muted mt-1">
                 O uso medio diario e o total vendido nos ultimos 14 dias dividido por 14. A sugestao completa o estoque ate o maior valor entre duas vezes o estoque minimo e sete dias de uso medio, descontando o estoque atual e arredondando para cima.
               </p>
             </div>
             {suggestions.length ? (
-              <div className="space-y-3">
+              <div className="mt-3 divide-y divide-line/70 dark:divide-shalom-gold/10">
                 {suggestions.map((item) => (
-                  <article key={item.id} className="mission-card p-3">
+                  <article key={item.id} className="py-4">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <p className="font-semibold">{item.name}</p>
@@ -715,20 +637,20 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
                       </div>
                       <StatusPill status={item.status} />
                     </div>
-                    <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-4">
-                      <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                    <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-4">
+                      <div className="border-l-2 border-shalom-blue/15 pl-2 dark:border-shalom-gold/20">
                         <dt className="mission-muted">Estoque atual</dt>
                         <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.stock_quantity, item.unit)}</dd>
                       </div>
-                      <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                      <div className="border-l-2 border-shalom-blue/15 pl-2 dark:border-shalom-gold/20">
                         <dt className="mission-muted">Minimo</dt>
                         <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.min_stock, item.unit)}</dd>
                       </div>
-                      <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                      <div className="border-l-2 border-shalom-blue/15 pl-2 dark:border-shalom-gold/20">
                         <dt className="mission-muted">Uso medio</dt>
                         <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.avg_daily_usage, item.unit)}/dia</dd>
                       </div>
-                      <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                      <div className="border-l-2 border-shalom-blue/15 pl-2 dark:border-shalom-gold/20">
                         <dt className="mission-muted">Comprar</dt>
                         <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.suggested_purchase, item.unit)}</dd>
                       </div>
@@ -738,88 +660,15 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
                 ))}
               </div>
             ) : (
-              <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
-                Nenhuma compra sugerida no momento.
-              </div>
+              <p className="mission-muted py-4 text-sm">Nenhuma compra sugerida no momento.</p>
             )}
           </div>
-        </DashboardModal>
+        </DashboardPage>
       ) : null}
 
-      {activeModal === 'pendingPayments' ? (
-        <DashboardModal
-          title="Pagamentos pendentes"
-          description="Vendas registradas como pendentes, com cliente e observacoes para acompanhamento."
-          onClose={() => setActiveModal('')}
-        >
-          {pendingPaymentMessage ? <p className="mb-3 rounded-xl bg-shalom-cream/70 px-3 py-2 text-sm text-shalom-deep dark:bg-white/10 dark:text-shalom-gold">{pendingPaymentMessage}</p> : null}
-          {pendingPayments.length ? (
-            <div className="space-y-3">
-              {pendingPayments.map((item) => (
-                <article key={item.id} className="mission-card p-3">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="font-semibold">{item.customer_name}</p>
-                      <p className="mission-muted text-sm">
-                        Venda #{item.id} - {formatDateTime(item.created_at)}
-                      </p>
-                    </div>
-                    <strong className="text-shalom-wine dark:text-rose-100">{money.format(item.total)}</strong>
-                  </div>
-                  <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
-                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
-                      <dt className="mission-muted">Operador</dt>
-                      <dd className="mt-1 font-semibold">{item.sold_by_name || '-'}</dd>
-                    </div>
-                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
-                      <dt className="mission-muted">Evento</dt>
-                      <dd className="mt-1 font-semibold">{item.event_name || '-'}</dd>
-                    </div>
-                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
-                      <dt className="mission-muted">Observacoes</dt>
-                      <dd className="mt-1 font-semibold whitespace-pre-wrap">{item.notes || '-'}</dd>
-                    </div>
-                  </dl>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                    <label className="text-sm font-medium">
-                      Metodo de pagamento
-                      <select
-                        className="mission-input mt-1 w-full px-3 py-2"
-                        value={pendingPaymentMethods[item.id] || ''}
-                        onChange={(event) => setPendingPaymentMethods((current) => ({ ...current, [item.id]: event.target.value }))}
-                      >
-                        <option value="">Selecione</option>
-                        {confirmedPaymentMethods.map((method) => (
-                          <option key={method} value={method}>{getPaymentLabel(method)}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <button
-                      type="button"
-                      className="mission-btn mission-btn-primary flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
-                      onClick={() => confirmPendingPayment(item.id)}
-                      disabled={!pendingPaymentMethods[item.id] || pendingPaymentConfirming === String(item.id)}
-                    >
-                      <Banknote size={16} />
-                      {pendingPaymentConfirming === String(item.id) ? 'Confirmando...' : 'Marcar como pago'}
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
-              Nenhum pagamento pendente.
-            </div>
-          )}
-        </DashboardModal>
-      ) : null}
-
-      {activeModal === 'lowStock' ? (
-        <DashboardModal
-          title="Estoque baixo"
+      {location.pathname === '/dashboard/estoque-baixo' ? (
+        <DashboardPage
           description="Produtos ativos com quantidade atual abaixo ou igual ao estoque minimo."
-          onClose={() => setActiveModal('')}
           footer={(
             <button
               type="button"
@@ -832,9 +681,9 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
           )}
         >
           {lowStockProducts.length ? (
-            <div className="space-y-3">
+            <div className="divide-y divide-line/70 dark:divide-shalom-gold/10">
               {lowStockProducts.map((item) => (
-                <article key={item.id} className="mission-card p-3">
+                <article key={item.id} className="py-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <p className="font-semibold">{item.name}</p>
@@ -842,16 +691,16 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
                     </div>
                     <StatusPill status={item.status} />
                   </div>
-                  <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
-                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-3">
+                    <div className="border-l-2 border-shalom-blue/15 pl-2 dark:border-shalom-gold/20">
                       <dt className="mission-muted">Atual</dt>
                       <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.stock_quantity, item.unit)}</dd>
                     </div>
-                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                    <div className="border-l-2 border-shalom-blue/15 pl-2 dark:border-shalom-gold/20">
                       <dt className="mission-muted">Minimo</dt>
                       <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.min_stock, item.unit)}</dd>
                     </div>
-                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                    <div className="border-l-2 border-shalom-blue/15 pl-2 dark:border-shalom-gold/20">
                       <dt className="mission-muted">Fornecedor</dt>
                       <dd className="mt-1 font-semibold">{item.supplier || '-'}</dd>
                     </div>
@@ -860,23 +709,19 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
               ))}
             </div>
           ) : (
-            <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
-              Nenhum produto abaixo do estoque minimo.
-            </div>
+            <p className="mission-muted py-4 text-sm">Nenhum produto abaixo do estoque minimo.</p>
           )}
-        </DashboardModal>
+        </DashboardPage>
       ) : null}
 
-      {activeModal === 'expiration' ? (
-        <DashboardModal
-          title="Alertas de validade"
+      {location.pathname === '/dashboard/validades' ? (
+        <DashboardPage
           description="Produtos com estoque vencido, proximo do vencimento ou sem validade cadastrada."
-          onClose={() => setActiveModal('')}
         >
           {expirationAlerts.length ? (
-            <div className="space-y-3">
+            <div className="divide-y divide-line/70 dark:divide-shalom-gold/10">
               {expirationAlerts.map((item) => (
-                <article key={`${item.id}-${item.batch_id || 'produto'}`} className="mission-card p-3">
+                <article key={`${item.id}-${item.batch_id || 'produto'}`} className="py-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <p className="font-semibold">{item.name}</p>
@@ -893,16 +738,16 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
                       {validityLabel(item)}
                     </span>
                   </div>
-                  <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
-                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-3">
+                    <div className="border-l-2 border-shalom-blue/15 pl-2 dark:border-shalom-gold/20">
                       <dt className="mission-muted">Validade</dt>
                       <dd className="mt-1 font-semibold">{formatDate(item.expiration_date)}</dd>
                     </div>
-                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                    <div className="border-l-2 border-shalom-blue/15 pl-2 dark:border-shalom-gold/20">
                       <dt className="mission-muted">Estoque</dt>
                       <dd className="mt-1 font-semibold">{formatQuantityWithUnit(item.stock_quantity, item.unit)}</dd>
                     </div>
-                    <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                    <div className="border-l-2 border-shalom-blue/15 pl-2 dark:border-shalom-gold/20">
                       <dt className="mission-muted">Fornecedor</dt>
                       <dd className="mt-1 font-semibold">{item.supplier || '-'}</dd>
                     </div>
@@ -911,17 +756,15 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
               ))}
             </div>
           ) : (
-            <div className="rounded-2xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">
-              Nenhum produto vencido ou proximo do vencimento.
-            </div>
+            <p className="mission-muted py-4 text-sm">Nenhum produto vencido ou proximo do vencimento.</p>
           )}
 
           {missingExpirationProducts.length ? (
             <div className="mt-4">
               <h3 className="font-display text-base font-semibold">Sem validade cadastrada</h3>
-              <div className="mt-3 space-y-2">
+              <div className="mt-2 divide-y divide-line/70 dark:divide-shalom-gold/10">
                 {missingExpirationProducts.map((item) => (
-                  <div key={item.id} className="flex flex-col gap-1 rounded-xl bg-shalom-mist/70 p-3 text-sm dark:bg-white/10 sm:flex-row sm:items-center sm:justify-between">
+                  <div key={item.id} className="flex min-h-14 flex-col justify-center gap-1 py-2.5 text-sm sm:flex-row sm:items-center sm:justify-between">
                     <span className="font-semibold">{item.name}</span>
                     <span className="mission-muted">{formatQuantityWithUnit(item.stock_quantity, item.unit)} em estoque</span>
                   </div>
@@ -929,7 +772,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
               </div>
             </div>
           ) : null}
-        </DashboardModal>
+        </DashboardPage>
       ) : null}
     </div>
   )

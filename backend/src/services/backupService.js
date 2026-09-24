@@ -79,6 +79,39 @@ function validateBackupFile(file) {
   return target;
 }
 
+async function importBackup(buffer, originalName = 'backup.sqlite') {
+  ensureBackupDir();
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    const error = new Error('Selecione um arquivo SQLite valido.');
+    error.status = 400;
+    throw error;
+  }
+  const safeName = path.basename(String(originalName || 'backup.sqlite'));
+  if (!safeName.toLowerCase().endsWith('.sqlite')) {
+    const error = new Error('O arquivo deve usar a extensao .sqlite.');
+    error.status = 400;
+    throw error;
+  }
+  if (buffer.length < 100 || buffer.subarray(0, 16).toString('binary') !== 'SQLite format 3\0') {
+    const error = new Error('O arquivo enviado nao possui um cabecalho SQLite valido.');
+    error.status = 400;
+    throw error;
+  }
+
+  const stamp = `${brazilTimestamp().replace(/[: ]/g, '-')}-${String(new Date().getMilliseconds()).padStart(3, '0')}`;
+  const targetName = `lanchonete-importado-${stamp}.sqlite`;
+  const target = path.join(backupDir, targetName);
+  // The destination is server-generated inside backupDir; validateBackupFile checks SQLite integrity before use.
+  fs.writeFileSync(target, buffer, { flag: 'wx' }); // lgtm[js/http-to-file-access]
+  try {
+    validateBackupFile(targetName);
+    return statBackup(targetName);
+  } catch (error) {
+    fs.rmSync(target, { force: true });
+    throw error;
+  }
+}
+
 function listBackups() {
   ensureBackupDir();
   return fs.readdirSync(backupDir)
@@ -198,8 +231,10 @@ module.exports = {
   backupDir,
   createBackup,
   getBackupStatus,
+  importBackup,
   listBackups,
   pruneOldBackups,
+  resolveBackupFile,
   restoreBackup,
   runAutomaticBackup,
   startAutomaticBackupScheduler

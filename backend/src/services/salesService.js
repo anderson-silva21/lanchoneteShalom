@@ -305,6 +305,17 @@ function money(value) {
   return Number(Number(value || 0).toFixed(2));
 }
 
+function recalculateSaleProfit(saleId) {
+  const summary = db.prepare(`
+    SELECT COALESCE(SUM(line_profit), 0) AS estimated_profit
+    FROM sale_items
+    WHERE sale_id = ?
+  `).get(saleId);
+  const estimatedProfit = money(summary?.estimated_profit || 0);
+  db.prepare('UPDATE sales SET estimated_profit = ? WHERE id = ?').run(estimatedProfit, saleId);
+  return estimatedProfit;
+}
+
 function listSaleItemsBySaleIds(saleIds = []) {
   const uniqueSaleIds = [...new Set(saleIds
     .map((id) => Number(id))
@@ -561,6 +572,60 @@ function confirmSalePayment(id, paymentMethod, userId) {
   return getSaleById(id);
 }
 
+const updateSaleItemCostTransaction = db.transaction(({ saleId, itemId, unitCost, userId = null, reason = null }) => {
+  const normalizedSaleId = Number(saleId);
+  const normalizedItemId = Number(itemId);
+  const nextUnitCost = money(unitCost);
+
+  if (!Number.isInteger(normalizedSaleId) || normalizedSaleId <= 0 || !Number.isInteger(normalizedItemId) || normalizedItemId <= 0) {
+    throw createHttpError('Venda ou item invalido.', 400);
+  }
+  if (!Number.isFinite(nextUnitCost) || nextUnitCost < 0) {
+    throw createHttpError('Custo da venda invalido.', 400);
+  }
+  const normalizedReason = String(reason || '').trim();
+  if (normalizedReason.length < 3) throw createHttpError('Informe o motivo da alteracao do custo historico.', 400);
+
+  const item = db.prepare('SELECT * FROM sale_items WHERE id = ? AND sale_id = ?').get(normalizedItemId, normalizedSaleId);
+  if (!item) throw createHttpError('Item da venda nao encontrado.', 404);
+
+  const previousUnitCost = money(item.unit_cost);
+  const lineProfit = money(Number(item.line_total || 0) - (nextUnitCost * Number(item.quantity || 0)));
+
+  db.prepare(`
+    UPDATE sale_items
+    SET unit_cost = ?,
+        line_profit = ?
+    WHERE id = ?
+  `).run(nextUnitCost, lineProfit, normalizedItemId);
+
+  db.prepare(`
+    INSERT INTO sale_item_cost_corrections
+      (sale_id, sale_item_id, previous_unit_cost, new_unit_cost, changed_by, reason)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    normalizedSaleId,
+    normalizedItemId,
+    previousUnitCost,
+    nextUnitCost,
+    userId || null,
+    normalizedReason
+  );
+
+  const estimatedProfit = recalculateSaleProfit(normalizedSaleId);
+  return {
+    sale: getSaleById(normalizedSaleId),
+    item_id: normalizedItemId,
+    previous_unit_cost: previousUnitCost,
+    new_unit_cost: nextUnitCost,
+    estimated_profit: estimatedProfit
+  };
+});
+
+function updateSaleItemCost(payload) {
+  return updateSaleItemCostTransaction(payload);
+}
+
 module.exports = {
   confirmSalePayment,
   createSale,
@@ -568,5 +633,6 @@ module.exports = {
   getCashClosing,
   getSaleById,
   listPendingPayments,
-  saveCashClosing
+  saveCashClosing,
+  updateSaleItemCost
 };

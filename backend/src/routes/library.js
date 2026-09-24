@@ -8,12 +8,14 @@ const { toCsv, toLibraryReportPdfStream, toLibraryReportXlsxBuffer, toLibrarySto
 const { brazilDate } = require('../utils/time');
 const {
   adjustStock,
+  cancelInstallmentPlan,
   cancelAssistedRequest,
   convertAssistedRequest,
   createCategory,
   createSale,
   getAssistedRequest,
   getDashboard,
+  getInstallmentPlan,
   getLibraryExportData,
   getLibrarySpreadsheet,
   getLibrarySpreadsheetOptions,
@@ -26,10 +28,12 @@ const {
   listAssistedRequests,
   listMovements,
   listProducts,
+  listInstallmentPlans,
   listSales,
   listSellers,
   removeSeller,
   reassignAssistedRequest,
+  payInstallment,
   saveSeller,
   saveProduct,
   updateAssistedRequestItems
@@ -100,7 +104,12 @@ const stockSchema = z.object({
 
 const saleSchema = z.object({
   payment_method: z.string().trim().min(2).default('manual'),
+  payment_installments: z.coerce.number().int().positive().max(24).default(1),
   customer_name: z.string().trim().optional().nullable(),
+  customer_contact: z.string().trim().optional().nullable(),
+  receivable_installments: z.preprocess((value) => value === '' || value === undefined || value === null ? undefined : value, z.coerce.number().int().min(2).max(24).optional()),
+  first_due_date: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  first_installment_paid: z.coerce.boolean().optional().default(false),
   notes: z.string().trim().optional().nullable(),
   idempotency_key: z.string().trim().min(8).max(120).optional().nullable(),
   items: z.array(z.object({
@@ -126,8 +135,19 @@ const assistedItemsSchema = z.object({
 
 const convertRequestSchema = z.object({
   payment_method: z.string().trim().min(2).default('manual'),
+  payment_installments: z.coerce.number().int().positive().max(24).default(1),
   customer_name: z.string().trim().optional().nullable(),
+  customer_contact: z.string().trim().optional().nullable(),
+  receivable_installments: z.preprocess((value) => value === '' || value === undefined || value === null ? undefined : value, z.coerce.number().int().min(2).max(24).optional()),
+  first_due_date: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+  first_installment_paid: z.coerce.boolean().optional().default(false),
   notes: z.string().trim().optional().nullable()
+});
+
+const installmentPaymentSchema = z.object({
+  payment_method: z.enum(['pix', 'dinheiro']),
+  paid_at: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
+  notes: z.string().trim().max(500).optional().nullable()
 });
 
 router.get('/dashboard', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
@@ -253,6 +273,7 @@ router.post('/requests/:reference/convert', libraryOperationalRateLimit, authent
     summary: `Carrinho assistido convertido: ${req.params.reference}`,
     metadata: { sale_id: sale.id, total: sale.total }
   });
+  if (sale.installment_plan) recordAudit({ req, action: 'library.installment_plan.create', entityType: 'library_installment_plan', entityId: sale.installment_plan.id, summary: `Parcelamento criado: venda #${sale.id}`, metadata: { sale_id: sale.id, installment_count: sale.installment_plan.installment_count, total: sale.total } });
   return res.status(201).json(sale);
 });
 
@@ -347,6 +368,37 @@ router.get('/sales', libraryOperationalRateLimit, authenticate, requirePermissio
   return res.json(listSales({ limit: req.query.limit }));
 });
 
+router.get('/installment-plans', libraryOperationalRateLimit, authenticate, requirePermission('library:finance'), (req, res) => {
+  return res.json(listInstallmentPlans({ status: req.query.status, q: req.query.q }));
+});
+
+router.get('/installment-plans/:id', libraryOperationalRateLimit, authenticate, requirePermission('library:finance'), (req, res) => {
+  const plan = getInstallmentPlan(req.params.id);
+  if (!plan) return res.status(404).json({ message: 'Plano de parcelas nao encontrado.' });
+  return res.json(plan);
+});
+
+router.patch('/installments/:id/pay', libraryOperationalRateLimit, authenticate, requirePermission('library:finance'), (req, res, next) => {
+  try {
+    const payload = installmentPaymentSchema.parse(req.body);
+    const plan = payInstallment({ installmentId: req.params.id, paymentMethod: payload.payment_method, paidAt: payload.paid_at, notes: payload.notes, userId: req.user.id });
+    recordAudit({ req, action: 'library.installment.pay', entityType: 'library_installment_plan', entityId: plan.id, summary: `Parcela recebida: venda #${plan.sale_id}`, metadata: { installment_id: Number(req.params.id), payment_method: payload.payment_method, paid_at: payload.paid_at } });
+    return res.json(plan);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.patch('/installment-plans/:id/cancel', libraryOperationalRateLimit, authenticate, requirePermission('library:finance'), (req, res, next) => {
+  try {
+    const plan = cancelInstallmentPlan(req.params.id);
+    recordAudit({ req, action: 'library.installment_plan.cancel', entityType: 'library_installment_plan', entityId: plan.id, summary: `Parcelamento cancelado: venda #${plan.sale_id}`, metadata: { sale_id: plan.sale_id } });
+    return res.json(plan);
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.get('/spreadsheet/options', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
   return res.json(getLibrarySpreadsheetOptions());
 });
@@ -412,6 +464,7 @@ router.post('/sales', libraryOperationalRateLimit, authenticate, requirePermissi
     summary: `Venda da Livraria registrada: #${sale.id}`,
     metadata: { total: sale.total, gross_profit: sale.gross_profit, items: sale.items.length }
   });
+  if (sale.installment_plan) recordAudit({ req, action: 'library.installment_plan.create', entityType: 'library_installment_plan', entityId: sale.installment_plan.id, summary: `Parcelamento criado: venda #${sale.id}`, metadata: { sale_id: sale.id, installment_count: sale.installment_plan.installment_count, total: sale.total } });
   return res.status(201).json(sale);
 });
 

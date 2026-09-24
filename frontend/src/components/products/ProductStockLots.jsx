@@ -1,4 +1,4 @@
-import { Boxes, Save } from 'lucide-react'
+import { Save } from 'lucide-react'
 import { decimal, formatQuantityWithUnit } from '../../utils/formatters'
 
 function getBatchStatusClass(status) {
@@ -27,40 +27,19 @@ function BatchStatusBadge({ batch }) {
 }
 
 export function ProductStockLots({
-  products,
   selectedBatches,
-  selectedProduct,
   selectedProductId,
   selectedStock,
   onBatchChange,
-  onProductChange,
   onSaveBatch
 }) {
-  const stockQuantity = selectedStock?.totalQuantity ?? selectedProduct?.stock_quantity ?? 0
-
   return (
-    <section id="product-lots-panel" className="mission-panel min-w-0 scroll-mt-24 p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 items-start gap-2">
-          <Boxes className="mt-1 shrink-0" size={20} />
-          <div className="min-w-0">
-            <h2 className="font-display text-lg font-semibold">Lotes de estoque</h2>
-            <p className="mission-muted break-words text-sm">
-              {selectedProduct ? `${selectedProduct.name} - ${formatQuantityWithUnit(stockQuantity, selectedProduct.unit)}` : 'Selecione um produto'}
-            </p>
-          </div>
-        </div>
-        <select className="mission-input w-full px-3 py-2.5 lg:w-auto lg:max-w-sm" value={selectedProductId} onChange={(event) => onProductChange(event.target.value)}>
-          <option value="">Produto</option>
-          {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
-        </select>
-      </div>
-
-      <div className="mt-4 space-y-3 lg:hidden">
+    <section id="product-lots-panel" className="min-w-0 scroll-mt-24">
+      <div className="lg:hidden">
         {selectedProductId && selectedStock === null ? (
-          <div className="rounded-xl border border-line/80 bg-white/70 p-4 text-sm dark:border-shalom-gold/10 dark:bg-white/10">Carregando lotes...</div>
+          <p className="mission-muted px-3 py-6 text-sm">Carregando lotes...</p>
         ) : selectedBatches.length ? selectedBatches.map((batch) => (
-          <article key={batch.id} className="mission-card min-w-0 p-4">
+          <article key={batch.id} className="min-w-0 border-b border-line/70 px-3 py-4 dark:border-shalom-gold/10">
             <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <p className="font-mono text-xs mission-muted">Lote #{batch.id}</p>
@@ -101,13 +80,13 @@ export function ProductStockLots({
             </div>
           </article>
         )) : (
-          <div className="rounded-xl border border-line/80 bg-white/70 p-4 text-sm mission-muted dark:border-shalom-gold/10 dark:bg-white/10">
+          <p className="mission-muted px-3 py-6 text-sm">
             Nenhum lote para este produto.
-          </div>
+          </p>
         )}
       </div>
 
-      <div className="mt-4 hidden overflow-x-auto rounded-2xl border border-line/80 scrollbar-thin dark:border-shalom-gold/10 lg:block">
+      <div className="hidden overflow-x-auto border-y border-line/80 scrollbar-thin dark:border-shalom-gold/10 lg:block">
         <table className="min-w-[860px] w-full border-separate border-spacing-0 text-left text-sm">
           <thead>
             <tr className="text-xs uppercase tracking-[0.12em] text-shalom-blue/70 dark:text-shalom-gold/80">

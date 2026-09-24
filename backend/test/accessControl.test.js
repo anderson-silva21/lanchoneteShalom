@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { can, requireScreen, screenRoles } = require('../src/middleware/accessControl');
 
 const expectedAccess = {
-  cashier: ['sales', 'payments', 'sheet'],
+  cashier: ['sales', 'sheet'],
   manager: ['setup', 'sales', 'payments', 'products', 'inventory', 'sheet'],
   finance: ['dashboard', 'setup', 'sales', 'payments', 'products', 'inventory', 'sheet', 'reports', 'library'],
   admin: ['dashboard', 'setup', 'sales', 'payments', 'products', 'inventory', 'sheet', 'reports', 'library', 'settings'],
@@ -49,4 +49,11 @@ test('somente admin gerencia vendedores e reatribuicoes da Livraria', () => {
   assert.equal(can('library', 'library:requests:reassign'), false);
   assert.equal(can('finance', 'library:sellers:manage'), false);
   assert.equal(can('finance', 'library:requests:reassign'), false);
+});
+
+test('somente admin e financeiro acessam recebiveis da Livraria', () => {
+  assert.equal(can('admin', 'library:finance'), true);
+  assert.equal(can('finance', 'library:finance'), true);
+  assert.equal(can('library', 'library:finance'), false);
+  assert.equal(can('cashier', 'library:finance'), false);
 });

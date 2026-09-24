@@ -56,6 +56,22 @@ async function download(path, filename) {
   URL.revokeObjectURL(url)
 }
 
+async function uploadBackup(file) {
+  const response = await fetch(`${API_URL}/backup/import`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'X-Backup-Filename': file.name,
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
+    },
+    body: file
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.message || 'Nao foi possivel importar o backup.')
+  return payload
+}
+
 export const api = {
   login: (username, password) => request('/auth/login', { method: 'POST', body: { username, password } }),
   me: () => request('/auth/me'),
@@ -96,21 +112,30 @@ export const api = {
   libraryMovements: () => request('/library/movements?limit=120', { cache: 'no-store' }),
   createLibrarySale: (payload) => request('/library/sales', { method: 'POST', body: payload }),
   librarySales: () => request('/library/sales?limit=120', { cache: 'no-store' }),
+  libraryInstallmentPlans: (params = {}) => request(`/library/installment-plans?${new URLSearchParams(params)}`, { cache: 'no-store' }),
+  libraryInstallmentPlan: (id) => request(`/library/installment-plans/${id}`, { cache: 'no-store' }),
+  payLibraryInstallment: (id, payload) => request(`/library/installments/${id}/pay`, { method: 'PATCH', body: payload }),
+  cancelLibraryInstallmentPlan: (id) => request(`/library/installment-plans/${id}/cancel`, { method: 'PATCH' }),
   products: (params = {}) => request(`/products?${new URLSearchParams(params)}`),
+  posProducts: () => request('/products?catalog=pos'),
   productCategories: () => request('/products/categories'),
   createProduct: (product) => request('/products', { method: 'POST', body: product }),
   importProducts: (payload) => request('/products/import', { method: 'POST', body: payload }),
   productHistory: (id) => request(`/products/${id}/history`, { cache: 'no-store' }),
   updateProduct: (id, product) => request(`/products/${id}`, { method: 'PATCH', body: product }),
+  updateProductPosVisibility: (id, visible_in_pos) => request(`/products/${id}/pos-visibility`, { method: 'PATCH', body: { visible_in_pos } }),
   deleteProduct: (id, payload) => request(`/products/${id}`, { method: 'DELETE', body: payload }),
   combos: () => request('/combos'),
+  managedCombos: () => request('/combos/manage'),
   createCombo: (combo) => request('/combos', { method: 'POST', body: combo }),
+  updateCombo: (id, combo) => request(`/combos/${id}`, { method: 'PATCH', body: combo }),
   deleteCombo: (id) => request(`/combos/${id}`, { method: 'DELETE' }),
   createSale: (sale) => request('/sales', { method: 'POST', body: sale }),
   pendingPayments: () => request('/sales/pending', { cache: 'no-store' }),
   cashClosing: (params = {}) => request(`/sales/closing?${new URLSearchParams(params)}`, { cache: 'no-store' }),
   saveCashClosing: (payload) => request('/sales/closing', { method: 'POST', body: payload }),
   confirmSalePayment: (id, payload) => request(`/sales/${id}/payment`, { method: 'PATCH', body: payload }),
+  updateSaleItemCost: (saleId, itemId, payload) => request(`/sales/${saleId}/items/${itemId}/cost`, { method: 'PATCH', body: payload }),
   events: () => request('/sales/events'),
   createEvent: (event) => request('/sales/events', { method: 'POST', body: event }),
   updateEvent: (id, event) => request(`/sales/events/${id}`, { method: 'PATCH', body: event }),
@@ -120,11 +145,9 @@ export const api = {
   updateBatch: (id, payload) => request(`/inventory/batches/${id}`, { method: 'PATCH', body: payload }),
   productStock: (id, params = {}) => request(`/inventory/products/${id}/stock?${new URLSearchParams(params)}`),
   createMovement: (movement) => request('/inventory/movements', { method: 'POST', body: movement }),
-  postEventInventories: () => request('/inventory/post-event'),
-  postEventInventory: (id) => request(`/inventory/post-event/${id}`),
-  createPostEventInventory: (inventory) => request('/inventory/post-event', { method: 'POST', body: inventory }),
   sheets: () => request('/spreadsheet/sheets'),
   sheet: (sheet) => request(`/spreadsheet/${sheet}`),
+  downloadSheet: (sheet, params = {}, format = 'csv') => download(`/spreadsheet/${sheet}/export?${new URLSearchParams({ ...params, format })}`, `planilha-${sheet}.${format}`),
   updateSheetProduct: (id, payload) => request(`/spreadsheet/produtos/${id}`, { method: 'PATCH', body: payload }),
   updateSheetSale: (id, payload) => request(`/spreadsheet/vendas/${id}`, { method: 'PATCH', body: payload }),
   deleteSheetSale: (id, payload) => request(`/spreadsheet/vendas/${id}`, { method: 'DELETE', body: payload }),
@@ -140,6 +163,7 @@ export const api = {
   resetOperationalData: (payload) => request('/system/reset-operational-data', { method: 'POST', body: payload }),
   backup: () => request('/backup', { method: 'POST' }),
   backups: () => request('/backup'),
+  downloadBackup: (file) => download(`/backup/${encodeURIComponent(file)}/download`, file),
+  importBackup: (file) => uploadBackup(file),
   restoreBackup: (file, payload) => request(`/backup/${encodeURIComponent(file)}/restore`, { method: 'POST', body: payload }),
-  downloadReport: (type, format) => download(`/reports/export?type=${type}&format=${format}`, `${type}.${format}`)
 }

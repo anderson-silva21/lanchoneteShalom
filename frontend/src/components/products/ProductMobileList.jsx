@@ -8,9 +8,11 @@ export function ProductMobileList({
   categories,
   selectedProductId,
   canDeleteProducts,
+  canManagePosVisibility,
   onChangeProduct,
   onDeleteProduct,
   onSaveProduct,
+  onUpdatePosVisibility,
   onSelectProduct,
   onStartStockMovement
 }) {
@@ -42,11 +44,19 @@ export function ProductMobileList({
               </div>
               <StatusPill status={product.stock_status} />
             </div>
+            <div className="mt-3 flex min-h-11 items-center justify-between gap-3 border-y border-line/70 py-2 dark:border-shalom-gold/10">
+              <span className="text-sm font-medium">{Number(product.sale_price) <= 0 ? 'Indisponivel para o PDV - sem preco de venda' : product.visible_in_pos ? 'Visivel no PDV' : 'Oculto no PDV'}</span>
+              {canManagePosVisibility && Number(product.sale_price) > 0 ? <button type="button" role="switch" aria-checked={Boolean(product.visible_in_pos)} aria-label={`Exibir ${product.name} no PDV`} className={`relative h-7 w-12 shrink-0 rounded-full transition ${product.visible_in_pos ? 'bg-shalom-blue dark:bg-shalom-gold' : 'bg-slate-300 dark:bg-slate-600'}`} onClick={() => onUpdatePosVisibility(product, !product.visible_in_pos)}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${product.visible_in_pos ? 'left-6' : 'left-1'}`} /></button> : null}
+            </div>
 
             <dl className="mt-4 grid min-w-0 grid-cols-1 gap-2 text-sm min-[380px]:grid-cols-2">
               <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
                 <dt className="mission-muted text-xs">Venda</dt>
                 <dd className="mt-1 font-semibold">{money.format(product.sale_price || 0)}</dd>
+              </div>
+              <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
+                <dt className="mission-muted text-xs">Custo</dt>
+                <dd className="mt-1 font-semibold">{product.is_donation ? 'Doacao' : money.format(product.cost_price || 0)}</dd>
               </div>
               <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
                 <dt className="mission-muted text-xs">Estoque</dt>
@@ -118,7 +128,25 @@ export function ProductMobileList({
                     {categories.map((categoryName) => <option key={categoryName} value={categoryName}>{categoryName}</option>)}
                   </select>
                 </label>
+                <label className="block text-sm font-medium">
+                  URL da imagem
+                  <input type="url" className="mission-input mt-1 w-full px-3 py-2.5" value={product.image_url || ''} onChange={(event) => onChangeProduct(product.id, 'image_url', event.target.value)} placeholder="https://exemplo.com/produto.jpg" />
+                </label>
+                {product.image_url ? <div key={product.image_url} className="overflow-hidden rounded-md bg-shalom-cream/60"><img className="aspect-video w-full object-cover" src={product.image_url} alt={`Preview de ${product.name}`} onError={(event) => { event.currentTarget.hidden = true; event.currentTarget.nextElementSibling.hidden = false }} /><p className="mission-muted hidden p-3 text-sm">Nao foi possivel carregar a imagem.</p></div> : null}
                 <div className="grid min-w-0 grid-cols-1 gap-3 min-[380px]:grid-cols-2">
+                  <label className="block text-sm font-medium">
+                    Custo
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.01"
+                      className="mission-input mt-1 w-full px-3 py-2.5 disabled:opacity-60"
+                      value={product.is_donation ? 0 : product.cost_price}
+                      disabled={Boolean(product.is_donation)}
+                      onChange={(event) => onChangeProduct(product.id, 'cost_price', Number(event.target.value))}
+                    />
+                  </label>
                   <label className="block text-sm font-medium">
                     Venda
                     <input

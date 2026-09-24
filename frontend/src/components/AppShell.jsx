@@ -1,10 +1,9 @@
 import { useState } from 'react'
 import {
+  ArrowLeft,
   BarChart3,
   BookOpen,
   Boxes,
-  ClipboardCheck,
-  ClipboardList,
   FileSpreadsheet,
   LogOut,
   MoreHorizontal,
@@ -26,9 +25,7 @@ const navItems = [
   { key: 'sales', label: 'PDV', icon: ReceiptText },
   { key: 'payments', label: 'Financeiro', icon: WalletCards },
   { key: 'products', label: 'Produtos', icon: Boxes },
-  { key: 'inventory', label: 'Inventario', icon: ClipboardCheck },
   { key: 'sheet', label: 'Planilha', icon: FileSpreadsheet },
-  { key: 'reports', label: 'Relatorios', icon: ClipboardList },
   { key: 'library', label: 'Livraria', icon: BookOpen },
   { key: 'settings', label: 'Sistema', icon: Settings }
 ]
@@ -47,13 +44,14 @@ const mobilePrimaryLabels = {
   payments: 'Pagamentos'
 }
 
-const mobilePrimaryOrder = ['sales', 'products', 'payments', 'library']
+const mobilePrimaryOrder = ['sales', 'sheet', 'products', 'payments', 'library']
 
-export function AppShell({ activeView, setActiveView, user, darkMode, setDarkMode, setupEnabled = false, onLogout, children }) {
+export function AppShell({ activeView, setActiveView, pageTitle, onBack, user, darkMode, setDarkMode, setupEnabled = false, onLogout, children }) {
   const allowedNavItems = navItems.filter((item) => canAccessView(user?.role, item.key, { setupEnabled }))
   const mobilePrimaryItems = mobilePrimaryOrder
     .map((key) => allowedNavItems.find((item) => item.key === key))
     .filter(Boolean)
+    .slice(0, 4)
   const mobileSecondaryItems = allowedNavItems.filter((item) => !mobilePrimaryItems.some((primary) => primary.key === item.key))
   const isMobileMoreActive = mobileSecondaryItems.some((item) => item.key === activeView)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
@@ -166,26 +164,20 @@ export function AppShell({ activeView, setActiveView, user, darkMode, setDarkMod
 
       <div className={`transition-[padding] duration-200 ${sidebarCollapsed ? 'lg:pl-[88px]' : 'lg:pl-72'}`}>
         <header className="sticky top-0 z-20 border-b border-shalom-gold/30 bg-white/78 px-3 py-2 shadow-sm backdrop-blur-2xl dark:border-shalom-gold/15 dark:bg-gradient-to-r dark:from-shalom-night/95 dark:via-[#0A2443]/92 dark:to-shalom-deep/88 dark:shadow-[0_18px_52px_rgba(0,0,0,0.24)] sm:px-4 lg:px-8 lg:py-3">
-          <div className="flex items-center justify-between gap-3 lg:hidden">
+          <div className="flex items-center gap-3 lg:hidden">
+            {onBack ? <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center text-shalom-blue dark:text-shalom-gold" onClick={onBack} aria-label="Voltar" title="Voltar"><ArrowLeft size={21} /></button> : null}
             <div className="min-w-0">
               <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-shalom-orange dark:text-shalom-gold/90">SH82</p>
-              <h1 className="truncate font-display text-xl font-semibold leading-tight text-shalom-deep dark:text-white">{allowedNavItems.find((item) => item.key === activeView)?.label}</h1>
+              <h1 className="truncate font-display text-xl font-semibold leading-tight text-shalom-deep dark:text-white">{pageTitle || allowedNavItems.find((item) => item.key === activeView)?.label}</h1>
             </div>
-            <button
-              className="mission-btn flex min-h-11 min-w-11 shrink-0 items-center justify-center border border-shalom-gold/30 bg-white/70 px-3 py-2 text-shalom-deep dark:border-shalom-gold/20 dark:bg-white/10 dark:text-shalom-gold"
-              onClick={() => setDarkMode(!darkMode)}
-              title={darkMode ? 'Modo claro' : 'Modo escuro'}
-              aria-label={darkMode ? 'Modo claro' : 'Modo escuro'}
-            >
-              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
           </div>
 
           <div className="hidden lg:flex lg:items-center lg:justify-between">
             <div className="flex items-start justify-between gap-3">
+              {onBack ? <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center text-shalom-blue dark:text-shalom-gold" onClick={onBack} aria-label="Voltar" title="Voltar"><ArrowLeft size={21} /></button> : null}
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-shalom-orange dark:text-shalom-gold/90 sm:text-sm">Gestao da difusao</p>
-                <h1 className="font-display text-xl font-semibold text-shalom-deep dark:text-white sm:text-2xl">{allowedNavItems.find((item) => item.key === activeView)?.label}</h1>
+                <h1 className="font-display text-xl font-semibold text-shalom-deep dark:text-white sm:text-2xl">{pageTitle || allowedNavItems.find((item) => item.key === activeView)?.label}</h1>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -201,14 +193,14 @@ export function AppShell({ activeView, setActiveView, user, darkMode, setDarkMod
           </div>
         </header>
 
-        <main className="animate-rise h-[calc(100dvh_-_8.2rem_-_env(safe-area-inset-bottom))] min-w-0 overflow-y-auto px-3 pb-6 pt-4 scrollbar-thin sm:px-5 lg:h-auto lg:overflow-visible lg:px-8 lg:pb-5 lg:pt-5">{children}</main>
+        <main className="h-[calc(100dvh_-_8.2rem_-_env(safe-area-inset-bottom))] min-w-0 overflow-y-auto px-3 pb-6 pt-4 scrollbar-thin sm:px-5 lg:h-auto lg:overflow-visible lg:px-8 lg:pb-5 lg:pt-5">{children}</main>
       </div>
 
       {mobileMenuOpen ? (
-        <div className="fixed inset-x-3 bottom-[calc(5.25rem_+_env(safe-area-inset-bottom))] z-40 lg:hidden">
-          <div className="mission-panel min-w-0 max-h-[calc(100dvh_-_9rem_-_env(safe-area-inset-bottom))] overflow-y-auto p-2 shadow-blue">
-            <div className="grid min-w-0 grid-cols-1 gap-2">
-              <div className="min-w-0 rounded-2xl border border-shalom-gold/30 bg-white/78 p-3 text-shalom-deep dark:border-shalom-gold/20 dark:bg-white/10 dark:text-slate-100">
+        <div className="mobile-more-menu fixed inset-x-3 z-40 lg:hidden">
+          <div className="min-w-0 max-h-[calc(100dvh_-_8rem_-_env(safe-area-inset-bottom))] overflow-y-auto rounded-lg border border-line/90 bg-white/95 p-2 shadow-soft backdrop-blur-xl dark:border-shalom-gold/15 dark:bg-shalom-night/95">
+            <div className="grid min-w-0 grid-cols-1">
+              <div className="min-w-0 border-b border-line/80 px-3 py-2 text-shalom-deep dark:border-shalom-gold/15 dark:text-slate-100">
                 <p className="truncate text-sm font-semibold">{user?.name}</p>
                 <p className="text-xs font-semibold text-shalom-orange dark:text-shalom-gold">{roleLabels[user?.role] || user?.role}</p>
               </div>
@@ -219,12 +211,13 @@ export function AppShell({ activeView, setActiveView, user, darkMode, setDarkMod
                   <button
                     key={item.key}
                     type="button"
-                    className={`mission-btn flex min-h-12 w-full min-w-0 items-center gap-3 px-3 py-2 text-left text-sm font-semibold ${
+                    className={`flex min-h-11 w-full min-w-0 items-center gap-3 border-l-2 px-3 py-2 text-left text-sm font-semibold transition-colors ${
                       active
-                        ? 'mission-btn-primary'
-                        : 'border border-shalom-gold/30 bg-white/78 text-shalom-deep dark:border-shalom-gold/20 dark:bg-white/10 dark:text-slate-100'
+                        ? 'border-shalom-blue text-shalom-blue dark:text-white'
+                        : 'border-transparent text-shalom-deep/75 hover:text-shalom-blue dark:text-slate-300 dark:hover:text-white'
                     }`}
                     onClick={() => selectView(item.key)}
+                    aria-current={active ? 'page' : undefined}
                   >
                     <Icon className="shrink-0" size={18} />
                     <span className="min-w-0 truncate">{item.label}</span>
@@ -233,15 +226,7 @@ export function AppShell({ activeView, setActiveView, user, darkMode, setDarkMod
               })}
               <button
                 type="button"
-                className="mission-btn flex min-h-12 w-full min-w-0 items-center gap-3 border border-shalom-gold/30 bg-white/78 px-3 py-2 text-left text-sm font-semibold text-shalom-deep dark:border-shalom-gold/20 dark:bg-white/10 dark:text-slate-100"
-                onClick={() => setDarkMode(!darkMode)}
-              >
-                {darkMode ? <Sun className="shrink-0" size={18} /> : <Moon className="shrink-0" size={18} />}
-                <span className="min-w-0 truncate">{darkMode ? 'Modo claro' : 'Modo escuro'}</span>
-              </button>
-              <button
-                type="button"
-                className="mission-btn flex min-h-12 w-full min-w-0 items-center gap-3 border border-shalom-wine/25 bg-white/78 px-3 py-2 text-left text-sm font-semibold text-shalom-wine dark:border-rose-200/20 dark:bg-white/10 dark:text-rose-100"
+                className="mt-1 flex min-h-11 w-full min-w-0 items-center gap-3 border-t border-line/80 px-3 py-2 text-left text-sm font-semibold text-shalom-wine transition-colors hover:bg-shalom-wine/5 dark:border-shalom-gold/15 dark:text-rose-200 dark:hover:bg-white/5"
                 onClick={onLogout}
               >
                 <LogOut className="shrink-0" size={18} />
@@ -253,13 +238,10 @@ export function AppShell({ activeView, setActiveView, user, darkMode, setDarkMod
       ) : null}
 
       <nav
-        className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-40 border-t border-shalom-gold/30 bg-white/92 px-2 pb-[calc(0.5rem_+_env(safe-area-inset-bottom))] pt-2 shadow-[0_-18px_40px_rgba(20,47,83,0.14)] backdrop-blur-2xl dark:border-shalom-gold/15 dark:bg-shalom-night/94 lg:hidden"
+        className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-40 border-t border-line/80 bg-white/95 px-3 pb-[calc(0.35rem_+_env(safe-area-inset-bottom))] pt-1.5 backdrop-blur-xl dark:border-shalom-gold/15 dark:bg-shalom-night/95 lg:hidden"
         aria-label="Navegacao principal"
       >
-        <div
-          className="mx-auto grid max-w-lg gap-1"
-          style={{ gridTemplateColumns: `repeat(${mobilePrimaryItems.length + 1}, minmax(0, 1fr))` }}
-        >
+        <div className="mx-auto flex max-w-lg items-center justify-around gap-1">
           {mobilePrimaryItems.map((item) => {
             const Icon = item.icon
             const active = activeView === item.key
@@ -267,33 +249,39 @@ export function AppShell({ activeView, setActiveView, user, darkMode, setDarkMod
               <button
                 key={item.key}
                 type="button"
-                className={`mission-btn flex min-h-[3.35rem] flex-col items-center justify-center gap-1 px-1.5 py-1.5 text-[11px] font-semibold leading-tight ${
-                  active
-                    ? 'mission-btn-primary'
-                    : 'border border-shalom-gold/25 bg-white/78 text-shalom-deep dark:border-shalom-gold/15 dark:bg-white/10 dark:text-slate-100'
-                }`}
+                className={`mobile-nav-item ${active ? 'mobile-nav-item-active' : ''}`}
                 onClick={() => selectView(item.key)}
                 aria-label={mobilePrimaryLabels[item.key] || item.label}
+                aria-current={active ? 'page' : undefined}
+                title={mobilePrimaryLabels[item.key] || item.label}
               >
-                <Icon size={18} aria-hidden="true" />
-                <span>{mobilePrimaryLabels[item.key] || item.label}</span>
+                <Icon size={21} aria-hidden="true" />
               </button>
             )
           })}
 
           <button
             type="button"
-            className={`mission-btn flex min-h-[3.35rem] flex-col items-center justify-center gap-1 px-1.5 py-1.5 text-[11px] font-semibold leading-tight ${
-              isMobileMoreActive || mobileMenuOpen
-                ? 'mission-btn-primary'
-                : 'border border-shalom-gold/25 bg-white/78 text-shalom-deep dark:border-shalom-gold/15 dark:bg-white/10 dark:text-slate-100'
-            }`}
+            className="mobile-nav-item"
+            onClick={() => {
+              setDarkMode(!darkMode)
+              setMobileMenuOpen(false)
+            }}
+            aria-label={darkMode ? 'Ativar modo claro' : 'Ativar modo escuro'}
+            title={darkMode ? 'Modo claro' : 'Modo escuro'}
+          >
+            {darkMode ? <Sun size={21} aria-hidden="true" /> : <Moon size={21} aria-hidden="true" />}
+          </button>
+
+          <button
+            type="button"
+            className={`mobile-nav-item ${isMobileMoreActive || mobileMenuOpen ? 'mobile-nav-item-active' : ''}`}
             onClick={() => setMobileMenuOpen((current) => !current)}
             aria-expanded={mobileMenuOpen}
-            aria-label="Abrir outras telas"
+            aria-label="Mais opcoes"
+            title="Mais"
           >
-            <MoreHorizontal size={18} aria-hidden="true" />
-            <span>Mais</span>
+            <MoreHorizontal size={22} aria-hidden="true" />
           </button>
         </div>
       </nav>

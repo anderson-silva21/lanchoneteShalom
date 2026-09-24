@@ -2,12 +2,13 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Boxes, PackagePlus, Save, Search, Slid
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from '../services/api'
-import { formatDate, formatQuantityWithUnit, money } from '../utils/formatters'
+import { formatDate, formatQuantityWithUnit } from '../utils/formatters'
 import { PaginationControls } from './PaginationControls'
 import { StatusPill } from './StatusPill'
 import { ProductHistoryPanel } from './products/ProductHistoryPanel'
 import { ProductMobileList } from './products/ProductMobileList'
 import { ProductStockLots } from './products/ProductStockLots'
+import { ProductWorkspace } from './products/ProductWorkspace'
 
 function createEmptyProduct(category = '') {
   return {
@@ -20,7 +21,9 @@ function createEmptyProduct(category = '') {
     min_stock: 0,
     supplier: '',
     unit: 'unidade',
-    expiration_date: ''
+    expiration_date: '',
+    image_url: '',
+    visible_in_pos: true
   }
 }
 
@@ -138,6 +141,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   const [categories, setCategories] = useState([])
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('')
+  const [posVisibility, setPosVisibility] = useState('all')
   const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' })
   const [draft, setDraft] = useState(() => createEmptyProduct())
   const [adjustment, setAdjustment] = useState(() => createEmptyAdjustment())
@@ -152,6 +156,9 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   const [deleteConfirmation, setDeleteConfirmation] = useState('')
   const [deletingProduct, setDeletingProduct] = useState(false)
   const [productPage, setProductPage] = useState(1)
+  const [mobileContextOpen, setMobileContextOpen] = useState(false)
+  const [detailMode, setDetailMode] = useState('product')
+  const [productSection, setProductSection] = useState('details')
   const movementFormRef = useRef(null)
   const movementProductRef = useRef(null)
   const productTableTopScrollRef = useRef(null)
@@ -228,6 +235,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
     if (intent.action === 'viewStock') {
       setQuery('')
       setStatus(intent.status || 'low')
+      setMobileContextOpen(false)
       return
     }
 
@@ -242,6 +250,9 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
         product_id: intent.productId ? String(intent.productId) : current.product_id
       }))
       if (intent.productId) setSelectedProductId(String(intent.productId))
+      setDetailMode('product')
+      setProductSection('stock')
+      setMobileContextOpen(true)
 
       window.setTimeout(() => {
         movementFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -252,11 +263,16 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase()
-    if (!term) return products
-    return products.filter((product) => [product.name, product.category, product.internal_code, product.supplier]
+    return products.filter((product) => {
+      const effectivelyVisibleInPos = Boolean(product.visible_in_pos) && Number(product.sale_price) > 0
+      if (posVisibility === 'visible' && !effectivelyVisibleInPos) return false
+      if (posVisibility === 'hidden' && effectivelyVisibleInPos) return false
+      if (!term) return true
+      return [product.name, product.category, product.internal_code, product.supplier]
       .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(term)))
-  }, [products, query])
+      .some((value) => String(value).toLowerCase().includes(term))
+    })
+  }, [posVisibility, products, query])
 
   const sortedProducts = useMemo(() => {
     if (!sortConfig.key) return filtered
@@ -481,6 +497,46 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
     }
   }
 
+  async function updatePosVisibility(product, visible) {
+    const previous = Boolean(product.visible_in_pos)
+    setProducts((current) => current.map((item) => item.id === product.id ? { ...item, visible_in_pos: visible ? 1 : 0 } : item))
+    setMessage('')
+    try {
+      await api.updateProductPosVisibility(product.id, visible)
+      onChanged()
+      setMessage(`${product.name} ${visible ? 'sera exibido' : 'foi ocultado'} no PDV.`)
+    } catch (err) {
+      setProducts((current) => current.map((item) => item.id === product.id ? { ...item, visible_in_pos: previous ? 1 : 0 } : item))
+      setMessage(err.message)
+    }
+  }
+
+  async function updateHistoricalSaleItemCost(saleItem, nextUnitCost, reason) {
+    setMessage('')
+    const unitCost = Number(nextUnitCost)
+    if (!Number.isFinite(unitCost) || unitCost < 0) {
+      setMessage('O custo da venda deve ser um numero maior ou igual a zero.')
+      return
+    }
+
+    if (String(reason || '').trim().length < 3) {
+      setMessage('Informe o motivo da alteracao do custo historico.')
+      return
+    }
+
+    try {
+      await api.updateSaleItemCost(saleItem.sale_id, saleItem.id, {
+        unit_cost: unitCost,
+        reason: String(reason).trim()
+      })
+      if (selectedProductId) setProductHistory(await api.productHistory(selectedProductId))
+      onChanged()
+      setMessage('Custo historico da venda corrigido.')
+    } catch (err) {
+      setMessage(err.message)
+    }
+  }
+
   const getProductPriceValues = useCallback((productId) => {
     const product = products.find((item) => String(item.id) === String(productId))
     return {
@@ -492,9 +548,9 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
 
   function selectProductForDetails(productId) {
     setSelectedProductId(String(productId))
-    window.setTimeout(() => {
-      document.getElementById('product-lots-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 80)
+    setDetailMode('product')
+    setProductSection('details')
+    setMobileContextOpen(true)
   }
 
   function startStockMovement(productId) {
@@ -510,10 +566,20 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       cost_price: prices.cost_price,
       sale_price: prices.sale_price
     }))
+    setDetailMode('product')
+    setProductSection('stock')
+    setMobileContextOpen(true)
     window.setTimeout(() => {
-      movementFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       movementProductRef.current?.focus({ preventScroll: true })
     }, 80)
+  }
+
+  function selectProductSection(section) {
+    if (section === 'stock' && selectedProductId) {
+      startStockMovement(selectedProductId)
+      return
+    }
+    setProductSection(section)
   }
 
   function toggleSort(sortKey) {
@@ -526,34 +592,6 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
     })
   }
 
-  function syncProductTableScroll(sourceRef, targetRef) {
-    if (sourceRef.current && targetRef.current) {
-      targetRef.current.scrollLeft = sourceRef.current.scrollLeft
-    }
-  }
-
-  function renderSortableHeader(sortKey, label) {
-    const isActive = sortConfig.key === sortKey
-    const SortIcon = isActive ? (sortConfig.direction === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
-
-    return (
-      <th
-        className="border-b border-line px-3 py-2 dark:border-shalom-gold/10"
-        scope="col"
-        aria-sort={isActive ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
-      >
-        <button
-          type="button"
-          className="flex w-full items-center gap-1.5 text-left transition hover:text-shalom-blue dark:hover:text-shalom-gold"
-          onClick={() => toggleSort(sortKey)}
-        >
-          <span>{label}</span>
-          <SortIcon className={isActive ? 'opacity-90' : 'opacity-40'} size={13} aria-hidden="true" />
-        </button>
-      </th>
-    )
-  }
-
   const movementMode = getMovementMode(adjustment)
   const movementBatches = movementStock?.batches || []
   const selectedBatches = selectedStock?.batches || []
@@ -561,6 +599,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   const needsMovementBatch = movementMode === 'adjustment_out' || movementMode === 'waste'
   const showsMovementExpiration = movementMode === 'purchase' || (movementMode === 'adjustment_in' && !adjustment.batch_id)
   const canDeleteProducts = user?.role === 'admin' && !setupMode
+  const canManagePosVisibility = ['admin', 'finance'].includes(user?.role)
 
   useEffect(() => {
     if (movementMode !== 'purchase' || !adjustment.product_id) return
@@ -584,6 +623,120 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       }
     })
   }, [adjustment.cost_price, adjustment.product_id, adjustment.sale_price, getProductPriceValues, movementMode])
+
+  function changeMovementMode(nextMode) {
+    setAdjustment((current) => ({
+      ...current,
+      type: nextMode === 'purchase' ? 'purchase' : nextMode === 'waste' ? 'waste' : 'adjustment',
+      operation: nextMode === 'adjustment_out' || nextMode === 'waste' ? 'out' : 'in',
+      batch_id: nextMode === 'purchase' ? '' : current.batch_id,
+      is_donation: nextMode === 'purchase' ? getProductPriceValues(current.product_id).is_donation : current.is_donation,
+      cost_price: nextMode === 'purchase' && current.cost_price === '' ? getProductPriceValues(current.product_id).cost_price : current.cost_price,
+      sale_price: nextMode === 'purchase' && current.sale_price === '' ? getProductPriceValues(current.product_id).sale_price : current.sale_price
+    }))
+  }
+
+  function syncProductTableScroll(sourceRef, targetRef) {
+    if (sourceRef.current && targetRef.current) {
+      targetRef.current.scrollLeft = sourceRef.current.scrollLeft
+    }
+  }
+
+  function renderSortableHeader(sortKey, label) {
+    const isActive = sortConfig.key === sortKey
+    const SortIcon = isActive ? (sortConfig.direction === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
+
+    return (
+      <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10" scope="col" aria-sort={isActive ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}>
+        <button type="button" className="flex w-full items-center gap-1.5 text-left transition hover:text-shalom-blue dark:hover:text-shalom-gold" onClick={() => toggleSort(sortKey)}>
+          <span>{label}</span>
+          <SortIcon className={isActive ? 'opacity-90' : 'opacity-40'} size={13} aria-hidden="true" />
+        </button>
+      </th>
+    )
+  }
+
+  if (!setupMode) {
+    return (
+      <>
+        <ProductWorkspace
+          catalog={{
+            categories,
+            page: productPage,
+            pageSize: PAGE_SIZE,
+            paginatedProducts,
+            posVisibility,
+            products,
+            query,
+            sortConfig,
+            status,
+            totalItems: sortedProducts.length
+          }}
+          selection={{ productHistory, selectedBatches, selectedProduct, selectedProductId, selectedStock }}
+          creation={{ draft, setDraft }}
+          stock={{ adjustment, movementBatches, movementMode, movementProductRef, needsMovementBatch, setAdjustment, showsMovementExpiration }}
+          permissions={{
+            canDeleteProducts,
+            canEditHistoricalCosts: ['admin', 'finance'].includes(user?.role),
+            canManagePosVisibility
+          }}
+          ui={{ detailMode, message, mobileContextOpen, productSection }}
+          actions={{
+            onBackToList: () => setMobileContextOpen(false),
+            onBatchChange: updateSelectedBatch,
+            onChangeProduct: updateRow,
+            onCreateMovement: createMovement,
+            onCreateProduct: createProduct,
+            onDeleteProduct: openDeleteProduct,
+            onMovementModeChange: changeMovementMode,
+            onOpenCreate: () => {
+              setDetailMode('create')
+              setMobileContextOpen(true)
+            },
+            onPageChange: (page) => setProductPage(clampPage(page, sortedProducts.length)),
+            onPosVisibilityChange: (value) => {
+              setPosVisibility(value)
+              setProductPage(1)
+            },
+            onQueryChange: (value) => {
+              setQuery(value)
+              setProductPage(1)
+            },
+            onSaveBatch: saveBatch,
+            onSaveProduct: saveProduct,
+            onSelectProduct: selectProductForDetails,
+            onSelectSection: selectProductSection,
+            onSortChange: (nextSort) => {
+              setSortConfig(nextSort)
+              setProductPage(1)
+            },
+            onStartStockMovement: startStockMovement,
+            onStatusChange: (value) => {
+              setStatus(value)
+              setProductPage(1)
+            },
+            onUpdatePosVisibility: updatePosVisibility,
+            onUpdateSaleItemCost: updateHistoricalSaleItemCost
+          }}
+        />
+
+        {productToDelete ? (
+          <DeleteProductModal
+            product={productToDelete}
+            confirmation={deleteConfirmation}
+            deleting={deletingProduct}
+            onConfirmationChange={setDeleteConfirmation}
+            onClose={() => {
+              if (deletingProduct) return
+              setProductToDelete(null)
+              setDeleteConfirmation('')
+            }}
+            onConfirm={deleteSelectedProduct}
+          />
+        ) : null}
+      </>
+    )
+  }
 
   return (
     <div className="min-w-0 space-y-5">
@@ -616,6 +769,14 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 <option value="low">Baixo</option>
                 <option value="critical">Critico</option>
               </select>
+              <select className="mission-input w-full px-3 py-2 sm:w-auto" value={posVisibility} onChange={(event) => {
+                setPosVisibility(event.target.value)
+                setProductPage(1)
+              }} aria-label="Filtrar visibilidade no PDV">
+                <option value="all">Todos no PDV</option>
+                <option value="visible">Visiveis no PDV</option>
+                <option value="hidden">Ocultos no PDV</option>
+              </select>
             </div>
           </div>
 
@@ -634,9 +795,11 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
               categories={categories}
               selectedProductId={selectedProductId}
               canDeleteProducts={canDeleteProducts}
+              canManagePosVisibility={canManagePosVisibility}
               onChangeProduct={updateRow}
               onDeleteProduct={openDeleteProduct}
               onSaveProduct={saveProduct}
+              onUpdatePosVisibility={updatePosVisibility}
               onSelectProduct={selectProductForDetails}
               onStartStockMovement={startStockMovement}
             />
@@ -658,6 +821,8 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                   {renderSortableHeader('stock_quantity', 'Estoque')}
                   {renderSortableHeader('min_stock', 'Minimo')}
                   {renderSortableHeader('expiration_date', 'Prox. validade')}
+                  <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">Imagem</th>
+                  <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10">PDV</th>
                   {renderSortableHeader('stock_status', 'Status')}
                   <th className="border-b border-line px-3 py-2 dark:border-shalom-gold/10"></th>
                 </tr>
@@ -680,7 +845,13 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                         Doacao
                       </label>
                     </td>
-                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{product.is_donation ? 'Doacao' : money.format(product.cost_price)}</td>
+                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
+                      {product.is_donation ? (
+                        <span>Doacao</span>
+                      ) : (
+                        <input type="number" inputMode="decimal" min="0" step="0.01" className="mission-input w-24 px-2 py-1" value={product.cost_price} onChange={(event) => updateRow(product.id, 'cost_price', Number(event.target.value))} />
+                      )}
+                    </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
                       <input type="number" inputMode="decimal" min="0" step="0.01" className="mission-input w-24 px-2 py-1" value={product.sale_price} onChange={(event) => updateRow(product.id, 'sale_price', Number(event.target.value))} />
                     </td>
@@ -691,6 +862,10 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                       <input type="number" inputMode="decimal" min="0" step="0.001" className="mission-input w-20 px-2 py-1" value={product.min_stock} onChange={(event) => updateRow(product.id, 'min_stock', Number(event.target.value))} />
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{formatDate(product.expiration_date)}</td>
+                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10"><input type="url" className="mission-input w-48 px-2 py-1" value={product.image_url || ''} onChange={(event) => updateRow(product.id, 'image_url', event.target.value)} placeholder="https://..." /></td>
+                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
+                      {Number(product.sale_price) <= 0 ? <span className="mission-muted block max-w-28 text-xs">Sem preco de venda</span> : canManagePosVisibility ? <button type="button" role="switch" aria-checked={Boolean(product.visible_in_pos)} aria-label={`Exibir ${product.name} no PDV`} className={`relative h-7 w-12 rounded-full transition ${product.visible_in_pos ? 'bg-shalom-blue dark:bg-shalom-gold' : 'bg-slate-300 dark:bg-slate-600'}`} onClick={() => updatePosVisibility(product, !product.visible_in_pos)}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${product.visible_in_pos ? 'left-6' : 'left-1'}`} /></button> : <span className="mission-muted text-xs">{product.visible_in_pos ? 'Visivel' : 'Oculto'}</span>}
+                    </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10"><StatusPill status={product.stock_status} /></td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
                       <div className="flex items-center gap-1.5">
@@ -711,7 +886,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 ))}
                 {!sortedProducts.length ? (
                   <tr>
-                    <td className="border-b border-line/80 px-3 py-4 mission-muted dark:border-shalom-gold/10" colSpan={10}>
+                    <td className="border-b border-line/80 px-3 py-4 mission-muted dark:border-shalom-gold/10" colSpan={12}>
                       Nenhum produto cadastrado.
                     </td>
                   </tr>
@@ -792,6 +967,12 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 Fornecedor
                 <input className="mission-input mt-1 w-full px-3 py-2" value={draft.supplier} onChange={(event) => setDraft({ ...draft, supplier: event.target.value })} />
               </label>
+              <label className="text-sm font-medium">
+                URL da imagem
+                <input type="url" className="mission-input mt-1 w-full px-3 py-2" value={draft.image_url || ''} onChange={(event) => setDraft({ ...draft, image_url: event.target.value })} placeholder="https://exemplo.com/produto.jpg" />
+              </label>
+              {draft.image_url ? <div key={draft.image_url} className="overflow-hidden rounded-md bg-shalom-cream/60"><img className="aspect-video w-full object-cover" src={draft.image_url} alt="Preview do produto" onError={(event) => { event.currentTarget.hidden = true; event.currentTarget.nextElementSibling.hidden = false }} /><p className="mission-muted hidden p-3 text-sm">Nao foi possivel carregar a imagem.</p></div> : null}
+              {canManagePosVisibility && Number(draft.sale_price) > 0 ? <label className="flex items-center justify-between gap-3 rounded-xl border border-line/80 px-3 py-2 text-sm font-medium dark:border-shalom-gold/10"><span><span className="block">Exibir no PDV</span><span className="mission-muted block text-xs font-normal">Ocultar nao remove estoque ou historico.</span></span><input type="checkbox" className="h-5 w-5 accent-shalom-orange" checked={Boolean(draft.visible_in_pos)} onChange={(event) => setDraft({ ...draft, visible_in_pos: event.target.checked })} /></label> : canManagePosVisibility ? <p className="mission-muted text-sm">Informe um preco de venda para habilitar este produto no PDV.</p> : null}
               <label className="flex items-center justify-between gap-3 rounded-xl border border-line/80 px-3 py-2 text-sm font-medium dark:border-shalom-gold/10">
                 <span>Produto recebido por doacao</span>
                 <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={Boolean(draft.is_donation)} onChange={(event) => setDraft({ ...draft, is_donation: event.target.checked, cost_price: event.target.checked ? 0 : draft.cost_price })} />
@@ -939,6 +1120,8 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       />
 
       <ProductHistoryPanel
+        canEditHistoricalCosts={['admin', 'finance'].includes(user?.role)}
+        onUpdateSaleItemCost={updateHistoricalSaleItemCost}
         productHistory={productHistory}
         selectedProduct={selectedProduct}
         selectedProductId={selectedProductId}

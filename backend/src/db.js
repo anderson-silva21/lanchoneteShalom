@@ -140,6 +140,24 @@ function ensureAuditLogSchema() {
   `);
 }
 
+function ensureSaleItemCostAuditSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sale_item_cost_corrections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
+      sale_item_id INTEGER NOT NULL REFERENCES sale_items(id) ON DELETE CASCADE,
+      previous_unit_cost REAL NOT NULL,
+      new_unit_cost REAL NOT NULL,
+      changed_by INTEGER REFERENCES users(id),
+      reason TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sale_item_cost_corrections_item
+      ON sale_item_cost_corrections(sale_item_id, created_at);
+  `);
+}
+
 function ensureLibrarySchema() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS library_categories (
@@ -194,6 +212,7 @@ function ensureLibrarySchema() {
       total_cost REAL NOT NULL DEFAULT 0 CHECK (total_cost >= 0),
       gross_profit REAL NOT NULL DEFAULT 0,
       payment_method TEXT NOT NULL DEFAULT 'manual',
+      payment_installments INTEGER NOT NULL DEFAULT 1 CHECK (payment_installments >= 1),
       customer_name TEXT,
       notes TEXT,
       idempotency_key TEXT UNIQUE,
@@ -214,6 +233,33 @@ function ensureLibrarySchema() {
       unit_cost REAL NOT NULL CHECK (unit_cost >= 0),
       line_total REAL NOT NULL CHECK (line_total >= 0),
       line_profit REAL NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS library_installment_plans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sale_id INTEGER NOT NULL UNIQUE REFERENCES library_sales(id) ON DELETE RESTRICT,
+      customer_name TEXT NOT NULL,
+      customer_contact TEXT NOT NULL,
+      payment_method TEXT NOT NULL CHECK (payment_method IN ('pix', 'dinheiro')),
+      total_amount REAL NOT NULL CHECK (total_amount >= 0),
+      installment_count INTEGER NOT NULL CHECK (installment_count >= 2),
+      status TEXT NOT NULL DEFAULT 'unpaid' CHECK (status IN ('unpaid', 'partially_paid', 'paid', 'cancelled')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+      cancelled_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS library_installments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      plan_id INTEGER NOT NULL REFERENCES library_installment_plans(id) ON DELETE RESTRICT,
+      installment_number INTEGER NOT NULL,
+      amount REAL NOT NULL CHECK (amount >= 0),
+      due_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'cancelled')),
+      paid_at TEXT,
+      paid_method TEXT,
+      notes TEXT,
+      paid_by INTEGER REFERENCES users(id),
+      UNIQUE(plan_id, installment_number)
     );
 
     CREATE TABLE IF NOT EXISTS library_sellers (
@@ -277,6 +323,8 @@ function ensureLibrarySchema() {
     CREATE INDEX IF NOT EXISTS idx_library_movements_product_date ON library_inventory_movements(product_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_library_sales_created_at ON library_sales(created_at);
     CREATE INDEX IF NOT EXISTS idx_library_sale_items_sale ON library_sale_items(sale_id);
+    CREATE INDEX IF NOT EXISTS idx_library_installment_plans_status ON library_installment_plans(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_library_installments_due ON library_installments(status, due_date);
     CREATE INDEX IF NOT EXISTS idx_library_sellers_rotation ON library_sellers(active, eligible, id);
     CREATE INDEX IF NOT EXISTS idx_library_sellers_user ON library_sellers(user_id);
     CREATE INDEX IF NOT EXISTS idx_library_requests_status_created ON library_assisted_requests(status, created_at);
@@ -287,6 +335,8 @@ function ensureLibrarySchema() {
 
   addColumnIfMissing('library_sales', 'assisted_request_id', 'INTEGER REFERENCES library_assisted_requests(id)');
   addColumnIfMissing('library_sales', 'seller_id', 'INTEGER REFERENCES library_sellers(id)');
+  addColumnIfMissing('library_sales', 'payment_installments', 'INTEGER NOT NULL DEFAULT 1');
+  addColumnIfMissing('library_sales', 'customer_contact', 'TEXT');
   addColumnIfMissing('library_assisted_requests', 'customer_name', 'TEXT');
   addColumnIfMissing('library_assisted_requests', 'customer_contact', 'TEXT');
   addColumnIfMissing('library_sellers', 'archived_at', 'TEXT');
@@ -927,6 +977,7 @@ function repairLegacyUserForeignKeys() {
 function runMigrations() {
   ensureAppSettingsSchema();
   ensureAuditLogSchema();
+  ensureSaleItemCostAuditSchema();
   ensureCashClosingSchema();
   ensureLibrarySchema();
   addColumnIfMissing('users', 'username', 'TEXT');
@@ -938,6 +989,8 @@ function runMigrations() {
   addColumnIfMissing('users', 'login_locked_until', 'TEXT');
   addColumnIfMissing('products', 'expiration_date', 'TEXT');
   addColumnIfMissing('products', 'is_donation', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('products', 'image_url', 'TEXT');
+  addColumnIfMissing('products', 'visible_in_pos', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing('combos', 'is_promotion', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing('combos', 'expires_at', 'TEXT');
   addColumnIfMissing('combos', 'created_by', 'INTEGER REFERENCES users(id)');
@@ -950,6 +1003,7 @@ function runMigrations() {
   addColumnIfMissing('sale_items', 'combo_id', 'INTEGER');
   addColumnIfMissing('sale_items', 'unit_cost', 'REAL NOT NULL DEFAULT 0');
   addColumnIfMissing('sale_items', 'line_profit', 'REAL NOT NULL DEFAULT 0');
+  ensureSaleItemCostAuditSchema();
   addColumnIfMissing('inventory_movements', 'expiration_date', 'TEXT');
   addColumnIfMissing('inventory_movements', 'batch_id', 'INTEGER REFERENCES stock_batches(id)');
   repairLegacyUserForeignKeys();

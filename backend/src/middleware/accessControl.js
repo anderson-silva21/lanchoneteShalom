@@ -4,7 +4,7 @@ const screenRoles = {
   dashboard: ['admin', 'finance'],
   setup: ['admin', 'manager', 'finance'],
   sales: ['admin', 'manager', 'cashier', 'finance'],
-  payments: ['admin', 'manager', 'cashier', 'finance'],
+  payments: ['admin', 'manager', 'finance'],
   products: ['admin', 'manager', 'finance'],
   inventory: ['admin', 'manager', 'finance'],
   sheet: ['admin', 'manager', 'cashier', 'finance'],

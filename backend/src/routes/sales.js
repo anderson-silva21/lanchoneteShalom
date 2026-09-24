@@ -1,10 +1,10 @@
 const express = require('express');
 const { z } = require('zod');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireRole } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
 const { db } = require('../db');
 const { createEvent, listEvents, updateEvent } = require('../services/eventsService');
-const { confirmSalePayment, createSale, getCashClosing, getSaleById, listPendingPayments, saveCashClosing } = require('../services/salesService');
+const { confirmSalePayment, createSale, getCashClosing, getSaleById, listPendingPayments, saveCashClosing, updateSaleItemCost } = require('../services/salesService');
 const { recordAudit } = require('../services/auditService');
 
 const router = express.Router();
@@ -40,6 +40,11 @@ const closingSchema = z.object({
   date: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   event_id: z.preprocess((value) => value === '' || value === undefined || value === null ? undefined : value, z.coerce.number().int().positive().optional()),
   notes: z.string().trim().max(1000).optional().nullable()
+});
+
+const saleItemCostSchema = z.object({
+  unit_cost: z.coerce.number().finite().nonnegative(),
+  reason: z.string().trim().min(3).max(500)
 });
 
 router.use(authenticate, requireScreen('sales'));
@@ -167,6 +172,36 @@ router.patch('/:id/payment', (req, res, next) => {
       metadata: { payment_method: sale.payment_method, total: sale.total }
     });
     return res.json(sale);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.patch('/:id/items/:itemId/cost', requireRole('admin', 'finance'), (req, res, next) => {
+  try {
+    const payload = saleItemCostSchema.parse(req.body);
+    const result = updateSaleItemCost({
+      saleId: req.params.id,
+      itemId: req.params.itemId,
+      unitCost: payload.unit_cost,
+      reason: payload.reason,
+      userId: req.user.id
+    });
+    recordAudit({
+      req,
+      action: 'sales.item_cost.update',
+      entityType: 'sale_item',
+      entityId: result.item_id,
+      summary: `Custo historico corrigido: venda #${req.params.id}`,
+      metadata: {
+        sale_id: Number(req.params.id),
+        item_id: result.item_id,
+        previous_unit_cost: result.previous_unit_cost,
+        new_unit_cost: result.new_unit_cost,
+        reason: payload.reason || null
+      }
+    });
+    return res.json(result.sale);
   } catch (error) {
     return next(error);
   }

@@ -1,5 +1,6 @@
-import { Activity, Bell, Clipboard, DatabaseZap, ExternalLink, HardDrive, KeyRound, ListChecks, Moon, PackagePlus, RotateCcw, Save, Send, ShieldCheck, Smartphone, Trash2, UserPlus, Users } from 'lucide-react'
+import { ChevronRight, Clipboard, Download, ExternalLink, RotateCcw, Save, Send, Trash2, Upload, UserPlus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
 import { decimal, formatDateTime } from '../utils/formatters'
 
@@ -17,9 +18,7 @@ const permissionRows = [
   ['sales', 'PDV', ['admin', 'manager', 'cashier', 'finance']],
   ['payments', 'Pagamentos', ['admin', 'manager', 'cashier', 'finance']],
   ['products', 'Produtos', ['admin', 'manager', 'finance']],
-  ['inventory', 'Inventario', ['admin', 'manager', 'finance']],
   ['sheet', 'Planilha', ['admin', 'manager', 'cashier', 'finance']],
-  ['reports', 'Relatorios', ['admin', 'finance']],
   ['library', 'Livraria', ['admin', 'finance', 'library']],
   ['settings', 'Sistema', ['admin']]
 ]
@@ -43,6 +42,8 @@ function formatBytes(value) {
 }
 
 export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false, onSetupEnabledChange = () => {}, onChanged = () => {} }) {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [status, setStatus] = useState(null)
   const [users, setUsers] = useState([])
   const [userDraft, setUserDraft] = useState({ name: '', username: '', role: 'cashier' })
@@ -68,6 +69,9 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
   const [auditLogs, setAuditLogs] = useState([])
   const [testingTelegram, setTestingTelegram] = useState(false)
   const [savingTelegram, setSavingTelegram] = useState(false)
+  const [backups, setBackups] = useState([])
+  const [backupFile, setBackupFile] = useState(null)
+  const [backupBusy, setBackupBusy] = useState('')
 
   const loadStatus = useCallback(async () => {
     try {
@@ -120,13 +124,22 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
     }
   }, [])
 
+  const loadBackups = useCallback(async () => {
+    try {
+      setBackups(await api.backups())
+    } catch (err) {
+      setMessage(err.message)
+    }
+  }, [])
+
   useEffect(() => {
     loadStatus()
     loadUsers()
     loadTelegramStatus()
     loadHealth()
     loadAuditLogs()
-  }, [loadAuditLogs, loadHealth, loadStatus, loadTelegramStatus, loadUsers])
+    loadBackups()
+  }, [loadAuditLogs, loadBackups, loadHealth, loadStatus, loadTelegramStatus, loadUsers])
 
   async function createUser(event) {
     event.preventDefault()
@@ -282,71 +295,139 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
     }
   }
 
+  async function createBackup() {
+    setMessage('')
+    setBackupBusy('create')
+    try {
+      const backup = await api.backup()
+      await loadBackups()
+      await loadHealth()
+      await loadAuditLogs()
+      setMessage(`Backup criado: ${backup.file}`)
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setBackupBusy('')
+    }
+  }
+
+  async function importBackup(event) {
+    event.preventDefault()
+    if (!backupFile) return
+    setMessage('')
+    setBackupBusy('import')
+    try {
+      const backup = await api.importBackup(backupFile)
+      setBackupFile(null)
+      event.currentTarget.reset()
+      await loadBackups()
+      await loadHealth()
+      await loadAuditLogs()
+      setMessage(`Backup importado: ${backup.file}`)
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setBackupBusy('')
+    }
+  }
+
+  async function restoreBackup(file) {
+    if (!window.confirm('Restaurar este backup ira substituir os dados atuais. Continuar?')) return
+    setMessage('')
+    setBackupBusy(file)
+    try {
+      const result = await api.restoreBackup(file, { confirmation: 'RESTAURAR' })
+      setMessage(result.message)
+    } catch (err) {
+      setMessage(err.message)
+    } finally {
+      setBackupBusy('')
+    }
+  }
+
   const counts = status?.counts || {}
   const initialLoadEnabled = status?.setup_enabled ?? setupEnabled
   const telegramLabel = telegramStatus?.enabled ? 'Ativo' : telegramStatus?.configured ? 'Desativado' : 'Nao configurado'
   const items = [
-    { icon: ShieldCheck, label: 'Perfil', value: user?.role || '-' },
-    { icon: KeyRound, label: 'Sessao', value: user?.username || '-' },
-    { icon: DatabaseZap, label: 'Produtos', value: decimal.format(counts.products || 0) },
-    { icon: Bell, label: 'Telegram', value: telegramLabel },
-    { icon: HardDrive, label: 'Banco', value: health ? formatBytes(health.database?.size) : '-' },
-    { icon: Activity, label: 'Saude', value: health?.ok ? 'Ok' : health ? 'Atencao' : '-' },
-    { icon: Smartphone, label: 'PWA', value: 'Instalavel' }
+    { label: 'Perfil', value: roleLabel(user?.role) || '-' },
+    { label: 'Sessao', value: user?.username || '-' },
+    { label: 'Produtos', value: decimal.format(counts.products || 0) },
+    { label: 'Telegram', value: telegramLabel },
+    { label: 'Banco', value: health ? formatBytes(health.database?.size) : '-' },
+    { label: 'Saude', value: health?.ok ? 'Ok' : health ? 'Atencao' : '-' }
   ]
 
+  const activeSection = location.pathname.split('/')[2] || ''
+  const systemSections = [
+    { key: 'geral', label: 'Geral', description: 'Preferencias, carga inicial e alertas Telegram' },
+    { key: 'backup', label: 'Backup', description: 'Criar, baixar, importar e restaurar backups' },
+    { key: 'usuarios', label: 'Usuarios e permissoes', description: 'Gerenciar acessos, senhas e perfis' },
+    { key: 'tecnico', label: 'Configuracoes tecnicas', description: 'Saude, auditoria e base de dados' }
+  ]
+
+  if (!activeSection || !systemSections.some((section) => section.key === activeSection)) {
+    return (
+      <nav className="mx-auto w-full max-w-3xl divide-y divide-line/80 dark:divide-shalom-gold/10" aria-label="Secoes do sistema">
+        {systemSections.map((section) => (
+          <button
+            key={section.key}
+            type="button"
+            className="flex min-h-20 w-full items-center gap-3 py-4 text-left transition-colors hover:text-shalom-blue dark:hover:text-shalom-gold"
+            onClick={() => navigate(`/sistema/${section.key}`)}
+          >
+            <span className="min-w-0 flex-1">
+              <strong className="block font-display text-base">{section.label}</strong>
+              <span className="mission-muted mt-1 block text-sm">{section.description}</span>
+            </span>
+            <ChevronRight className="shrink-0" size={20} aria-hidden="true" />
+          </button>
+        ))}
+      </nav>
+    )
+  }
+
   return (
-    <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
-      <section className="mission-panel p-4">
-        <h2 className="font-display text-lg font-semibold">Sistema</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+    <div className={`mx-auto w-full space-y-8 pb-4 ${['geral', 'backup'].includes(activeSection) ? 'max-w-3xl' : 'max-w-6xl'}`}>
+      {activeSection === 'geral' ? <>
+      <section className="border-b border-line/80 pb-7 dark:border-shalom-gold/10">
+        <h2 className="font-display text-lg font-semibold">Resumo</h2>
+        <div className="mt-3 grid sm:grid-cols-2 lg:grid-cols-3">
           {items.map((item) => {
-            const Icon = item.icon
             return (
-              <div key={item.label} className="mission-card p-4">
-                <Icon size={20} />
-                <p className="mission-muted mt-3 text-sm">{item.label}</p>
-                <strong className="mt-1 block">{item.value}</strong>
+              <div key={item.label} className="border-b border-line/70 py-3 sm:px-3 dark:border-shalom-gold/10">
+                <p className="mission-muted text-sm">{item.label}</p>
+                <strong className="mt-0.5 block">{item.value}</strong>
               </div>
             )
           })}
         </div>
       </section>
 
-      <aside className="mission-panel p-4">
+      <aside className="border-b border-line/80 pb-7 dark:border-shalom-gold/10">
         <h2 className="font-display text-lg font-semibold">Preferencias</h2>
         <button
-          className="mission-btn mt-4 flex w-full items-center justify-between border border-shalom-gold/30 px-4 py-3 font-medium dark:border-shalom-gold/10"
+          className="mt-3 flex min-h-11 w-full items-center justify-between border-b border-line/70 py-3 text-left font-medium dark:border-shalom-gold/10"
           onClick={() => setDarkMode(!darkMode)}
         >
-          <span className="flex items-center gap-2">
-            <Moon size={18} />
-            Modo escuro
-          </span>
+          <span>Modo escuro</span>
           <span className={`h-6 w-11 rounded-full p-1 transition ${darkMode ? 'bg-shalom-gold' : 'bg-shalom-blue/25'}`}>
             <span className={`block h-4 w-4 rounded-full bg-white transition ${darkMode ? 'translate-x-5' : ''}`} />
           </span>
         </button>
         <button
-          className="mission-btn mt-3 flex w-full items-center justify-between border border-shalom-gold/30 px-4 py-3 font-medium dark:border-shalom-gold/10"
+          className="flex min-h-11 w-full items-center justify-between border-b border-line/70 py-3 text-left font-medium dark:border-shalom-gold/10"
           onClick={toggleInitialLoad}
           disabled={savingInitialLoad}
         >
-          <span className="flex items-center gap-2">
-            <PackagePlus size={18} />
-            Carga inicial
-          </span>
+          <span>Carga inicial</span>
           <span className={`h-6 w-11 rounded-full p-1 transition ${initialLoadEnabled ? 'bg-shalom-gold' : 'bg-shalom-blue/25'}`}>
             <span className={`block h-4 w-4 rounded-full bg-white transition ${initialLoadEnabled ? 'translate-x-5' : ''}`} />
           </span>
         </button>
-        <form className="mt-3 rounded-xl border border-shalom-gold/30 p-3 dark:border-shalom-gold/10" onSubmit={saveTelegramSettings}>
+        <form className="mt-6" onSubmit={saveTelegramSettings}>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="flex items-center gap-2 font-medium">
-                <Bell size={18} />
-                Alertas Telegram
-              </p>
+              <p className="font-medium">Alertas Telegram</p>
               <p className="mission-muted mt-1 text-sm">{telegramLabel}</p>
             </div>
             <button
@@ -374,7 +455,7 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
             </div>
           </dl>
           <div className="mt-3 grid gap-2">
-            <label className="flex items-center justify-between gap-3 rounded-lg border border-line/70 px-3 py-2 text-sm font-medium dark:border-shalom-gold/10">
+            <label className="flex items-center justify-between gap-3 border-b border-line/70 py-3 text-sm font-medium dark:border-shalom-gold/10">
               <span>Envio automatico</span>
               <input
                 type="checkbox"
@@ -453,15 +534,14 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
           </a>
         </form>
       </aside>
+      </> : null}
 
-      <section className="mission-panel p-4 xl:col-span-2">
+      {activeSection === 'usuarios' ? (
+      <section className="border-b border-line/80 pb-7 dark:border-shalom-gold/10">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex items-center gap-2">
-            <Users size={20} />
-            <div>
+          <div>
               <h2 className="font-display text-lg font-semibold">Usuarios ativos</h2>
               <p className="mission-muted text-sm">{decimal.format(users.length)} usuarios com acesso</p>
-            </div>
           </div>
           {generatedPassword ? (
             <div className="rounded-xl border border-shalom-gold/35 bg-shalom-cream/70 p-3 text-sm text-shalom-deep dark:border-shalom-gold/15 dark:bg-white/10 dark:text-shalom-gold">
@@ -526,7 +606,42 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
           </p>
         ) : null}
 
-        <div className="mt-4 overflow-x-auto scrollbar-thin">
+        <div className="mt-4 divide-y divide-line/80 dark:divide-shalom-gold/10 xl:hidden">
+          {users.length ? users.map((item) => (
+            <article key={item.id} className="py-4">
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="break-words font-semibold">{item.name}</h3>
+                  <p className="mission-muted mt-1 break-all text-sm">{item.username}</p>
+                </div>
+                <span className="shrink-0 text-sm font-medium text-shalom-blue dark:text-shalom-gold">{roleLabel(item.role)}</span>
+              </div>
+              <p className="mission-muted mt-2 text-xs">Senha: {item.password_must_change ? 'Troca pendente' : 'Definida'}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="mission-btn inline-flex min-h-11 items-center gap-2 border border-line/80 px-3 py-2 text-sm font-semibold dark:border-shalom-gold/10"
+                  onClick={() => resetUserPassword(item.id)}
+                  disabled={resettingUserId === item.id || deletingUserId === item.id}
+                >
+                  <RotateCcw size={16} />
+                  {resettingUserId === item.id ? 'Resetando...' : 'Resetar senha'}
+                </button>
+                <button
+                  type="button"
+                  className="mission-btn inline-flex min-h-11 items-center gap-2 border border-shalom-wine/35 px-3 py-2 text-sm font-semibold text-shalom-wine dark:text-rose-100"
+                  onClick={() => deleteUser(item)}
+                  disabled={deletingUserId === item.id || resettingUserId === item.id || item.id === user?.id}
+                >
+                  <Trash2 size={16} />
+                  {deletingUserId === item.id ? 'Excluindo...' : 'Excluir'}
+                </button>
+              </div>
+            </article>
+          )) : <p className="mission-muted py-4 text-sm">Nenhum usuario ativo.</p>}
+        </div>
+
+        <div className="mt-4 hidden xl:block">
           <table className="min-w-[760px] w-full border-separate border-spacing-0 text-left text-sm">
             <thead>
               <tr className="text-xs uppercase tracking-[0.12em] text-shalom-blue/70 dark:text-shalom-gold/80">
@@ -582,15 +697,93 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
           </table>
         </div>
       </section>
+      ) : null}
 
-      <section className="mission-panel p-4 xl:col-span-2">
+      {activeSection === 'backup' ? (
+      <section className="border-b border-line/80 pb-7 dark:border-shalom-gold/10">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-display text-lg font-semibold">Ultimo backup</h2>
+            <p className="mission-muted mt-1 text-sm">
+              {health?.backup?.last_backup
+                ? `Ultimo backup em ${formatDateTime(health.backup.last_backup.created_at)} - ${formatBytes(health.backup.last_backup.size)}`
+                : 'Nenhum backup disponivel.'}
+            </p>
+            <p className="mission-muted mt-1 text-xs">
+              Automatico a cada {decimal.format(health?.backup?.automatic_interval_hours || 24)}h, com retencao de {decimal.format(health?.backup?.automatic_retention || 14)} arquivos.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="mission-btn mission-btn-primary px-4 py-2 text-sm font-semibold"
+            onClick={createBackup}
+            disabled={Boolean(backupBusy)}
+          >
+            {backupBusy === 'create' ? 'Criando...' : 'Criar backup'}
+          </button>
+        </div>
+
+        <div className="mt-5">
+          <h3 className="text-sm font-semibold">Backups disponiveis</h3>
+          <div className="mt-2 divide-y divide-line/70 dark:divide-shalom-gold/10">
+            {backups.length ? backups.map((backup) => (
+              <div key={backup.file} className="flex min-w-0 items-center gap-3 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold">{backup.file}</p>
+                  <p className="mission-muted mt-0.5 text-xs">{formatDateTime(backup.created_at)} - {formatBytes(backup.size)}</p>
+                </div>
+                <button
+                  type="button"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center text-shalom-blue hover:text-shalom-orange dark:text-shalom-gold"
+                  onClick={() => api.downloadBackup(backup.file).catch((err) => setMessage(err.message))}
+                  aria-label={`Baixar ${backup.file}`}
+                  title="Baixar backup"
+                >
+                  <Download size={18} />
+                </button>
+                <button
+                  type="button"
+                  className="flex h-11 w-11 shrink-0 items-center justify-center text-shalom-wine hover:opacity-70 dark:text-rose-200"
+                  onClick={() => restoreBackup(backup.file)}
+                  disabled={Boolean(backupBusy)}
+                  aria-label={`Restaurar ${backup.file}`}
+                  title="Restaurar backup"
+                >
+                  <RotateCcw size={18} />
+                </button>
+              </div>
+            )) : <p className="mission-muted py-3 text-sm">Nenhum backup criado.</p>}
+          </div>
+        </div>
+
+        <form className="mt-5 border-t border-line/70 pt-4 dark:border-shalom-gold/10" onSubmit={importBackup}>
+          <label className="block text-sm font-medium">
+            Importar backup
+            <input
+              type="file"
+              accept=".sqlite,application/vnd.sqlite3,application/octet-stream"
+              className="mt-2 block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-shalom-blue file:px-3 file:py-2 file:font-semibold file:text-white"
+              onChange={(event) => setBackupFile(event.target.files?.[0] || null)}
+            />
+          </label>
+          <button
+            type="submit"
+            className="mission-btn mt-3 inline-flex items-center gap-2 border border-line/80 px-4 py-2 text-sm font-semibold dark:border-shalom-gold/10"
+            disabled={!backupFile || Boolean(backupBusy)}
+          >
+            <Upload size={17} />
+            {backupBusy === 'import' ? 'Importando...' : 'Importar arquivo'}
+          </button>
+        </form>
+      </section>
+      ) : null}
+
+      {activeSection === 'tecnico' ? (
+      <section className="border-b border-line/80 pb-7 dark:border-shalom-gold/10">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex items-center gap-2">
-            <Activity size={20} />
-            <div>
+          <div>
               <h2 className="font-display text-lg font-semibold">Saude do sistema</h2>
               <p className="mission-muted text-sm">{health?.now ? `Atualizado em ${formatDateTime(health.now)}` : 'Carregando status'}</p>
-            </div>
           </div>
           <button
             type="button"
@@ -614,21 +807,30 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
             ['Auditoria', health?.audit ? decimal.format(health.audit.total) : '-'],
             ['Ambiente', health?.env || '-']
           ].map(([label, value]) => (
-            <div key={label} className="mission-card px-3 py-2 text-sm">
+            <div key={label} className="border-b border-line/70 px-1 py-3 text-sm dark:border-shalom-gold/10">
               <span className="mission-muted block text-xs">{label}</span>
               <strong className="mt-1 block break-words">{value}</strong>
             </div>
           ))}
         </div>
       </section>
+      ) : null}
 
-      <section className="grid gap-5 xl:col-span-2 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <div className="mission-panel p-4">
-          <div className="flex items-center gap-2">
-            <ShieldCheck size={20} />
-            <h2 className="font-display text-lg font-semibold">Permissoes</h2>
+      {activeSection === 'usuarios' ? (
+      <section className="border-b border-line/80 pb-7 dark:border-shalom-gold/10">
+        <div>
+          <h2 className="font-display text-lg font-semibold">Permissoes</h2>
+          <div className="mt-3 divide-y divide-line/80 dark:divide-shalom-gold/10 xl:hidden">
+            {permissionRows.map(([key, label, roles]) => (
+              <article key={key} className="py-3">
+                <h3 className="font-semibold">{label}</h3>
+                <p className="mission-muted mt-1 text-sm">
+                  {roleOptions.filter((role) => roles.includes(role.value)).map((role) => role.label).join(', ') || 'Sem acesso'}
+                </p>
+              </article>
+            ))}
           </div>
-          <div className="mt-4 overflow-x-auto scrollbar-thin">
+          <div className="mt-4 hidden xl:block">
             <table className="min-w-[620px] w-full border-separate border-spacing-0 text-left text-sm">
               <thead>
                 <tr className="text-xs uppercase tracking-[0.12em] text-shalom-blue/70 dark:text-shalom-gold/80">
@@ -653,15 +855,16 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
             </table>
           </div>
         </div>
+      </section>
+      ) : null}
 
-        <div className="mission-panel p-4">
+      {activeSection === 'tecnico' ? (
+      <section className="border-b border-line/80 pb-7 dark:border-shalom-gold/10">
+        <div>
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <ListChecks size={20} />
-              <div>
+            <div>
                 <h2 className="font-display text-lg font-semibold">Auditoria recente</h2>
                 <p className="mission-muted text-sm">{decimal.format(auditLogs.length)} registros carregados</p>
-              </div>
             </div>
           </div>
           <div className="mt-4 max-h-80 overflow-y-auto scrollbar-thin">
@@ -681,23 +884,25 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
           </div>
         </div>
       </section>
+      ) : null}
 
-      <section className="mission-panel p-4 xl:col-span-2">
+      {activeSection === 'tecnico' ? (
+      <section className="pb-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h2 className="font-display text-lg font-semibold">Base de dados</h2>
             <p className="mission-muted text-sm">Remove dados operacionais e mantem os usuarios de acesso.</p>
           </div>
           <div className="grid grid-cols-3 gap-2 text-center text-sm">
-            <div className="mission-card px-3 py-2">
+            <div className="border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">
               <span className="mission-muted block text-xs">Lotes</span>
               <strong>{decimal.format(counts.stock_batches || 0)}</strong>
             </div>
-            <div className="mission-card px-3 py-2">
+            <div className="border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">
               <span className="mission-muted block text-xs">Vendas</span>
               <strong>{decimal.format(counts.sales || 0)}</strong>
             </div>
-            <div className="mission-card px-3 py-2">
+            <div className="border-b border-line/70 px-3 py-2 dark:border-shalom-gold/10">
               <span className="mission-muted block text-xs">Movimentos</span>
               <strong>{decimal.format(counts.inventory_movements || 0)}</strong>
             </div>
@@ -723,8 +928,16 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
             {resetting ? 'Limpando...' : 'Zerar dados'}
           </button>
         </form>
-        {message ? <p className="mt-4 rounded-2xl bg-shalom-cream/70 px-4 py-3 text-sm text-shalom-deep shadow-sm dark:bg-white/10 dark:text-shalom-gold">{message}</p> : null}
       </section>
+      ) : null}
+      {message ? <p className="border-l-2 border-shalom-blue px-3 py-2 text-sm text-shalom-deep dark:border-shalom-gold dark:text-shalom-gold" aria-live="polite">{message}</p> : null}
+      <button
+        type="button"
+        className="text-sm font-semibold text-shalom-blue hover:text-shalom-orange dark:text-shalom-gold"
+        onClick={() => navigate('/sistema')}
+      >
+        Voltar para Sistema
+      </button>
     </div>
   )
 }

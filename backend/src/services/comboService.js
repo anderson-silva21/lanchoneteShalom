@@ -29,6 +29,7 @@ function enrichCombo(combo) {
   return {
     ...combo,
     is_promotion: Boolean(combo.is_promotion),
+    active: Boolean(combo.active),
     items,
     regular_price: regularPrice,
     savings: Math.max(0, regularPrice - Number(combo.sale_price || 0)),
@@ -46,7 +47,11 @@ function listActiveCombos() {
   `).all().map(enrichCombo);
 }
 
-const createComboTransaction = db.transaction((payload, userId) => {
+function listCombos() {
+  return db.prepare('SELECT * FROM combos ORDER BY active DESC, is_promotion DESC, name ASC').all().map(enrichCombo);
+}
+
+function validateComboItems(payload) {
   const productIds = payload.items.map((item) => Number(item.product_id));
   if (new Set(productIds).size !== productIds.length) {
     throw createHttpError('Cada produto pode aparecer apenas uma vez no combo.', 400);
@@ -55,19 +60,17 @@ const createComboTransaction = db.transaction((payload, userId) => {
   const getProduct = db.prepare('SELECT id, sale_price, stock_quantity FROM products WHERE id = ? AND active = 1');
   const products = payload.items.map((item) => {
     const product = getProduct.get(item.product_id);
-    if (!product) {
-      throw createHttpError('Um dos produtos do combo nao foi encontrado.', 404);
-    }
-    if (Number(product.stock_quantity || 0) < Number(item.quantity)) {
-      throw createHttpError('Um dos produtos nao possui estoque suficiente para montar o combo.', 400);
-    }
+    if (!product) throw createHttpError('Um dos produtos do combo nao foi encontrado.', 404);
     return { ...product, quantity: Number(item.quantity) };
   });
-
   const regularPrice = products.reduce((sum, product) => sum + Number(product.sale_price || 0) * product.quantity, 0);
   if (payload.is_promotion && Number(payload.sale_price) >= regularPrice) {
     throw createHttpError('O preco promocional deve ser menor que o preco normal dos produtos.', 400);
   }
+}
+
+const createComboTransaction = db.transaction((payload, userId) => {
+  validateComboItems(payload);
 
   const result = db.prepare(`
     INSERT INTO combos (name, sale_price, is_promotion, expires_at, created_by)
@@ -88,6 +91,25 @@ const createComboTransaction = db.transaction((payload, userId) => {
 
 function createCombo(payload, userId) {
   return createComboTransaction(payload, userId);
+}
+
+const updateComboTransaction = db.transaction((id, payload) => {
+  const comboId = Number(id);
+  const current = db.prepare('SELECT * FROM combos WHERE id = ?').get(comboId);
+  if (!current) throw createHttpError('Combo nao encontrado.', 404);
+  validateComboItems(payload);
+  db.prepare(`
+    UPDATE combos SET name = ?, sale_price = ?, is_promotion = ?, expires_at = ?, active = ?
+    WHERE id = ?
+  `).run(payload.name, payload.sale_price, payload.is_promotion ? 1 : 0, payload.expires_at || null, payload.active ? 1 : 0, comboId);
+  db.prepare('DELETE FROM combo_items WHERE combo_id = ?').run(comboId);
+  const insert = db.prepare('INSERT INTO combo_items (combo_id, product_id, quantity) VALUES (?, ?, ?)');
+  payload.items.forEach((item) => insert.run(comboId, item.product_id, item.quantity));
+  return enrichCombo(db.prepare('SELECT * FROM combos WHERE id = ?').get(comboId));
+});
+
+function updateCombo(id, payload) {
+  return updateComboTransaction(id, payload);
 }
 
 const deleteComboTransaction = db.transaction((id) => {
@@ -117,5 +139,7 @@ function deleteComboSafely(id) {
 module.exports = {
   createCombo,
   deleteComboSafely,
-  listActiveCombos
+  listActiveCombos,
+  listCombos,
+  updateCombo
 };

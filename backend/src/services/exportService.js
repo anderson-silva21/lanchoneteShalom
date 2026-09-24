@@ -118,6 +118,7 @@ async function toLibraryReportXlsxBuffer({ rows = [], summary = {}, top_products
     ['lucro', 'Lucro', 16],
     ['margem', 'Margem', 12],
     ['forma_pagamento', 'Pagamento', 18],
+    ['parcelas', 'Parcelas', 12],
     ['vendedor', 'Vendedor', 22],
     ['status', 'Status', 14]
   ];
@@ -259,7 +260,7 @@ function toLibraryReportPdfStream({ rows = [], summary = {}, top_products = [], 
     doc.fontSize(9).text('Nenhum registro encontrado para os filtros selecionados.');
   } else {
     rows.slice(0, 60).forEach((row) => {
-      doc.fontSize(7).text(`#${row.venda_id} | ${row.data_hora} | ${String(row.produto || '').slice(0, 34)} | Qtd ${row.quantidade} | Receita R$ ${Number(row.valor_liquido || 0).toFixed(2)} | Lucro R$ ${Number(row.lucro || 0).toFixed(2)} | ${row.vendedor}`);
+      doc.fontSize(7).text(`#${row.venda_id} | ${row.data_hora} | ${String(row.produto || '').slice(0, 34)} | Qtd ${row.quantidade} | Receita R$ ${Number(row.valor_liquido || 0).toFixed(2)} | Lucro R$ ${Number(row.lucro || 0).toFixed(2)} | ${row.forma_pagamento}${Number(row.parcelas || 1) > 1 ? ` ${row.parcelas}x` : ''} | ${row.vendedor}`);
     });
     if (rows.length > 60) doc.moveDown().fontSize(8).fillColor('#666').text(`+ ${rows.length - 60} registros no arquivo completo CSV/XLSX.`);
   }
