@@ -277,7 +277,7 @@ function App() {
     products: <ProductManager refreshKey={refreshKey} onChanged={refresh} intent={productIntent} user={user} />,
     sheet: <SpreadsheetView refreshKey={refreshKey} onChanged={refresh} user={user} />,
     library: <LibraryManager user={user} />,
-    settings: <SettingsView user={user} darkMode={darkMode} setDarkMode={setDarkMode} setupEnabled={setupEnabled} onSetupEnabledChange={setSetupEnabled} onChanged={refresh} />
+    settings: <SettingsView user={user} setupEnabled={setupEnabled} onSetupEnabledChange={setSetupEnabled} onChanged={refresh} />
   }
 
   return (

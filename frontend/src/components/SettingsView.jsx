@@ -41,7 +41,7 @@ function formatBytes(value) {
   return `${decimal.format(bytes / 1024 / 1024)} MB`
 }
 
-export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false, onSetupEnabledChange = () => {}, onChanged = () => {} }) {
+export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange = () => {}, onChanged = () => {} }) {
   const location = useLocation()
   const navigate = useNavigate()
   const [status, setStatus] = useState(null)
@@ -407,15 +407,6 @@ export function SettingsView({ user, darkMode, setDarkMode, setupEnabled = false
         <h2 className="font-display text-lg font-semibold">Preferencias</h2>
         <button
           className="mt-3 flex min-h-11 w-full items-center justify-between border-b border-line/70 py-3 text-left font-medium dark:border-shalom-gold/10"
-          onClick={() => setDarkMode(!darkMode)}
-        >
-          <span>Modo escuro</span>
-          <span className={`h-6 w-11 rounded-full p-1 transition ${darkMode ? 'bg-shalom-gold' : 'bg-shalom-blue/25'}`}>
-            <span className={`block h-4 w-4 rounded-full bg-white transition ${darkMode ? 'translate-x-5' : ''}`} />
-          </span>
-        </button>
-        <button
-          className="flex min-h-11 w-full items-center justify-between border-b border-line/70 py-3 text-left font-medium dark:border-shalom-gold/10"
           onClick={toggleInitialLoad}
           disabled={savingInitialLoad}
         >

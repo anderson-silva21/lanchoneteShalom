@@ -6,7 +6,6 @@ import {
   Boxes,
   FileSpreadsheet,
   LogOut,
-  MoreHorizontal,
   Moon,
   PackagePlus,
   PanelLeftClose,
@@ -38,26 +37,19 @@ const roleLabels = {
   library: 'Livraria'
 }
 
-const mobilePrimaryLabels = {
-  sales: 'Vender',
-  products: 'Estoque',
-  payments: 'Pagamentos'
-}
+const mobileNavLabels = { sales: 'Vender' }
 
-const mobilePrimaryOrder = ['sales', 'sheet', 'products', 'payments', 'library']
+function getFirstName(fullName) {
+  return String(fullName || '').trim().split(/\s+/)[0] || 'Usuario'
+}
 
 export function AppShell({ activeView, setActiveView, pageTitle, onBack, user, darkMode, setDarkMode, setupEnabled = false, onLogout, children }) {
   const allowedNavItems = navItems.filter((item) => canAccessView(user?.role, item.key, { setupEnabled }))
-  const mobilePrimaryItems = mobilePrimaryOrder
-    .map((key) => allowedNavItems.find((item) => item.key === key))
-    .filter(Boolean)
-    .slice(0, 4)
-  const mobileSecondaryItems = allowedNavItems.filter((item) => !mobilePrimaryItems.some((primary) => primary.key === item.key))
-  const isMobileMoreActive = mobileSecondaryItems.some((item) => item.key === activeView)
+  const mobileNavColumns = allowedNavItems.length > 7 ? Math.ceil(allowedNavItems.length / 2) : allowedNavItems.length
+  const firstName = getFirstName(user?.name)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => typeof window !== 'undefined' && window.localStorage.getItem('lanchonete_sidebar_collapsed') === 'true'
   )
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   function toggleSidebar() {
     setSidebarCollapsed((current) => {
@@ -69,11 +61,10 @@ export function AppShell({ activeView, setActiveView, pageTitle, onBack, user, d
 
   function selectView(view) {
     setActiveView(view)
-    setMobileMenuOpen(false)
   }
 
   return (
-    <div className="app-bg min-h-screen text-ink dark:text-slate-50">
+    <div className={`app-bg relative flex h-[100dvh] min-h-0 flex-col overflow-hidden text-ink dark:text-slate-50 lg:block lg:h-auto lg:min-h-screen lg:overflow-visible ${allowedNavItems.length > 7 ? 'mobile-nav-two-rows' : ''}`}>
       <aside
         className={`fixed inset-y-0 left-0 hidden flex-col overflow-hidden border-r border-shalom-gold/30 bg-gradient-to-b from-white via-shalom-cream/95 to-shalom-mist text-shalom-deep shadow-soft transition-[width,padding] duration-200 dark:border-shalom-gold/20 dark:from-shalom-night dark:via-[#0B2747] dark:to-shalom-night dark:text-white dark:shadow-blue lg:flex ${
           sidebarCollapsed ? 'w-[88px] px-3 py-4' : 'w-72 px-5 py-6'
@@ -132,7 +123,7 @@ export function AppShell({ activeView, setActiveView, pageTitle, onBack, user, d
           })}
         </nav>
 
-        <div className="relative mt-5 flex-none space-y-3">
+        <div className="relative mt-5 flex-none">
           <div
             className={`rounded-2xl border border-shalom-gold/35 bg-white/75 text-shalom-deep shadow-sm backdrop-blur dark:border-white/20 dark:bg-white/10 dark:text-white ${
               sidebarCollapsed ? 'flex h-12 items-center justify-center p-2' : 'p-3'
@@ -148,141 +139,78 @@ export function AppShell({ activeView, setActiveView, pageTitle, onBack, user, d
               </>
             )}
           </div>
-          <button
-            className={`mission-btn flex w-full items-center justify-center border border-shalom-gold/40 bg-white/65 py-2.5 text-sm font-semibold text-shalom-deep hover:border-shalom-orange/60 hover:bg-shalom-cream hover:text-shalom-blue dark:border-white/20 dark:bg-white/5 dark:text-white dark:hover:border-shalom-gold/50 dark:hover:bg-white/15 dark:hover:text-shalom-gold ${
-              sidebarCollapsed ? 'px-2' : 'gap-2 px-3'
-            }`}
-            onClick={onLogout}
-            title={sidebarCollapsed ? 'Sair' : undefined}
-            aria-label={sidebarCollapsed ? 'Sair' : undefined}
-          >
-            <LogOut size={16} />
-            {!sidebarCollapsed && 'Sair'}
-          </button>
         </div>
       </aside>
 
-      <div className={`flex h-[100dvh] flex-col pb-[var(--mobile-bottom-nav-height)] transition-[padding] duration-200 lg:block lg:h-auto lg:min-h-screen lg:pb-0 ${sidebarCollapsed ? 'lg:pl-[88px]' : 'lg:pl-72'}`}>
-        <header className="sticky top-0 z-20 border-b border-shalom-gold/30 bg-white/78 px-3 py-2 shadow-sm backdrop-blur-2xl dark:border-shalom-gold/15 dark:bg-gradient-to-r dark:from-shalom-night/95 dark:via-[#0A2443]/92 dark:to-shalom-deep/88 dark:shadow-[0_18px_52px_rgba(0,0,0,0.24)] sm:px-4 lg:px-8 lg:py-3">
-          <div className="flex items-center gap-3 lg:hidden">
-            {onBack ? <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center text-shalom-blue dark:text-shalom-gold" onClick={onBack} aria-label="Voltar" title="Voltar"><ArrowLeft size={21} /></button> : null}
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-shalom-orange dark:text-shalom-gold/90">SH82</p>
-              <h1 className="truncate font-display text-xl font-semibold leading-tight text-shalom-deep dark:text-white">{pageTitle || allowedNavItems.find((item) => item.key === activeView)?.label}</h1>
-            </div>
-          </div>
-
-          <div className="hidden lg:flex lg:items-center lg:justify-between">
-            <div className="flex items-start justify-between gap-3">
+      <div className={`flex min-h-0 min-w-0 flex-1 flex-col transition-[padding] duration-200 lg:block lg:min-h-screen ${sidebarCollapsed ? 'lg:pl-[88px]' : 'lg:pl-72'}`}>
+        <header className="sticky top-0 z-20 flex-none border-b border-shalom-gold/30 bg-white/78 px-3 py-2 shadow-sm backdrop-blur-2xl dark:border-shalom-gold/15 dark:bg-gradient-to-r dark:from-shalom-night/95 dark:via-[#0A2443]/92 dark:to-shalom-deep/88 dark:shadow-[0_18px_52px_rgba(0,0,0,0.24)] sm:px-4 lg:px-8 lg:py-3">
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2 lg:items-start lg:gap-3">
               {onBack ? <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center text-shalom-blue dark:text-shalom-gold" onClick={onBack} aria-label="Voltar" title="Voltar"><ArrowLeft size={21} /></button> : null}
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-shalom-orange dark:text-shalom-gold/90 sm:text-sm">Gestao da difusao</p>
-                <h1 className="font-display text-xl font-semibold text-shalom-deep dark:text-white sm:text-2xl">{pageTitle || allowedNavItems.find((item) => item.key === activeView)?.label}</h1>
+              <div className="min-w-0">
+                <div className="lg:hidden">
+                  <h1 className="truncate font-display text-lg font-semibold leading-tight text-shalom-deep dark:text-white">{pageTitle || allowedNavItems.find((item) => item.key === activeView)?.label}</h1>
+                  <p className="truncate text-xs font-semibold text-shalom-deep/80 dark:text-slate-200">{firstName}</p>
+                  <p className="truncate text-[11px] font-semibold text-shalom-orange dark:text-shalom-gold">{roleLabels[user?.role] || user?.role}</p>
+                </div>
+                <div className="hidden lg:block">
+                  <p className="text-sm font-semibold uppercase tracking-[0.16em] text-shalom-orange dark:text-shalom-gold/90">Gestao da difusao</p>
+                  <h1 className="font-display text-2xl font-semibold leading-tight text-shalom-deep dark:text-white">{pageTitle || allowedNavItems.find((item) => item.key === activeView)?.label}</h1>
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
               <button
-                className="mission-btn flex min-w-11 items-center justify-center border border-shalom-gold/30 bg-white/70 px-3 py-2 text-shalom-deep dark:border-shalom-gold/20 dark:bg-white/10 dark:text-shalom-gold"
+                type="button"
+                className="flex h-11 w-11 items-center justify-center text-shalom-deep transition-colors hover:text-shalom-orange dark:text-shalom-gold dark:hover:text-white"
                 onClick={() => setDarkMode(!darkMode)}
                 title={darkMode ? 'Modo claro' : 'Modo escuro'}
-                aria-label={darkMode ? 'Modo claro' : 'Modo escuro'}
+                aria-label="Alternar tema"
               >
                 {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+              </button>
+              <button
+                type="button"
+                className="flex h-11 w-11 items-center justify-center text-shalom-wine transition-colors hover:text-shalom-orange dark:text-rose-200 dark:hover:text-white"
+                onClick={onLogout}
+                title="Sair"
+                aria-label="Sair"
+              >
+                <LogOut size={18} />
               </button>
             </div>
           </div>
         </header>
 
-        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 pb-0 pt-4 scrollbar-thin sm:px-5 lg:h-auto lg:overflow-visible lg:px-8 lg:pb-5 lg:pt-5">{children}</main>
+        <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-y-contain px-3 pb-0 pt-4 scrollbar-thin sm:px-5 lg:h-auto lg:overflow-visible lg:overscroll-auto lg:px-8 lg:pb-5 lg:pt-5">{children}</main>
       </div>
 
-      {mobileMenuOpen ? (
-        <div className="mobile-more-menu fixed inset-x-3 z-40 lg:hidden">
-          <div className="min-w-0 max-h-[calc(100dvh_-_8rem_-_env(safe-area-inset-bottom))] overflow-y-auto rounded-lg border border-line/90 bg-white/95 p-2 shadow-soft backdrop-blur-xl dark:border-shalom-gold/15 dark:bg-shalom-night/95">
-            <div className="grid min-w-0 grid-cols-1">
-              <div className="min-w-0 border-b border-line/80 px-3 py-2 text-shalom-deep dark:border-shalom-gold/15 dark:text-slate-100">
-                <p className="truncate text-sm font-semibold">{user?.name}</p>
-                <p className="text-xs font-semibold text-shalom-orange dark:text-shalom-gold">{roleLabels[user?.role] || user?.role}</p>
-              </div>
-              {mobileSecondaryItems.map((item) => {
-                const Icon = item.icon
-                const active = activeView === item.key
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    className={`flex min-h-11 w-full min-w-0 items-center gap-3 border-l-2 px-3 py-2 text-left text-sm font-semibold transition-colors ${
-                      active
-                        ? 'border-shalom-blue text-shalom-blue dark:text-white'
-                        : 'border-transparent text-shalom-deep/75 hover:text-shalom-blue dark:text-slate-300 dark:hover:text-white'
-                    }`}
-                    onClick={() => selectView(item.key)}
-                    aria-current={active ? 'page' : undefined}
-                  >
-                    <Icon className="shrink-0" size={18} />
-                    <span className="min-w-0 truncate">{item.label}</span>
-                  </button>
-                )
-              })}
-              <button
-                type="button"
-                className="mt-1 flex min-h-11 w-full min-w-0 items-center gap-3 border-t border-line/80 px-3 py-2 text-left text-sm font-semibold text-shalom-wine transition-colors hover:bg-shalom-wine/5 dark:border-shalom-gold/15 dark:text-rose-200 dark:hover:bg-white/5"
-                onClick={onLogout}
-              >
-                <LogOut className="shrink-0" size={18} />
-                <span className="min-w-0 truncate">Sair</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       <nav
-        className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-40 border-t border-line/80 bg-white/95 px-3 pb-[calc(0.35rem_+_env(safe-area-inset-bottom))] pt-1.5 backdrop-blur-xl dark:border-shalom-gold/15 dark:bg-shalom-night/95 lg:hidden"
+        className="mobile-bottom-nav relative z-40 h-[var(--mobile-bottom-nav-height)] flex-none border-t border-line/80 bg-white/95 px-1 pb-[calc(0.3125rem_+_env(safe-area-inset-bottom))] pt-1.5 backdrop-blur-xl dark:border-shalom-gold/15 dark:bg-shalom-night/95 lg:hidden"
         aria-label="Navegacao principal"
       >
-        <div className="mx-auto flex max-w-lg items-center justify-around gap-1">
-          {mobilePrimaryItems.map((item) => {
+        <div
+          className="mx-auto grid max-w-lg auto-rows-[3rem] place-items-center"
+          style={{ gridTemplateColumns: `repeat(${Math.max(mobileNavColumns, 1)}, minmax(44px, 1fr))` }}
+        >
+          {allowedNavItems.map((item) => {
             const Icon = item.icon
             const active = activeView === item.key
+            const mobileLabel = mobileNavLabels[item.key] || item.label
             return (
               <button
                 key={item.key}
                 type="button"
                 className={`mobile-nav-item ${active ? 'mobile-nav-item-active' : ''}`}
                 onClick={() => selectView(item.key)}
-                aria-label={mobilePrimaryLabels[item.key] || item.label}
+                aria-label={mobileLabel}
                 aria-current={active ? 'page' : undefined}
-                title={mobilePrimaryLabels[item.key] || item.label}
+                title={mobileLabel}
               >
                 <Icon size={21} aria-hidden="true" />
               </button>
             )
           })}
-
-          <button
-            type="button"
-            className="mobile-nav-item"
-            onClick={() => {
-              setDarkMode(!darkMode)
-              setMobileMenuOpen(false)
-            }}
-            aria-label={darkMode ? 'Ativar modo claro' : 'Ativar modo escuro'}
-            title={darkMode ? 'Modo claro' : 'Modo escuro'}
-          >
-            {darkMode ? <Sun size={21} aria-hidden="true" /> : <Moon size={21} aria-hidden="true" />}
-          </button>
-
-          <button
-            type="button"
-            className={`mobile-nav-item ${isMobileMoreActive || mobileMenuOpen ? 'mobile-nav-item-active' : ''}`}
-            onClick={() => setMobileMenuOpen((current) => !current)}
-            aria-expanded={mobileMenuOpen}
-            aria-label="Mais opcoes"
-            title="Mais"
-          >
-            <MoreHorizontal size={22} aria-hidden="true" />
-          </button>
         </div>
       </nav>
     </div>
