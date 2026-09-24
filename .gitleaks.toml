@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Deterministic idempotency key used only by the library service test"
+regexes = [
+  '''pix-receivable-001'''
+]

@@ -86,14 +86,7 @@ jobs:
       - name: Run backend tests
         run: |
           mkdir -p test-results coverage
-          node --test --test-reporter=spec test/*.test.js | tee test-results/backend-tests.txt
-        working-directory: backend
-
-      - name: Generate backend coverage report
-        if: always()
-        run: |
-          mkdir -p coverage
-          node --test --experimental-test-coverage test/*.test.js > coverage/backend-coverage.txt
+          node --test --experimental-test-coverage --test-reporter=spec test/*.test.js | tee test-results/backend-tests.txt coverage/backend-coverage.txt
         working-directory: backend
 
       - name: Upload backend test reports

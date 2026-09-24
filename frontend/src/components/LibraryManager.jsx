@@ -1329,7 +1329,7 @@ export function LibraryManager({ user }) {
               {message ? <p className="my-3 border-l-2 border-shalom-orange px-3 py-1 text-sm" role="status">{message}</p> : null}
               {!writable ? <p className="mission-muted py-4 text-sm">Seu perfil permite consultar, mas nao registrar vendas.</p> : null}
               {visibleSaleProducts.length ? (
-                <div className="pos-product-grid grid grid-cols-[repeat(auto-fill,minmax(135px,1fr))] border-l border-t border-line/70 dark:border-shalom-gold/10 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] lg:grid-cols-[repeat(auto-fit,minmax(190px,1fr))]">
+                <div className="pos-product-grid grid border-l border-t border-line/70 dark:border-shalom-gold/10">
                   {visibleSaleProducts.map((product) => <LibrarySaleProductCard key={product.id} product={product} quantity={saleQuantities.get(`product-${product.id}`) || 0} writable={writable} onAdd={addSaleProduct} onChangeQuantity={changeSaleQuantity} />)}
                 </div>
               ) : <p className="mission-muted py-12 text-center">{saleQuery ? `Nenhum produto encontrado para "${saleQuery}".` : 'Nenhum produto disponivel.'}</p>}

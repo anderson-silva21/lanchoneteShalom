@@ -41,6 +41,18 @@
   filter: none;
 }
 
+/* Keep mobile tiles fluid while preventing sparse catalogs from stretching
+   product cards across the available space on wider screens. */
+.pos-product-grid {
+  grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+}
+
+@media (min-width: 640px) {
+  .pos-product-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+}
+
 @media (min-width: 768px) {
   .pos-action-bar {
     bottom: 1rem;
@@ -48,6 +60,14 @@
 
   .pos-view-with-action {
     padding-bottom: 0;
+  }
+
+  .pos-product-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 220px));
+    justify-content: start;
+    gap: 16px;
+    border: 0;
+    padding-top: 20px;
   }
 }
 

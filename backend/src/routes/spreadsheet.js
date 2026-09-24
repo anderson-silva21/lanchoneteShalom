@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 const { db } = require('../db');
 const { authenticate, requireRole } = require('../middleware/auth');
@@ -9,6 +10,13 @@ const { recordAudit } = require('../services/auditService');
 const { toCsv, toPdfStream, toXlsxBuffer } = require('../services/exportService');
 
 const router = express.Router();
+const spreadsheetExportRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { message: 'Muitas exportacoes. Tente novamente em instantes.' }
+});
 
 const sheets = {
   produtos: {
@@ -132,7 +140,7 @@ router.get('/sheets', (req, res) => {
   })));
 });
 
-router.get('/:sheet/export', async (req, res, next) => {
+router.get('/:sheet/export', spreadsheetExportRateLimit, async (req, res, next) => {
   try {
     const sheet = sheets[req.params.sheet];
     if (!sheet) return res.status(404).json({ message: 'Aba nao encontrada.' });

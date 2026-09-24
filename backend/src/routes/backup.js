@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
@@ -7,6 +8,13 @@ const { createBackup, importBackup, listBackups, resolveBackupFile, restoreBacku
 const { recordAudit } = require('../services/auditService');
 
 const router = express.Router();
+const backupRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { message: 'Muitas operacoes de backup. Tente novamente em instantes.' }
+});
 
 router.use(authenticate, requireScreen('settings'));
 
@@ -14,11 +22,11 @@ const restoreSchema = z.object({
   confirmation: z.string().trim()
 });
 
-router.get('/', (req, res) => {
+router.get('/', backupRateLimit, (req, res) => {
   return res.json(listBackups());
 });
 
-router.get('/:file/download', (req, res, next) => {
+router.get('/:file/download', backupRateLimit, (req, res, next) => {
   try {
     const file = resolveBackupFile(req.params.file);
     return res.download(file, path.basename(file));
@@ -27,9 +35,9 @@ router.get('/:file/download', (req, res, next) => {
   }
 });
 
-router.post('/import', express.raw({ type: 'application/octet-stream', limit: '250mb' }), (req, res, next) => {
+router.post('/import', backupRateLimit, express.raw({ type: 'application/octet-stream', limit: '250mb' }), async (req, res, next) => {
   try {
-    const backup = importBackup(req.body, req.get('x-backup-filename'));
+    const backup = await importBackup(req.body, req.get('x-backup-filename'));
     recordAudit({
       req,
       action: 'backup.import',
@@ -44,7 +52,7 @@ router.post('/import', express.raw({ type: 'application/octet-stream', limit: '2
   }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', backupRateLimit, async (req, res, next) => {
   try {
     const backup = await createBackup();
     recordAudit({
@@ -61,7 +69,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-router.post('/:file/restore', async (req, res, next) => {
+router.post('/:file/restore', backupRateLimit, async (req, res, next) => {
   try {
     const payload = restoreSchema.parse(req.body);
     if (payload.confirmation !== 'RESTAURAR') {

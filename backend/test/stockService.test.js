@@ -15,6 +15,7 @@ const { deleteProductSafely } = require('../src/services/productService');
 const { confirmSalePayment, createSale, deleteSale, getCashClosing, getSaleById, listPendingPayments, updateSaleItemCost } = require('../src/services/salesService');
 const { addStock, getProductStock, updateBatch } = require('../src/services/stockService');
 const { buildTelegramAlertMessage } = require('../src/services/telegramAlertService');
+const { brazilDate } = require('../src/utils/time');
 
 initDatabase();
 
@@ -553,7 +554,7 @@ test('edicao de evento atualiza nome e data sem zerar vendas vinculadas', () => 
 });
 
 test('nova venda e atribuida automaticamente ao evento do dia', () => {
-  const today = db.prepare("SELECT date('now', 'localtime') AS date").get().date;
+  const today = brazilDate();
   const event = createEvent({
     name: 'Evento de Hoje',
     event_date: today
@@ -571,7 +572,7 @@ test('nova venda e atribuida automaticamente ao evento do dia', () => {
 });
 
 test('event_id explicito prevalece sobre evento automatico do dia', () => {
-  const today = db.prepare("SELECT date('now', 'localtime') AS date").get().date;
+  const today = brazilDate();
   const tomorrow = db.prepare("SELECT date(?, '+1 day') AS date").get(today).date;
   createEvent({
     name: 'Evento de Hoje',

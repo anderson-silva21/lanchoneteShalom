@@ -158,7 +158,7 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
   const [activeSheet, setActiveSheet] = useState('itens_vendidos')
   const [rows, setRows] = useState([])
   const [query, setQuery] = useState('')
-  const [filtersBySheet, setFiltersBySheet] = useState({})
+  const [filtersBySheet, setFiltersBySheet] = useState(() => new Map())
   const [filterDraft, setFilterDraft] = useState({})
   const [exportOpen, setExportOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -210,7 +210,7 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
   useEffect(() => {
     if (!filterRouteMatch?.[1]) return
     setActiveSheet(filterRouteMatch[1])
-    setFilterDraft({ ...(filtersBySheet[filterRouteMatch[1]] || {}) })
+    setFilterDraft({ ...(filtersBySheet.get(filterRouteMatch[1]) || {}) })
     // The draft is intentionally captured when the dedicated page opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFilterRoute])
@@ -221,7 +221,7 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
   }, [editRouteSheet])
 
   const columns = useMemo(() => rows[0] ? Object.keys(rows[0]) : [], [rows])
-  const activeFilters = useMemo(() => filtersBySheet[activeSheet] || {}, [activeSheet, filtersBySheet])
+  const activeFilters = useMemo(() => filtersBySheet.get(activeSheet) || {}, [activeSheet, filtersBySheet])
   const filteredRows = useMemo(() => {
     const term = query.trim().toLowerCase()
     const dateColumn = {
@@ -470,13 +470,13 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
 
   function applyFilters(event) {
     event.preventDefault()
-    setFiltersBySheet((current) => ({ ...current, [activeSheet]: { ...filterDraft } }))
+    setFiltersBySheet((current) => new Map(current).set(activeSheet, { ...filterDraft }))
     setPage(1)
     navigate('/planilha')
   }
 
   function clearFilters() {
-    setFiltersBySheet((current) => ({ ...current, [activeSheet]: {} }))
+    setFiltersBySheet((current) => new Map(current).set(activeSheet, {}))
     setFilterDraft({})
     setPage(1)
   }

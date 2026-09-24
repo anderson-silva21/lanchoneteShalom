@@ -99,7 +99,7 @@ function PosCatalog({ products, combos, cart, total, itemCount, message, catalog
 
       {message ? <p className="my-3 border-l-4 border-shalom-orange bg-white/60 px-3 py-2 text-sm dark:bg-white/5" role="status">{message}</p> : null}
       {catalogLoading ? <p className="py-12 text-center mission-muted" role="status">Carregando produtos...</p> : catalogError ? <div className="py-12 text-center" role="alert"><p className="font-semibold text-shalom-wine dark:text-rose-200">Nao foi possivel carregar os produtos.</p><p className="mission-muted mt-2 text-sm">{catalogError}</p></div> : visibleItems.length ? (
-        <div className="pos-product-grid grid grid-cols-[repeat(auto-fill,minmax(135px,1fr))] border-l border-t border-line/70 dark:border-shalom-gold/10 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] lg:grid-cols-[repeat(auto-fit,minmax(190px,1fr))]">
+        <div className="pos-product-grid grid border-l border-t border-line/70 dark:border-shalom-gold/10">
           {visibleItems.map(({ item, type }) => {
             const key = `${type}-${item.id}`
             const quantity = cartQuantities.get(key) || 0

@@ -25,6 +25,14 @@ const productMutationRateLimit = rateLimit({
   }
 });
 
+const productHistoryRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { message: 'Muitas consultas ao historico. Tente novamente em instantes.' }
+});
+
 const optionalDateSchema = z.preprocess(
   (value) => value === '' || value === undefined ? null : value,
   z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/).nullable()
@@ -236,7 +244,7 @@ router.get('/categories', (req, res) => {
   return res.json(categories);
 });
 
-router.get('/:id/history', requireScreen('products'), (req, res) => {
+router.get('/:id/history', requireScreen('products'), productHistoryRateLimit, (req, res) => {
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
   if (!product) return res.status(404).json({ message: 'Produto nao encontrado.' });
 
