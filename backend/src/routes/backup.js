@@ -1,8 +1,9 @@
 const express = require('express');
+const path = require('path');
 const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
-const { createBackup, listBackups, restoreBackup } = require('../services/backupService');
+const { createBackup, importBackup, listBackups, resolveBackupFile, restoreBackup } = require('../services/backupService');
 const { recordAudit } = require('../services/auditService');
 
 const router = express.Router();
@@ -15,6 +16,32 @@ const restoreSchema = z.object({
 
 router.get('/', (req, res) => {
   return res.json(listBackups());
+});
+
+router.get('/:file/download', (req, res, next) => {
+  try {
+    const file = resolveBackupFile(req.params.file);
+    return res.download(file, path.basename(file));
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/import', express.raw({ type: 'application/octet-stream', limit: '250mb' }), (req, res, next) => {
+  try {
+    const backup = importBackup(req.body, req.get('x-backup-filename'));
+    recordAudit({
+      req,
+      action: 'backup.import',
+      entityType: 'backup',
+      entityId: backup.file,
+      summary: `Backup importado: ${backup.file}`,
+      metadata: { file: backup.file, size: backup.size }
+    });
+    return res.status(201).json(backup);
+  } catch (error) {
+    return next(error);
+  }
 });
 
 router.post('/', async (req, res, next) => {

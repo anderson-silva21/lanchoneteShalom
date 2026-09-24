@@ -44,8 +44,7 @@ const closingSchema = z.object({
 
 const saleItemCostSchema = z.object({
   unit_cost: z.coerce.number().finite().nonnegative(),
-  reason: z.string().trim().max(500).optional().nullable(),
-  confirmation: z.string().trim().min(1)
+  reason: z.string().trim().min(3).max(500)
 });
 
 router.use(authenticate, requireScreen('sales'));
@@ -181,11 +180,6 @@ router.patch('/:id/payment', (req, res, next) => {
 router.patch('/:id/items/:itemId/cost', requireRole('admin', 'finance'), (req, res, next) => {
   try {
     const payload = saleItemCostSchema.parse(req.body);
-    const expectedConfirmation = `CORRIGIR CUSTO VENDA ${req.params.id}`;
-    if (payload.confirmation !== expectedConfirmation) {
-      return res.status(400).json({ message: `Digite ${expectedConfirmation} para confirmar a correcao.` });
-    }
-
     const result = updateSaleItemCost({
       saleId: req.params.id,
       itemId: req.params.itemId,

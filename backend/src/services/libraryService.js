@@ -85,6 +85,112 @@ function buildInstallmentPlan(total, installments = 1) {
   return Array.from({ length: count }, (_, index) => money((base + (index < remainder ? 1 : 0)) / 100));
 }
 
+function addMonthsToIsoDate(isoDate, months) {
+  const [year, month, day] = String(isoDate).split('-').map(Number);
+  const targetMonth = month - 1 + months;
+  const targetYear = year + Math.floor(targetMonth / 12);
+  const normalizedMonth = ((targetMonth % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate();
+  return `${targetYear}-${String(normalizedMonth + 1).padStart(2, '0')}-${String(Math.min(day, lastDay)).padStart(2, '0')}`;
+}
+
+function createReceivablePlan({ saleId, total, paymentMethod, installmentCount, firstDueDate, firstInstallmentPaid, customerName, customerContact, userId }) {
+  if (!['pix', 'dinheiro'].includes(paymentMethod)) throw createHttpError('Parcelamento interno permitido apenas para Pix ou Dinheiro.', 400);
+  const count = Math.trunc(Number(installmentCount));
+  if (!Number.isInteger(count) || count < 2 || count > 24) throw createHttpError('Quantidade de parcelas deve ficar entre 2 e 24.', 400);
+  const name = normalizeCustomerName(customerName);
+  const contact = normalizePhone(customerContact);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(firstDueDate || ''))) throw createHttpError('Informe o primeiro vencimento.', 400);
+
+  const planId = db.prepare(`
+    INSERT INTO library_installment_plans
+      (sale_id, customer_name, customer_contact, payment_method, total_amount, installment_count, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(saleId, name, contact, paymentMethod, money(total), count, firstInstallmentPaid ? 'partially_paid' : 'unpaid').lastInsertRowid;
+  const amounts = buildInstallmentPlan(total, count);
+  const insert = db.prepare(`
+    INSERT INTO library_installments
+      (plan_id, installment_number, amount, due_date, status, paid_at, paid_method, paid_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  amounts.forEach((amount, index) => {
+    const paid = Boolean(firstInstallmentPaid) && index === 0;
+    insert.run(planId, index + 1, amount, addMonthsToIsoDate(firstDueDate, index), paid ? 'paid' : 'pending', paid ? new Date().toISOString() : null, paid ? paymentMethod : null, paid ? userId || null : null);
+  });
+  return planId;
+}
+
+function installmentPlanDto(plan) {
+  if (!plan) return null;
+  const installments = db.prepare('SELECT * FROM library_installments WHERE plan_id = ? ORDER BY installment_number').all(plan.id).map((item) => ({
+    ...item,
+    amount: money(item.amount),
+    overdue: item.status === 'pending' && item.due_date < new Date().toISOString().slice(0, 10)
+  }));
+  const paidAmount = money(installments.filter((item) => item.status === 'paid').reduce((sum, item) => sum + item.amount, 0));
+  const pending = installments.filter((item) => item.status === 'pending');
+  const pendingAmount = money(pending.reduce((sum, item) => sum + item.amount, 0));
+  const hasOverdue = pending.some((item) => item.overdue);
+  return {
+    ...plan,
+    total_amount: money(plan.total_amount),
+    paid_amount: paidAmount,
+    pending_amount: pendingAmount,
+    paid_count: installments.filter((item) => item.status === 'paid').length,
+    next_due_date: pending[0]?.due_date || null,
+    financial_status: plan.status === 'cancelled' ? 'cancelled' : plan.status === 'paid' ? 'paid' : hasOverdue ? 'overdue' : plan.status,
+    installments
+  };
+}
+
+function getInstallmentPlan(id) {
+  return installmentPlanDto(db.prepare(`
+    SELECT p.*, s.seller_id, ls.display_name AS seller_name
+    FROM library_installment_plans p
+    JOIN library_sales s ON s.id = p.sale_id
+    LEFT JOIN library_sellers ls ON ls.id = s.seller_id
+    WHERE p.id = ?
+  `).get(id));
+}
+
+function listInstallmentPlans({ status = '', q = '' } = {}) {
+  const query = String(q || '').trim().toLocaleLowerCase('pt-BR');
+  return db.prepare('SELECT id FROM library_installment_plans ORDER BY datetime(created_at) DESC, id DESC').all()
+    .map((row) => getInstallmentPlan(row.id))
+    .filter((plan) => (!status || plan.financial_status === status) && (!query || `${plan.customer_name} ${plan.customer_contact} ${plan.sale_id}`.toLocaleLowerCase('pt-BR').includes(query)));
+}
+
+const payInstallmentTransaction = db.transaction(({ installmentId, paymentMethod, paidAt, notes, userId }) => {
+  const installment = db.prepare(`SELECT i.*, p.status AS plan_status FROM library_installments i JOIN library_installment_plans p ON p.id = i.plan_id WHERE i.id = ?`).get(installmentId);
+  if (!installment) throw createHttpError('Parcela nao encontrada.', 404);
+  if (installment.plan_status === 'cancelled' || installment.status === 'cancelled') throw createHttpError('Parcela cancelada nao pode ser paga.', 400);
+  if (installment.status === 'paid') throw createHttpError('Parcela ja foi paga.', 400);
+  if (!['pix', 'dinheiro'].includes(paymentMethod)) throw createHttpError('Forma de pagamento invalida.', 400);
+  db.prepare(`UPDATE library_installments SET status = 'paid', paid_at = ?, paid_method = ?, notes = ?, paid_by = ? WHERE id = ?`)
+    .run(paidAt, paymentMethod, normalizeText(notes), userId || null, installment.id);
+  const remaining = db.prepare("SELECT COUNT(*) AS total FROM library_installments WHERE plan_id = ? AND status = 'pending'").get(installment.plan_id).total;
+  const paid = db.prepare("SELECT COUNT(*) AS total FROM library_installments WHERE plan_id = ? AND status = 'paid'").get(installment.plan_id).total;
+  db.prepare('UPDATE library_installment_plans SET status = ? WHERE id = ?').run(remaining === 0 ? 'paid' : paid > 0 ? 'partially_paid' : 'unpaid', installment.plan_id);
+  return getInstallmentPlan(installment.plan_id);
+});
+
+function payInstallment(payload) {
+  return payInstallmentTransaction(payload);
+}
+
+const cancelInstallmentPlanTransaction = db.transaction((id) => {
+  const plan = getInstallmentPlan(id);
+  if (!plan) throw createHttpError('Plano de parcelas nao encontrado.', 404);
+  if (plan.status === 'paid') throw createHttpError('Plano pago nao pode ser cancelado.', 400);
+  db.prepare("UPDATE library_installments SET status = 'cancelled' WHERE plan_id = ? AND status = 'pending'").run(plan.id);
+  db.prepare("UPDATE library_installment_plans SET status = 'cancelled', cancelled_at = datetime('now', '-3 hours') WHERE id = ?").run(plan.id);
+  return getInstallmentPlan(plan.id);
+});
+
+function cancelInstallmentPlan(id) {
+  return cancelInstallmentPlanTransaction(id);
+}
+
 function generateSku(name) {
   const prefix = normalizeSku(name).slice(0, 8).padEnd(3, 'X');
   const rows = db.prepare('SELECT sku FROM library_products WHERE sku LIKE ?').all(`${prefix}-%`);
@@ -995,6 +1101,8 @@ function getSaleById(id) {
   sale.payment_installments = Number(sale.payment_installments || 1);
   sale.installment_amounts = buildInstallmentPlan(sale.total, sale.payment_installments);
   sale.items = listSaleItemsBySaleIds([sale.id])[sale.id] || [];
+  const plan = db.prepare('SELECT id FROM library_installment_plans WHERE sale_id = ?').get(sale.id);
+  sale.installment_plan = plan ? getInstallmentPlan(plan.id) : null;
   return sale;
 }
 
@@ -1011,12 +1119,13 @@ const createSaleTransaction = db.transaction((payload, user) => {
   const paymentInstallments = normalizePaymentInstallments(paymentMethod, payload.payment_installments || payload.paymentInstallments);
 
   const saleId = db.prepare(`
-    INSERT INTO library_sales (payment_method, payment_installments, customer_name, notes, idempotency_key, assisted_request_id, seller_id, sold_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO library_sales (payment_method, payment_installments, customer_name, customer_contact, notes, idempotency_key, assisted_request_id, seller_id, sold_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     paymentMethod,
     paymentInstallments,
     normalizeText(payload.customer_name),
+    normalizeText(payload.customer_contact),
     normalizeText(payload.notes),
     idempotencyKey,
     payload.assisted_request_id || payload.assistedRequestId || null,
@@ -1080,6 +1189,19 @@ const createSaleTransaction = db.transaction((payload, user) => {
 
   db.prepare('UPDATE library_sales SET total = ?, total_cost = ?, gross_profit = ? WHERE id = ?')
     .run(money(total), money(totalCost), money(total - totalCost), saleId);
+  if (payload.receivable_installments) {
+    createReceivablePlan({
+      saleId,
+      total,
+      paymentMethod,
+      installmentCount: payload.receivable_installments,
+      firstDueDate: payload.first_due_date,
+      firstInstallmentPaid: payload.first_installment_paid,
+      customerName: payload.customer_name,
+      customerContact: payload.customer_contact,
+      userId: user?.id
+    });
+  }
   return saleId;
 });
 
@@ -1120,6 +1242,10 @@ function convertAssistedRequest(reference, payload = {}, user) {
       payment_method: payload.payment_method || 'manual',
       payment_installments: payload.payment_installments || payload.paymentInstallments || 1,
       customer_name: normalizeText(payload.customer_name) || request.customer_name || `Atendimento ${request.reference}`,
+      customer_contact: normalizeText(payload.customer_contact) || request.customer_contact,
+      receivable_installments: payload.receivable_installments,
+      first_due_date: payload.first_due_date,
+      first_installment_paid: payload.first_installment_paid,
       notes: normalizeText(payload.notes) || [`Pedido assistido ${request.reference}`, request.customer_contact ? `Contato: ${request.customer_contact}` : ''].filter(Boolean).join(' - '),
       idempotency_key: `library-assisted-${request.reference}`,
       assisted_request_id: request.id,
@@ -1892,10 +2018,14 @@ module.exports = {
   listMovements,
   listProducts,
   listPublicProducts,
+  listInstallmentPlans,
   listSales,
   listSellers,
   removeSeller,
   reassignAssistedRequest,
+  getInstallmentPlan,
+  payInstallment,
+  cancelInstallmentPlan,
   saveSeller,
   saveProduct,
   updateAssistedRequestItems

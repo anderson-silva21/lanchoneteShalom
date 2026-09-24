@@ -19,15 +19,19 @@ const {
   createAssistedRequest,
   createCategory,
   createSale,
+  cancelInstallmentPlan,
   getAssistedRequest,
   getDashboard,
+  getInstallmentPlan,
   getLibrarySpreadsheet,
   getLibraryStockSpreadsheet,
   getPublicAssistedRequest,
   getSellerMonitoring,
   listAssistedRequests,
+  listInstallmentPlans,
   listSales,
   listSellers,
+  payInstallment,
   listPublicProducts,
   removeSeller,
   reassignAssistedRequest,
@@ -219,6 +223,54 @@ test('venda da Livraria rejeita parcelamento em dinheiro ou PIX', () => {
     return true;
   });
 });
+
+test('Pix parcelado cria recebiveis mensais com centavos exatos e baixa ate pago', () => {
+  const category = createCategory({ name: 'Pix Recebiveis' });
+  const product = saveProduct({ name: 'Livro Pix Recebiveis', category_id: category.id, sku: 'TEST-PIX-REC', price: 100, cost_price: 30, stock_quantity: 2, min_stock: 0, published: true });
+  const sale = createSale({
+    customer_name: 'Maria Parcelada',
+    customer_contact: '5512999999999',
+    payment_method: 'pix',
+    receivable_installments: 3,
+    first_due_date: '2026-10-31',
+    first_installment_paid: true,
+    idempotency_key: 'pix-receivable-001',
+    items: [{ product_id: product.id, quantity: 1 }]
+  }, { id: 1 });
+
+  assert.ok(sale.installment_plan);
+  assert.deepEqual(sale.installment_plan.installments.map((item) => item.amount), [33.34, 33.33, 33.33]);
+  assert.deepEqual(sale.installment_plan.installments.map((item) => item.due_date), ['2026-10-31', '2026-11-30', '2026-12-31']);
+  assert.equal(sale.installment_plan.financial_status, 'partially_paid');
+  let plan = payInstallment({ installmentId: sale.installment_plan.installments[1].id, paymentMethod: 'pix', paidAt: '2026-10-15', userId: 1 });
+  assert.equal(plan.financial_status, 'partially_paid');
+  plan = payInstallment({ installmentId: sale.installment_plan.installments[2].id, paymentMethod: 'dinheiro', paidAt: '2026-10-16', notes: 'Quitacao antecipada', userId: 1 });
+  assert.equal(plan.financial_status, 'paid');
+  assert.equal(plan.pending_amount, 0);
+})
+
+test('Dinheiro parcelado exige cliente e contato e faz rollback completo', () => {
+  const category = createCategory({ name: 'Dinheiro Recebiveis' });
+  const product = saveProduct({ name: 'Livro Dinheiro Recebiveis', category_id: category.id, sku: 'TEST-DIN-REC', price: 60, cost_price: 20, stock_quantity: 2, min_stock: 0, published: true });
+  assert.throws(() => createSale({ payment_method: 'dinheiro', receivable_installments: 2, first_due_date: '2026-10-10', idempotency_key: 'cash-receivable-invalid', items: [{ product_id: product.id, quantity: 1 }] }, { id: 1 }), /nome do cliente/);
+  assert.equal(db.prepare('SELECT stock_quantity FROM library_products WHERE id = ?').get(product.id).stock_quantity, 2);
+
+  const sale = createSale({ customer_name: 'Jose Cliente', customer_contact: '5512988888888', payment_method: 'dinheiro', receivable_installments: 2, first_due_date: '2026-10-10', idempotency_key: 'cash-receivable-valid', items: [{ product_id: product.id, quantity: 1 }] }, { id: 1 });
+  assert.equal(sale.installment_plan.installment_count, 2);
+  assert.equal(sale.installment_plan.financial_status, 'unpaid');
+})
+
+test('parcelas vencidas sao derivadas e cancelamento preserva parcela paga', () => {
+  const category = createCategory({ name: 'Recebiveis Vencidos' });
+  const product = saveProduct({ name: 'Livro Vencido', category_id: category.id, sku: 'TEST-OVERDUE', price: 80, cost_price: 25, stock_quantity: 2, min_stock: 0, published: true });
+  const sale = createSale({ customer_name: 'Ana Cliente', customer_contact: '5512977777777', payment_method: 'pix', receivable_installments: 2, first_due_date: '2020-01-10', first_installment_paid: true, idempotency_key: 'overdue-receivable-001', items: [{ product_id: product.id, quantity: 1 }] }, { id: 1 });
+  assert.equal(listInstallmentPlans({ status: 'overdue' }).some((plan) => plan.id === sale.installment_plan.id), true);
+  const cancelled = cancelInstallmentPlan(sale.installment_plan.id);
+  assert.equal(cancelled.status, 'cancelled');
+  assert.equal(cancelled.installments[0].status, 'paid');
+  assert.equal(cancelled.installments[1].status, 'cancelled');
+  assert.equal(getInstallmentPlan(cancelled.id).installments.length, 2);
+})
 
 test('carrinho assistido cria referencia publica, nao baixa estoque e usa round-robin persistido', () => {
   const category = createCategory({ name: 'Round Robin' });

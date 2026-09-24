@@ -79,6 +79,35 @@ function validateBackupFile(file) {
   return target;
 }
 
+function importBackup(buffer, originalName = 'backup.sqlite') {
+  ensureBackupDir();
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    const error = new Error('Selecione um arquivo SQLite valido.');
+    error.status = 400;
+    throw error;
+  }
+
+  const safeName = path.basename(String(originalName || 'backup.sqlite'));
+  if (!safeName.toLowerCase().endsWith('.sqlite')) {
+    const error = new Error('O arquivo deve usar a extensao .sqlite.');
+    error.status = 400;
+    throw error;
+  }
+
+  const stamp = `${brazilTimestamp().replace(/[: ]/g, '-')}-${String(new Date().getMilliseconds()).padStart(3, '0')}`;
+  const targetName = `lanchonete-importado-${stamp}.sqlite`;
+  const target = path.join(backupDir, targetName);
+
+  fs.writeFileSync(target, buffer, { flag: 'wx' });
+  try {
+    validateBackupFile(targetName);
+    return statBackup(targetName);
+  } catch (error) {
+    fs.rmSync(target, { force: true });
+    throw error;
+  }
+}
+
 function listBackups() {
   ensureBackupDir();
   return fs.readdirSync(backupDir)
@@ -198,8 +227,10 @@ module.exports = {
   backupDir,
   createBackup,
   getBackupStatus,
+  importBackup,
   listBackups,
   pruneOldBackups,
+  resolveBackupFile,
   restoreBackup,
   runAutomaticBackup,
   startAutomaticBackupScheduler

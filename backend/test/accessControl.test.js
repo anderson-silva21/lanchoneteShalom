@@ -50,3 +50,10 @@ test('somente admin gerencia vendedores e reatribuicoes da Livraria', () => {
   assert.equal(can('finance', 'library:sellers:manage'), false);
   assert.equal(can('finance', 'library:requests:reassign'), false);
 });
+
+test('somente admin e financeiro acessam recebiveis da Livraria', () => {
+  assert.equal(can('admin', 'library:finance'), true);
+  assert.equal(can('finance', 'library:finance'), true);
+  assert.equal(can('library', 'library:finance'), false);
+  assert.equal(can('cashier', 'library:finance'), false);
+});

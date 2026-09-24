@@ -583,6 +583,8 @@ const updateSaleItemCostTransaction = db.transaction(({ saleId, itemId, unitCost
   if (!Number.isFinite(nextUnitCost) || nextUnitCost < 0) {
     throw createHttpError('Custo da venda invalido.', 400);
   }
+  const normalizedReason = String(reason || '').trim();
+  if (normalizedReason.length < 3) throw createHttpError('Informe o motivo da alteracao do custo historico.', 400);
 
   const item = db.prepare('SELECT * FROM sale_items WHERE id = ? AND sale_id = ?').get(normalizedItemId, normalizedSaleId);
   if (!item) throw createHttpError('Item da venda nao encontrado.', 404);
@@ -607,7 +609,7 @@ const updateSaleItemCostTransaction = db.transaction(({ saleId, itemId, unitCost
     previousUnitCost,
     nextUnitCost,
     userId || null,
-    String(reason || '').trim() || null
+    normalizedReason
   );
 
   const estimatedProfit = recalculateSaleProfit(normalizedSaleId);

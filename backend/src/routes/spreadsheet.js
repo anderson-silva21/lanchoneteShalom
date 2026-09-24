@@ -6,6 +6,7 @@ const { requireScreen } = require('../middleware/accessControl');
 const { confirmSalePayment, deleteSale } = require('../services/salesService');
 const { roundQuantity, sameQuantity, setProductStock } = require('../services/stockService');
 const { recordAudit } = require('../services/auditService');
+const { toCsv, toPdfStream, toXlsxBuffer } = require('../services/exportService');
 
 const router = express.Router();
 
@@ -27,15 +28,20 @@ const sheets = {
     query: `
       SELECT
         si.id,
+        s.id AS venda_id,
         s.created_at AS data_hora,
+        u.name AS operador,
         si.item_name AS item,
         si.quantity AS quantidade,
         si.unit_price AS preco_unitario,
         si.unit_cost AS custo_unitario,
         si.line_total AS total,
-        si.line_profit AS lucro
+        si.line_profit AS lucro,
+        s.payment_method AS pagamento,
+        CASE WHEN s.payment_status = 'pending' THEN 'pendente' ELSE 'pago' END AS status_pagamento
       FROM sale_items si
       JOIN sales s ON s.id = si.sale_id
+      LEFT JOIN users u ON u.id = s.sold_by
       ORDER BY s.created_at DESC
       LIMIT 1000
     `
@@ -87,6 +93,36 @@ const saleDeleteSchema = z.object({
   confirmation: z.string().trim()
 });
 
+const filterableColumns = {
+  produtos: ['categoria', 'status_estoque', 'status_validade'],
+  lotes: ['categoria', 'status_validade'],
+  vendas: ['operador', 'pagamento', 'status_pagamento'],
+  itens_vendidos: ['operador', 'pagamento', 'status_pagamento'],
+  movimentacoes: ['tipo'],
+  inventarios_evento: ['categoria'],
+  indicadores: []
+};
+
+const dateColumns = {
+  lotes: 'criado_em',
+  vendas: 'data_hora',
+  itens_vendidos: 'data_hora',
+  movimentacoes: 'data_hora',
+  inventarios_evento: 'registrado_em'
+};
+
+function filterSheetRows(sheetKey, rows, filters = {}) {
+  const query = String(filters.q || '').trim().toLocaleLowerCase('pt-BR');
+  const dateColumn = dateColumns[sheetKey];
+
+  return rows.filter((row) => {
+    if (query && !Object.values(row).some((value) => String(value ?? '').toLocaleLowerCase('pt-BR').includes(query))) return false;
+    if (dateColumn && filters.start_date && String(row[dateColumn] || '').slice(0, 10) < filters.start_date) return false;
+    if (dateColumn && filters.end_date && String(row[dateColumn] || '').slice(0, 10) > filters.end_date) return false;
+    return (filterableColumns[sheetKey] || []).every((column) => !filters[column] || String(row[column] ?? '') === String(filters[column]));
+  });
+}
+
 router.use(authenticate, requireScreen('sheet'));
 
 router.get('/sheets', (req, res) => {
@@ -94,6 +130,34 @@ router.get('/sheets', (req, res) => {
     key,
     label: sheet.label
   })));
+});
+
+router.get('/:sheet/export', async (req, res, next) => {
+  try {
+    const sheet = sheets[req.params.sheet];
+    if (!sheet) return res.status(404).json({ message: 'Aba nao encontrada.' });
+
+    const format = String(req.query.format || 'csv').toLowerCase();
+    if (!['csv', 'xlsx', 'pdf'].includes(format)) return res.status(400).json({ message: 'Formato de exportacao invalido.' });
+
+    const rows = filterSheetRows(req.params.sheet, db.prepare(sheet.query).all(), req.query);
+    const filename = `planilha-${req.params.sheet}.${format}`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    if (format === 'csv') {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      return res.send(`\uFEFF${toCsv(rows)}`);
+    }
+    if (format === 'xlsx') {
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      return res.send(await toXlsxBuffer(rows, sheet.label.slice(0, 31)));
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    return toPdfStream(rows, `Planilha da Lanchonete - ${sheet.label}`).pipe(res);
+  } catch (error) {
+    return next(error);
+  }
 });
 
 router.get('/:sheet', (req, res) => {
@@ -284,3 +348,4 @@ router.patch('/movimentacoes/:id', (req, res) => {
 });
 
 module.exports = router;
+module.exports.filterSheetRows = filterSheetRows;

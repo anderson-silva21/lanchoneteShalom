@@ -4,8 +4,6 @@ import {
   BarChart3,
   BookOpen,
   Boxes,
-  ClipboardCheck,
-  ClipboardList,
   FileSpreadsheet,
   LogOut,
   MoreHorizontal,
@@ -27,9 +25,7 @@ const navItems = [
   { key: 'sales', label: 'PDV', icon: ReceiptText },
   { key: 'payments', label: 'Financeiro', icon: WalletCards },
   { key: 'products', label: 'Produtos', icon: Boxes },
-  { key: 'inventory', label: 'Inventario', icon: ClipboardCheck },
   { key: 'sheet', label: 'Planilha', icon: FileSpreadsheet },
-  { key: 'reports', label: 'Relatorios', icon: ClipboardList },
   { key: 'library', label: 'Livraria', icon: BookOpen },
   { key: 'settings', label: 'Sistema', icon: Settings }
 ]

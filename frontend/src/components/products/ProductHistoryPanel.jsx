@@ -6,7 +6,9 @@ export function ProductHistoryPanel({ canEditHistoricalCosts = false, onUpdateSa
   const historyMovements = productHistory?.movements || []
   const historySales = productHistory?.sales || []
   const historyAudit = productHistory?.audit || []
+  const costCorrections = productHistory?.cost_corrections || []
   const [costDrafts, setCostDrafts] = useState({})
+  const [reasonDrafts, setReasonDrafts] = useState({})
 
   return (
     <section className="min-w-0">
@@ -37,10 +39,10 @@ export function ProductHistoryPanel({ canEditHistoricalCosts = false, onUpdateSa
                   <p className="mission-muted break-words">{formatDateTime(sale.created_at)} - {formatQuantityWithUnit(sale.quantity, selectedProduct.unit)} - custo {money.format(sale.unit_cost)}</p>
                   {canEditHistoricalCosts ? (
                     <form
-                      className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]"
+                      className="mt-2 grid gap-2"
                       onSubmit={(event) => {
                         event.preventDefault()
-                        onUpdateSaleItemCost?.(sale, costDrafts[sale.id] ?? sale.unit_cost)
+                        onUpdateSaleItemCost?.(sale, costDrafts[sale.id] ?? sale.unit_cost, reasonDrafts[sale.id] || '')
                       }}
                     >
                       <label className="text-xs font-medium">
@@ -54,12 +56,23 @@ export function ProductHistoryPanel({ canEditHistoricalCosts = false, onUpdateSa
                           onChange={(event) => setCostDrafts((current) => ({ ...current, [sale.id]: event.target.value }))}
                         />
                       </label>
-                      <button type="submit" className="mission-btn mt-auto inline-flex items-center justify-center gap-1 border border-line/80 px-2 py-1.5 text-xs font-semibold dark:border-shalom-gold/10">
+                      <label className="text-xs font-medium">
+                        Motivo da alteracao
+                        <input className="mission-input mt-1 w-full px-2 py-1.5" value={reasonDrafts[sale.id] || ''} onChange={(event) => setReasonDrafts((current) => ({ ...current, [sale.id]: event.target.value }))} required minLength={3} />
+                      </label>
+                      <button type="submit" className="mission-btn inline-flex min-h-10 items-center justify-center gap-1 border border-line/80 px-3 py-2 text-xs font-semibold dark:border-shalom-gold/10">
                         <Save size={13} />
                         Salvar
                       </button>
                     </form>
                   ) : null}
+                  {costCorrections.filter((correction) => correction.sale_item_id === sale.id).map((correction) => (
+                    <div key={correction.id} className="mt-2 border-l-2 border-shalom-blue/25 pl-2 text-xs dark:border-shalom-gold/30">
+                      <p className="font-semibold">{money.format(correction.previous_unit_cost)} para {money.format(correction.new_unit_cost)}</p>
+                      <p className="mission-muted">{correction.reason}</p>
+                      <p className="mission-muted">{formatDateTime(correction.created_at)} - {correction.changed_by_name || '-'}</p>
+                    </div>
+                  ))}
                   {sale.event_name ? <p className="mission-muted mt-1 break-words">{sale.event_name}</p> : null}
                 </div>
               ))}

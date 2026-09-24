@@ -2,7 +2,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Boxes, PackagePlus, Save, Search, Slid
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { api } from '../services/api'
-import { formatDate, formatQuantityWithUnit, money } from '../utils/formatters'
+import { formatDate, formatQuantityWithUnit } from '../utils/formatters'
 import { PaginationControls } from './PaginationControls'
 import { StatusPill } from './StatusPill'
 import { ProductHistoryPanel } from './products/ProductHistoryPanel'
@@ -511,7 +511,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
     }
   }
 
-  async function updateHistoricalSaleItemCost(saleItem, nextUnitCost) {
+  async function updateHistoricalSaleItemCost(saleItem, nextUnitCost, reason) {
     setMessage('')
     const unitCost = Number(nextUnitCost)
     if (!Number.isFinite(unitCost) || unitCost < 0) {
@@ -519,18 +519,15 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       return
     }
 
-    const confirmation = `CORRIGIR CUSTO VENDA ${saleItem.sale_id}`
-    const typed = window.prompt(`Confirme a correcao do custo historico.\n\nVenda #${saleItem.sale_id}\nCusto atual: ${money.format(saleItem.unit_cost)}\nNovo custo: ${money.format(unitCost)}\n\nDigite ${confirmation}`)
-    if (typed !== confirmation) {
-      setMessage(`Digite ${confirmation} para confirmar a correcao.`)
+    if (String(reason || '').trim().length < 3) {
+      setMessage('Informe o motivo da alteracao do custo historico.')
       return
     }
 
     try {
       await api.updateSaleItemCost(saleItem.sale_id, saleItem.id, {
         unit_cost: unitCost,
-        confirmation,
-        reason: `Correcao pelo historico do produto ${selectedProduct?.name || selectedProductId}`
+        reason: String(reason).trim()
       })
       if (selectedProductId) setProductHistory(await api.productHistory(selectedProductId))
       onChanged()

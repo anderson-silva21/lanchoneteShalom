@@ -219,6 +219,14 @@ test('correcao de custo historico recalcula lucro sem alterar preco vendido ou c
   }, { id: userId });
   const saleItem = sale.items[0];
 
+  assert.throws(() => updateSaleItemCost({
+    saleId: sale.id,
+    itemId: saleItem.id,
+    unitCost: 6,
+    userId
+  }), /motivo/);
+  assert.equal(getSaleById(sale.id).items[0].unit_cost, 8);
+
   const result = updateSaleItemCost({
     saleId: sale.id,
     itemId: saleItem.id,

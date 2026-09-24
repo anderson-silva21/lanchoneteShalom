@@ -235,6 +235,33 @@ function ensureLibrarySchema() {
       line_profit REAL NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS library_installment_plans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sale_id INTEGER NOT NULL UNIQUE REFERENCES library_sales(id) ON DELETE RESTRICT,
+      customer_name TEXT NOT NULL,
+      customer_contact TEXT NOT NULL,
+      payment_method TEXT NOT NULL CHECK (payment_method IN ('pix', 'dinheiro')),
+      total_amount REAL NOT NULL CHECK (total_amount >= 0),
+      installment_count INTEGER NOT NULL CHECK (installment_count >= 2),
+      status TEXT NOT NULL DEFAULT 'unpaid' CHECK (status IN ('unpaid', 'partially_paid', 'paid', 'cancelled')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+      cancelled_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS library_installments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      plan_id INTEGER NOT NULL REFERENCES library_installment_plans(id) ON DELETE RESTRICT,
+      installment_number INTEGER NOT NULL,
+      amount REAL NOT NULL CHECK (amount >= 0),
+      due_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'cancelled')),
+      paid_at TEXT,
+      paid_method TEXT,
+      notes TEXT,
+      paid_by INTEGER REFERENCES users(id),
+      UNIQUE(plan_id, installment_number)
+    );
+
     CREATE TABLE IF NOT EXISTS library_sellers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       display_name TEXT NOT NULL,
@@ -296,6 +323,8 @@ function ensureLibrarySchema() {
     CREATE INDEX IF NOT EXISTS idx_library_movements_product_date ON library_inventory_movements(product_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_library_sales_created_at ON library_sales(created_at);
     CREATE INDEX IF NOT EXISTS idx_library_sale_items_sale ON library_sale_items(sale_id);
+    CREATE INDEX IF NOT EXISTS idx_library_installment_plans_status ON library_installment_plans(status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_library_installments_due ON library_installments(status, due_date);
     CREATE INDEX IF NOT EXISTS idx_library_sellers_rotation ON library_sellers(active, eligible, id);
     CREATE INDEX IF NOT EXISTS idx_library_sellers_user ON library_sellers(user_id);
     CREATE INDEX IF NOT EXISTS idx_library_requests_status_created ON library_assisted_requests(status, created_at);
@@ -307,6 +336,7 @@ function ensureLibrarySchema() {
   addColumnIfMissing('library_sales', 'assisted_request_id', 'INTEGER REFERENCES library_assisted_requests(id)');
   addColumnIfMissing('library_sales', 'seller_id', 'INTEGER REFERENCES library_sellers(id)');
   addColumnIfMissing('library_sales', 'payment_installments', 'INTEGER NOT NULL DEFAULT 1');
+  addColumnIfMissing('library_sales', 'customer_contact', 'TEXT');
   addColumnIfMissing('library_assisted_requests', 'customer_name', 'TEXT');
   addColumnIfMissing('library_assisted_requests', 'customer_contact', 'TEXT');
   addColumnIfMissing('library_sellers', 'archived_at', 'TEXT');

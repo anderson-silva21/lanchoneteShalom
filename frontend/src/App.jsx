@@ -8,9 +8,7 @@ import { InitialLoadView } from './components/InitialLoadView'
 import { LibraryManager } from './components/LibraryManager'
 import { LoginScreen } from './components/LoginScreen'
 import { PaymentsView } from './components/PaymentsView'
-import { PostEventInventory } from './components/PostEventInventory'
 import { ProductManager } from './components/ProductManager'
-import { ReportsView } from './components/ReportsView'
 import { SalesTerminal } from './components/SalesTerminal'
 import { SettingsView } from './components/SettingsView'
 import { SpreadsheetView } from './components/SpreadsheetView'
@@ -26,9 +24,7 @@ const viewPaths = {
   sales: '/pdv',
   payments: '/financeiro',
   products: '/produtos',
-  inventory: '/inventario',
   sheet: '/planilha',
-  reports: '/relatorios',
   library: '/gestao-livraria',
   settings: '/sistema'
 }
@@ -52,13 +48,27 @@ const routePageTitles = {
   '/dashboard/estoque-baixo': 'Estoque baixo',
   '/dashboard/validades': 'Alertas de validade',
   '/financeiro/pagamentos-pendentes': 'Pagamentos pendentes',
+  '/sistema/geral': 'Geral',
+  '/sistema/backup': 'Backup',
+  '/sistema/usuarios': 'Usuarios e permissoes',
+  '/sistema/tecnico': 'Configuracoes tecnicas',
   '/gestao-livraria/catalogo/produtos/novo': 'Novo produto',
-  '/gestao-livraria/catalogo/categorias/nova': 'Nova categoria'
+  '/gestao-livraria/catalogo/categorias/nova': 'Nova categoria',
+  '/gestao-livraria/vender/carrinho': 'Carrinho',
+  '/gestao-livraria/vender/cliente': 'Cliente',
+  '/gestao-livraria/vender/pagamento': 'Pagamento',
+  '/gestao-livraria/vender/concluida': 'Venda concluida',
+  '/gestao-livraria/vender/historico': 'Historico de vendas',
+  '/gestao-livraria/planilha/filtros/vendas': 'Filtros de vendas',
+  '/gestao-livraria/planilha/filtros/estoque': 'Filtros de estoque'
 }
 
 function pageTitleFromPath(pathname) {
   if (routePageTitles[pathname]) return routePageTitles[pathname]
   if (/^\/gestao-livraria\/catalogo\/produtos\/[^/]+$/.test(pathname)) return 'Produto'
+  if (/^\/gestao-livraria\/parcelas\/\d+$/.test(pathname)) return 'Parcelamento'
+  if (/^\/planilha\/filtros\/[^/]+$/.test(pathname)) return 'Filtros da planilha'
+  if (/^\/planilha\/editar\/[^/]+\/[^/]+$/.test(pathname)) return 'Detalhes da planilha'
   return ''
 }
 
@@ -77,6 +87,15 @@ function App() {
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('lanchonete_theme') === 'dark')
   const inactivityTimerRef = useRef(null)
   const lastActivityRef = useRef(0)
+
+  useEffect(() => {
+    const redirects = {
+      '/inventario': '/produtos',
+      '/relatorios': '/planilha',
+      '/backup': '/sistema'
+    }
+    if (redirects[location.pathname]) navigate(redirects[location.pathname], { replace: true })
+  }, [location.pathname, navigate])
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode)
@@ -250,16 +269,13 @@ function App() {
   const requestedView = viewFromPath(location.pathname) || activeView
   const currentView = canAccessView(user.role, requestedView, { setupEnabled }) ? requestedView : defaultViewForRole(user.role, { setupEnabled })
   const pageTitle = pageTitleFromPath(location.pathname)
-  const canRegisterInventoryEvent = canAccessView(user.role, 'dashboard', { setupEnabled })
   const views = {
     dashboard: <Dashboard refreshKey={refreshKey} onNavigateToProducts={navigateToProducts} user={user} />,
     setup: <InitialLoadView refreshKey={refreshKey} onChanged={refresh} />,
     sales: <SalesTerminal onSaleComplete={refresh} />,
     payments: <PaymentsView refreshKey={refreshKey} onChanged={refresh} initialSection={financeSectionFromPath(location.pathname)} />,
     products: <ProductManager refreshKey={refreshKey} onChanged={refresh} intent={productIntent} user={user} />,
-    inventory: <PostEventInventory refreshKey={refreshKey} onChanged={refresh} onRegisterEvent={canRegisterInventoryEvent ? () => setActiveView('dashboard') : undefined} />,
     sheet: <SpreadsheetView refreshKey={refreshKey} onChanged={refresh} user={user} />,
-    reports: <ReportsView user={user} />,
     library: <LibraryManager user={user} />,
     settings: <SettingsView user={user} darkMode={darkMode} setDarkMode={setDarkMode} setupEnabled={setupEnabled} onSetupEnabledChange={setSetupEnabled} onChanged={refresh} />
   }

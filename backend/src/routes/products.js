@@ -285,7 +285,25 @@ router.get('/:id/history', requireScreen('products'), (req, res) => {
     metadata: row.metadata ? JSON.parse(row.metadata) : null
   }));
 
-  return res.json({ product, movements, sales, audit });
+  const costCorrections = db.prepare(`
+    SELECT
+      c.id,
+      c.sale_id,
+      c.sale_item_id,
+      c.previous_unit_cost,
+      c.new_unit_cost,
+      c.reason,
+      c.created_at,
+      u.name AS changed_by_name
+    FROM sale_item_cost_corrections c
+    JOIN sale_items si ON si.id = c.sale_item_id
+    LEFT JOIN users u ON u.id = c.changed_by
+    WHERE si.product_id = ?
+    ORDER BY datetime(c.created_at) DESC, c.id DESC
+    LIMIT 80
+  `).all(product.id);
+
+  return res.json({ product, movements, sales, audit, cost_corrections: costCorrections });
 });
 
 router.post('/', requireScreen('products'), (req, res) => {
