@@ -1,9 +1,13 @@
+import { ValidatedForm, FormControl } from './ValidatedForm'
+import { reportFormError, serverFieldErrors } from '../utils/formValidation'
 import { ArrowLeft, BadgePercent, ChevronRight, Minus, PackagePlus, Plus, Search, ShoppingCart, Trash2, UserRound } from 'lucide-react'
 import { memo, useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { api } from '../services/api'
 import { decimal, formatQuantityWithUnit, money } from '../utils/formatters'
 import { addPosCartItem, changePosCartQuantity, getPosCartSummary } from '../utils/posCart'
 import { SaleConfirmationModal } from './sales/SaleConfirmationModal'
+
+const pendingCustomerMessage = 'Informe o nome do cliente para registrar uma venda com pagamento pendente.'
 
 function createEmptyComboDraft() {
   return {
@@ -120,9 +124,9 @@ function PosCatalog({ products, combos, cart, total, itemCount, message, catalog
   )
 }
 
-function PosCart({ cart, total, payment, customerName, notes, loading, message, onBack, onChangeQty, onPaymentChange, onCustomerChange, onNotesChange, onCheckout }) {
+function PosCart({ cart, total, payment, customerName, notes, loading, message, onBack, onChangeQty, onPaymentChange, onCustomerChange, onNotesChange, onCheckout, formRef }) {
   return (
-    <section className={`pos-view mx-auto min-w-0 max-w-3xl ${cart.length ? 'pos-view-with-action' : ''}`}>
+    <ValidatedForm ref={formRef} scrollToError className={`pos-view mx-auto min-w-0 max-w-3xl ${cart.length ? 'pos-view-with-action' : ''}`} onSubmit={(event) => { event.preventDefault(); onCheckout() }}>
       <header className="mb-2 flex items-center gap-2 border-b border-line/80 pb-3 dark:border-shalom-gold/10">
         <button type="button" className="flex h-11 w-11 items-center justify-center rounded-md" onClick={onBack} aria-label="Voltar ao catalogo"><ArrowLeft size={22} /></button>
         <div><h2 className="font-display text-xl font-semibold">Carrinho</h2><p className="mission-muted text-xs">{cart.length ? 'Revise os itens e o pagamento' : 'Sua venda ainda nao tem itens'}</p></div>
@@ -139,15 +143,15 @@ function PosCart({ cart, total, payment, customerName, notes, loading, message, 
       ))}</div> : <div className="py-16 text-center"><ShoppingCart className="mx-auto mission-muted" size={30} /><p className="mt-3 font-semibold">Carrinho vazio</p><button type="button" className="mt-3 min-h-11 px-4 font-semibold text-shalom-blue dark:text-shalom-gold" onClick={onBack}>Adicionar produtos</button></div>}
 
       {cart.length ? <div className="mt-3 border-t border-line/80 pt-4 dark:border-shalom-gold/10">
-        <label className="block text-sm font-medium">Pagamento<select className="mission-input mt-2 h-11 w-full px-3" value={payment} onChange={(event) => onPaymentChange(event.target.value)}><option value="pix">Pix</option><option value="cartao">Cartao</option><option value="dinheiro">Dinheiro</option><option value="pagamento_pendente">Pagamento pendente</option></select></label>
-        {payment === 'pagamento_pendente' ? <label className="mt-4 block text-sm font-medium">Pessoa/cliente<input className="mission-input mt-2 h-11 w-full px-3" value={customerName} onChange={(event) => onCustomerChange(event.target.value)} placeholder="Nome de quem ficou pendente" /></label> : null}
-        <label className="mt-4 block text-sm font-medium">Observacoes<textarea className="mission-input mt-2 min-h-20 w-full px-3 py-2" value={notes} onChange={(event) => onNotesChange(event.target.value)} /></label>
+        <label className="block text-sm font-medium">Pagamento<FormControl unframed as="select" name="payment_method" className="mission-input mt-2 h-11 w-full px-3" value={payment} onChange={(event) => onPaymentChange(event.target.value)}><option value="pix">Pix</option><option value="cartao">Cartao</option><option value="dinheiro">Dinheiro</option><option value="pagamento_pendente">Pagamento pendente</option></FormControl></label>
+        {payment === 'pagamento_pendente' ? <label className="mt-4 block text-sm font-medium">Pessoa/cliente<FormControl unframed name="customer_name" required={payment === 'pagamento_pendente'} data-required-message={pendingCustomerMessage} className="mission-input mt-2 h-11 w-full px-3" value={customerName} onChange={(event) => onCustomerChange(event.target.value)} placeholder="Nome de quem ficou pendente" /></label> : null}
+        <label className="mt-4 block text-sm font-medium">Observacoes<FormControl unframed as="textarea" name="notes" className="mission-input mt-2 min-h-20 w-full px-3 py-2" value={notes} onChange={(event) => onNotesChange(event.target.value)} /></label>
         {message ? <p className="mt-3 border-l-4 border-shalom-orange bg-white/60 px-3 py-2 text-sm dark:bg-white/5" role="status">{message}</p> : null}
         <div className="mt-5 flex items-center justify-between border-t border-line/80 pt-4 dark:border-shalom-gold/10"><span className="mission-muted">Total</span><strong className="font-display text-2xl text-shalom-blue dark:text-shalom-gold">{money.format(total)}</strong></div>
       </div> : null}
 
-      {cart.length ? <div className="pos-action-bar fixed inset-x-3 z-30 md:sticky md:inset-x-auto md:bottom-4 md:mt-6"><button type="button" className="mission-btn mission-btn-primary mx-auto flex min-h-14 w-full max-w-2xl items-center justify-between gap-2 px-4 py-3 text-sm font-semibold shadow-blue sm:text-base" onClick={onCheckout} disabled={loading}><span className="whitespace-nowrap">{loading ? 'Registrando...' : <><span className="hidden min-[360px]:inline">Continuar para </span>pagamento</>}</span><span className="flex shrink-0 items-center gap-1 whitespace-nowrap">{money.format(total)} <ChevronRight size={20} /></span></button></div> : null}
-    </section>
+      {cart.length ? <div className="pos-action-bar fixed inset-x-3 z-30 md:sticky md:inset-x-auto md:bottom-4 md:mt-6"><button type="submit" className="mission-btn mission-btn-primary mx-auto flex min-h-14 w-full max-w-2xl items-center justify-between gap-2 px-4 py-3 text-sm font-semibold shadow-blue sm:text-base" disabled={loading}><span className="whitespace-nowrap">{loading ? 'Registrando...' : <><span className="hidden min-[360px]:inline">Continuar para </span>pagamento</>}</span><span className="flex shrink-0 items-center gap-1 whitespace-nowrap">{money.format(total)} <ChevronRight size={20} /></span></button></div> : null}
+    </ValidatedForm>
   )
 }
 
@@ -345,6 +349,12 @@ export function SalesTerminal({ onSaleComplete }) {
   const [catalogLoading, setCatalogLoading] = useState(true)
   const [catalogError, setCatalogError] = useState('')
   const saleSubmissionRef = useRef(false)
+  const cartFormRef = useRef(null)
+  const [cartError, setCartError] = useState(null)
+
+  useEffect(() => {
+    if (cartError && !showSaleConfirmation) reportFormError(cartFormRef.current, cartError)
+  }, [cartError, showSaleConfirmation])
 
   const loadData = useCallback(async () => {
     setCatalogLoading(true)
@@ -412,7 +422,7 @@ function validateSale() {
   }
 
   if (payment === 'pagamento_pendente' && !customerName.trim()) {
-    return 'Informe a pessoa ou cliente do pagamento pendente.'
+    return pendingCustomerMessage
   }
 
   return ''
@@ -479,7 +489,13 @@ function closeSaleConfirmation() {
         setMessage(`Venda #${sale.id} registrada: ${money.format(sale.total)}. Nao foi possivel atualizar a tela: ${refreshError.message}`)
       }
     } catch (err) {
-      setConfirmationError(err.message)
+      if (cartFormRef.current && Object.keys(serverFieldErrors(cartFormRef.current, err)).length) {
+        setShowSaleConfirmation(false)
+        setCartError(err)
+        setConfirmationError('')
+      } else {
+        setConfirmationError(err.message)
+      }
     } finally {
       saleSubmissionRef.current = false
       setLoading(false)
@@ -504,6 +520,7 @@ function closeSaleConfirmation() {
         />
       ) : (
         <PosCart
+          formRef={cartFormRef}
           cart={cart}
           total={total}
           payment={payment}
@@ -513,8 +530,8 @@ function closeSaleConfirmation() {
           message={message}
           onBack={() => setMobileView('catalog')}
           onChangeQty={changeQty}
-          onPaymentChange={setPayment}
-          onCustomerChange={setCustomerName}
+          onPaymentChange={(value) => { setCartError(null); setPayment(value) }}
+          onCustomerChange={(value) => { setCartError(null); setCustomerName(value) }}
           onNotesChange={setNotes}
           onCheckout={openSaleConfirmation}
         />

@@ -470,6 +470,40 @@ button:disabled {
     color: #f8f8f8;
   }
 
+  [aria-invalid="true"] {
+    border: 2px solid #9f2444;
+  }
+
+  .mission-input[aria-invalid="true"]:focus {
+    border-color: #9f2444;
+    box-shadow: 0 0 0 3px rgba(159, 36, 68, 0.18);
+  }
+
+  .dark .mission-input[aria-invalid="true"] {
+    border-color: #fda4af;
+  }
+
+  .form-field-error {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.375rem;
+    margin-top: 0.375rem;
+    color: #9f2444;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+
+  .form-field-error svg {
+    flex-shrink: 0;
+    margin-top: 0.125rem;
+  }
+
+  .dark .form-field-error {
+    color: #fda4af;
+  }
+
   .mission-btn {
     border-radius: 14px;
     transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, border-color 160ms ease;

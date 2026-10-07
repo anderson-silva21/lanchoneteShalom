@@ -21,6 +21,9 @@ const saleSchema = z.object({
     comboId: z.coerce.number().optional(),
     quantity: z.coerce.number().positive().default(1)
   })).min(1)
+}).refine((payload) => payload.payment_method?.trim() !== 'pagamento_pendente' || Boolean(payload.customer_name), {
+  path: ['customer_name'],
+  message: 'Informe o nome do cliente para registrar uma venda com pagamento pendente.'
 });
 
 const eventSchema = z.object({

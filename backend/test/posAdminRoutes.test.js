@@ -14,6 +14,7 @@ const { signUser } = require('../src/middleware/auth');
 const comboRoutes = require('../src/routes/combos');
 const productRoutes = require('../src/routes/products');
 const errorHandler = require('../src/middleware/errorHandler');
+const salesRoutes = require('../src/routes/sales');
 
 initDatabase();
 const app = express();
@@ -21,6 +22,7 @@ app.use(express.json());
 app.use((req, res, next) => { req.id = 'pos-admin-test'; next(); });
 app.use('/api/combos', comboRoutes);
 app.use('/api/products', productRoutes);
+app.use('/api/sales', salesRoutes);
 app.use(errorHandler);
 const server = app.listen(0, '127.0.0.1');
 let baseUrl;
@@ -44,6 +46,24 @@ test.before(async () => {
 });
 
 test.after(() => { server.close(); db.close(); fs.rmSync(tempDir, { recursive: true, force: true }); });
+
+test('API identifica customer_name quando pagamento pendente esta sem cliente', async () => {
+  for (const customerName of [undefined, null, '', '   ']) {
+    const response = await fetch(`${baseUrl}/sales`, {
+      method: 'POST', headers: auth('cashier'), body: JSON.stringify({
+        payment_method: 'pagamento_pendente', customer_name: customerName,
+        notes: 'Dados devem ser preservados', items: [{ product_id: productId, quantity: 1 }]
+      })
+    });
+    assert.equal(response.status, 400);
+    const body = await response.json();
+    assert.deepEqual(body.issues?.map(({ path, message }) => ({ path, message })), [{
+      path: ['customer_name'], message: 'Informe o nome do cliente para registrar uma venda com pagamento pendente.'
+    }]);
+  }
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sales').get().count, 0);
+  assert.equal(db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get(productId).stock_quantity, 20);
+});
 
 test('caixa visualiza combos para vender mas nao administra', async () => {
   const payload = { name: 'Combo Cafe', sale_price: 4, is_promotion: true, expires_at: null, active: true, items: [{ product_id: productId, quantity: 1 }] };
