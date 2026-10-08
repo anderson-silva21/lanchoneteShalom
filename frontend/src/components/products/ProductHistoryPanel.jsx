@@ -1,3 +1,4 @@
+import { ValidatedForm, FormControl } from '../ValidatedForm'
 import { Save } from 'lucide-react'
 import { useState } from 'react'
 import { formatDateTime, formatQuantityWithUnit, money } from '../../utils/formatters'
@@ -38,16 +39,16 @@ export function ProductHistoryPanel({ canEditHistoricalCosts = false, onUpdateSa
                   <p className="font-semibold">Venda #{sale.sale_id} - {money.format(sale.line_total)}</p>
                   <p className="mission-muted break-words">{formatDateTime(sale.created_at)} - {formatQuantityWithUnit(sale.quantity, selectedProduct.unit)} - custo {money.format(sale.unit_cost)}</p>
                   {canEditHistoricalCosts ? (
-                    <form
+                    <ValidatedForm
                       className="mt-2 grid gap-2"
                       onSubmit={(event) => {
                         event.preventDefault()
-                        onUpdateSaleItemCost?.(sale, costDrafts[sale.id] ?? sale.unit_cost, reasonDrafts[sale.id] || '')
+                        onUpdateSaleItemCost?.(sale, costDrafts[sale.id] ?? sale.unit_cost, reasonDrafts[sale.id] || '', event.currentTarget)
                       }}
                     >
                       <label className="text-xs font-medium">
                         Custo da venda
-                        <input
+                        <FormControl unframed name="unit_cost" required
                           type="number"
                           min="0"
                           step="0.01"
@@ -58,13 +59,13 @@ export function ProductHistoryPanel({ canEditHistoricalCosts = false, onUpdateSa
                       </label>
                       <label className="text-xs font-medium">
                         Motivo da alteracao
-                        <input className="mission-input mt-1 w-full px-2 py-1.5" value={reasonDrafts[sale.id] || ''} onChange={(event) => setReasonDrafts((current) => ({ ...current, [sale.id]: event.target.value }))} required minLength={3} />
+                        <FormControl unframed name="reason" className="mission-input mt-1 w-full px-2 py-1.5" value={reasonDrafts[sale.id] || ''} onChange={(event) => setReasonDrafts((current) => ({ ...current, [sale.id]: event.target.value }))} required minLength={3} />
                       </label>
                       <button type="submit" className="mission-btn inline-flex min-h-10 items-center justify-center gap-1 border border-line/80 px-3 py-2 text-xs font-semibold dark:border-shalom-gold/10">
                         <Save size={13} />
                         Salvar
                       </button>
-                    </form>
+                    </ValidatedForm>
                   ) : null}
                   {costCorrections.filter((correction) => correction.sale_item_id === sale.id).map((correction) => (
                     <div key={correction.id} className="mt-2 border-l-2 border-shalom-blue/25 pl-2 text-xs dark:border-shalom-gold/30">

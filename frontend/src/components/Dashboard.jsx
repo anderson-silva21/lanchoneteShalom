@@ -1,3 +1,5 @@
+import { ValidatedForm, FormControl } from './ValidatedForm'
+import { reportFormError } from '../utils/formValidation'
 import {
   Boxes,
   CalendarPlus,
@@ -161,6 +163,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
   }
 
   async function registerEvent(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     setEventSaving(true)
     setEventMessage('')
@@ -172,6 +175,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
       await loadEvents()
       setReloadKey((key) => key + 1)
     } catch (err) {
+      reportFormError(validationForm, err)
       setEventMessage(err.message)
     } finally {
       setEventSaving(false)
@@ -190,6 +194,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
   }
 
   async function saveEventEdit(formEvent) {
+    const validationForm = formEvent.currentTarget
     formEvent.preventDefault()
     setEventUpdatingId(editingEventId)
     setEventMessage('')
@@ -202,6 +207,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
       await loadEvents()
       setReloadKey((key) => key + 1)
     } catch (err) {
+      reportFormError(validationForm, err)
       setEventMessage(err.message)
     } finally {
       setEventUpdatingId('')
@@ -459,10 +465,10 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
         <DashboardPage
           description="Todas as vendas realizadas nesta data serao vinculadas automaticamente ao evento."
         >
-          <form className="space-y-4" onSubmit={registerEvent}>
+          <ValidatedForm className="space-y-4" onSubmit={registerEvent}>
             <label className="block text-sm font-medium">
               Usar nome existente
-              <select
+              <FormControl unframed as="select"
                 className="mission-input mt-2 w-full px-3 py-2.5"
                 value={eventNameOptions.includes(eventDraft.name) ? eventDraft.name : ''}
                 onChange={(event) => setEventDraft((current) => ({ ...current, name: event.target.value }))}
@@ -471,11 +477,11 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
                 {eventNameOptions.map((name) => (
                   <option key={name} value={name}>{name}</option>
                 ))}
-              </select>
+              </FormControl>
             </label>
             <label className="block text-sm font-medium">
               Nome do evento
-              <input
+              <FormControl minLength={2} unframed name="name"
                 className="mission-input mt-2 w-full px-3 py-2.5"
                 value={eventDraft.name}
                 onChange={(event) => setEventDraft((current) => ({ ...current, name: event.target.value }))}
@@ -485,7 +491,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
             </label>
             <label className="block text-sm font-medium">
               Data do evento
-              <input
+              <FormControl unframed name="event_date"
                 className="mission-input mt-2 w-full px-3 py-2.5"
                 type="date"
                 value={eventDraft.event_date}
@@ -495,7 +501,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
             </label>
             <label className="block text-sm font-medium">
               Observacoes
-              <textarea
+              <FormControl unframed as="textarea" name="notes"
                 className="mission-input mt-2 min-h-20 w-full px-3 py-2.5"
                 value={eventDraft.notes}
                 onChange={(event) => setEventDraft((current) => ({ ...current, notes: event.target.value }))}
@@ -520,7 +526,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
               <CalendarPlus size={18} />
               {eventSaving ? 'Registrando...' : 'Registrar evento'}
             </button>
-          </form>
+          </ValidatedForm>
 
           <div className="mt-5 border-t border-line/80 pt-4 dark:border-shalom-gold/10">
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -536,11 +542,11 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
               <div className="divide-y divide-line/70 dark:divide-shalom-gold/10">
                 {events.map((item) => (
                   editingEventId === String(item.id) ? (
-                    <form key={item.id} className="space-y-3 py-4" onSubmit={saveEventEdit}>
+                    <ValidatedForm key={item.id} className="space-y-3 py-4" onSubmit={saveEventEdit}>
                       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
                         <label className="text-sm font-medium">
                           Nome
-                          <input
+                          <FormControl minLength={2} unframed name="name"
                             className="mission-input mt-1 w-full px-3 py-2"
                             value={eventEditDraft.name}
                             onChange={(event) => setEventEditDraft((current) => ({ ...current, name: event.target.value }))}
@@ -549,7 +555,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
                         </label>
                         <label className="text-sm font-medium">
                           Data
-                          <input
+                          <FormControl unframed name="event_date"
                             className="mission-input mt-1 w-full px-3 py-2"
                             type="date"
                             value={eventEditDraft.event_date}
@@ -576,7 +582,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
                           {eventUpdatingId === String(item.id) ? 'Salvando...' : 'Salvar'}
                         </button>
                       </div>
-                    </form>
+                    </ValidatedForm>
                   ) : (
                     <article key={item.id} className="py-3">
                       <div className="flex items-start justify-between gap-3">

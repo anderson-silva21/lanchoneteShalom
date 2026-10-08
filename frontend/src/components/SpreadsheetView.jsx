@@ -1,3 +1,5 @@
+import { ValidatedForm, FormControl } from './ValidatedForm'
+import { reportFormError } from '../utils/formValidation'
 import { ChevronDown, ChevronRight, Download, Filter, Save, Search, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -43,7 +45,7 @@ function DeleteSaleModal({ sale, confirmation, deleting, onConfirmationChange, o
           </button>
         </div>
 
-        <form className="dashboard-modal-body scrollbar-thin space-y-4 p-4" onSubmit={onConfirm}>
+        <ValidatedForm className="dashboard-modal-body scrollbar-thin space-y-4 p-4" onSubmit={onConfirm}>
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
             <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
               <dt className="mission-muted">Data</dt>
@@ -65,7 +67,7 @@ function DeleteSaleModal({ sale, confirmation, deleting, onConfirmationChange, o
 
           <label className="block text-sm font-medium">
             Confirmacao
-            <input
+            <FormControl unframed name="confirmation"
               className="mission-input mt-2 w-full px-3 py-2.5"
               value={confirmation}
               onChange={(event) => onConfirmationChange(event.target.value)}
@@ -82,7 +84,7 @@ function DeleteSaleModal({ sale, confirmation, deleting, onConfirmationChange, o
             <Trash2 size={17} />
             {deleting ? 'Excluindo...' : 'Excluir venda'}
           </button>
-        </form>
+        </ValidatedForm>
       </section>
     </div>,
     document.body
@@ -105,7 +107,7 @@ function DeleteProductModal({ product, confirmation, deleting, onConfirmationCha
           </button>
         </div>
 
-        <form className="dashboard-modal-body scrollbar-thin space-y-4 p-4" onSubmit={onConfirm}>
+        <ValidatedForm className="dashboard-modal-body scrollbar-thin space-y-4 p-4" onSubmit={onConfirm}>
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
             <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
               <dt className="mission-muted">Produto</dt>
@@ -127,7 +129,7 @@ function DeleteProductModal({ product, confirmation, deleting, onConfirmationCha
 
           <label className="block text-sm font-medium">
             Confirmacao
-            <input
+            <FormControl unframed name="confirmation"
               className="mission-input mt-2 w-full px-3 py-2.5"
               value={confirmation}
               onChange={(event) => onConfirmationChange(event.target.value)}
@@ -144,7 +146,7 @@ function DeleteProductModal({ product, confirmation, deleting, onConfirmationCha
             <Trash2 size={17} />
             {deleting ? 'Excluindo...' : 'Excluir produto'}
           </button>
-        </form>
+        </ValidatedForm>
       </section>
     </div>,
     document.body
@@ -324,6 +326,7 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
   }
 
   async function deleteSelectedSale(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     if (!saleToDelete) return
 
@@ -349,6 +352,7 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
       setMessage(result.message || `Venda #${saleToDelete.venda_id} excluida.`)
       if (isEditRoute) closeEditor()
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     } finally {
       setDeletingSale(false)
@@ -362,6 +366,7 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
   }
 
   async function deleteSelectedProduct(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     if (!productToDelete) return
 
@@ -383,13 +388,14 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
       setMessage(result.message || `Produto ${deletedProduct.produto} excluido.`)
       if (isEditRoute) closeEditor()
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     } finally {
       setDeletingProduct(false)
     }
   }
 
-  async function saveRow(row) {
+  async function saveRow(row, validationForm) {
     setMessage('')
     try {
       if (activeSheet === 'produtos') {
@@ -440,6 +446,7 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
 
       setMessage('Somente Produtos e Vendas permitem edicao rapida.')
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     }
   }
@@ -516,7 +523,8 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
     const canEditObservation = canEditNotes && ['vendas', 'movimentacoes'].includes(activeSheet) && column === 'observacoes'
 
     if (editable || canEditObservation) {
-      return <input className="mission-input min-w-0 w-full px-2 py-1.5" value={row[column] ?? ''} onChange={(event) => updateCell(rowId, column, event.target.value)} />
+      const numeric = ['custo', 'preco', 'estoque', 'estoque_minimo'].includes(column)
+      return <FormControl unframed name={column} type={numeric ? 'number' : column === 'validade' ? 'date' : 'text'} min={numeric ? '0' : undefined} step={numeric ? 'any' : undefined} required={['produto', 'categoria'].includes(column)} minLength={['produto', 'categoria'].includes(column) ? 2 : undefined} className="mission-input min-w-0 w-full px-2 py-1.5" value={row[column] ?? ''} onChange={(event) => updateCell(rowId, column, event.target.value)} />
     }
     if (canConfirmPayment) {
       return <select className="mission-input w-full min-w-0 px-2 py-1.5" value={row[column] || ''} onChange={(event) => updateCell(rowId, column, event.target.value)}><option value="pagamento_pendente" disabled>Pagamento pendente</option>{confirmedPaymentMethods.map((method) => <option key={method} value={method}>{getPaymentLabel(method)}</option>)}</select>
@@ -625,7 +633,7 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
             <h2 className="min-w-0 break-words font-display text-lg font-semibold">{mobileRowTitle(editRow)}</h2>
             <p className="mission-muted mt-1 text-sm">{sheetLabel(sheets.find((sheet) => sheet.key === activeSheet) || { key: activeSheet, label: activeSheet })}</p>
           </div>
-          <form className="grid min-w-0 gap-4 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); saveRow(editRow) }}>
+          <ValidatedForm key={getRowId(editRow)} className="grid min-w-0 gap-4 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); saveRow(editRow, event.currentTarget) }}>
             {columns.filter((column) => canViewCosts || !['custo', 'custo_unitario', 'lucro', 'lucro_estimado'].includes(column)).map((column) => (
               <label key={column} className={`grid min-w-0 gap-1 text-sm font-medium ${['produto', 'item', 'observacoes'].includes(column) ? 'sm:col-span-2' : ''}`}>
                 {columnLabel(column)}
@@ -642,7 +650,7 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
                 {canSaveEditor ? <button type="submit" className="mission-btn mission-btn-primary inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold"><Save size={16} /> Salvar</button> : <span />}
               </div>
             </div>
-          </form>
+          </ValidatedForm>
         </> : <p className="mission-muted py-10 text-center text-sm">Carregando detalhes...</p>}
 
         {saleToDelete ? <DeleteSaleModal sale={saleToDelete} confirmation={deleteConfirmation} deleting={deletingSale} onConfirmationChange={setDeleteConfirmation} onClose={() => { if (!deletingSale) { setSaleToDelete(null); setDeleteConfirmation('') } }} onConfirm={deleteSelectedSale} /> : null}
@@ -653,7 +661,7 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
 
   if (isFilterRoute) {
     return (
-      <form className="mx-auto grid w-full min-w-0 max-w-3xl gap-6" onSubmit={applyFilters}>
+      <ValidatedForm className="mx-auto grid w-full min-w-0 max-w-3xl gap-6" onSubmit={applyFilters}>
         <p className="mission-muted text-sm">Refine os dados de {sheetLabel(sheets.find((sheet) => sheet.key === activeSheet) || { key: activeSheet, label: 'planilha' })}. A busca por texto continua na tela principal.</p>
         {filterFields.length ? (
           <div className="grid gap-4 sm:grid-cols-2">
@@ -661,12 +669,12 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
               <label key={field.key} className="grid gap-1 text-sm font-medium">
                 {field.label}
                 {field.type === 'date' ? (
-                  <input type="date" className="mission-input w-full min-w-0 px-3 py-2.5" value={filterDraft[field.key] || ''} onChange={(event) => setFilterDraft((current) => ({ ...current, [field.key]: event.target.value }))} />
+                  <FormControl unframed type="date" className="mission-input w-full min-w-0 px-3 py-2.5" value={filterDraft[field.key] || ''} onChange={(event) => setFilterDraft((current) => ({ ...current, [field.key]: event.target.value }))} />
                 ) : (
-                  <select className="mission-input w-full min-w-0 px-3 py-2.5" value={filterDraft[field.key] || ''} onChange={(event) => setFilterDraft((current) => ({ ...current, [field.key]: event.target.value }))}>
+                  <FormControl unframed as="select" className="mission-input w-full min-w-0 px-3 py-2.5" value={filterDraft[field.key] || ''} onChange={(event) => setFilterDraft((current) => ({ ...current, [field.key]: event.target.value }))}>
                     <option value="">Todos</option>
                     {field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                  </select>
+                  </FormControl>
                 )}
               </label>
             ))}
@@ -679,7 +687,7 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
             <button type="submit" className="mission-btn mission-btn-primary px-4 py-2.5 text-sm font-semibold">Aplicar filtros</button>
           </div>
         </div>
-      </form>
+      </ValidatedForm>
     )
   }
 

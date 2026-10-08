@@ -1,3 +1,5 @@
+import { ValidatedForm, FormControl } from './ValidatedForm'
+import { reportFormError } from '../utils/formValidation'
 import { LockKeyhole, Sparkles } from 'lucide-react'
 import { useState } from 'react'
 import { BrandMark } from './BrandMark'
@@ -9,12 +11,14 @@ export function LoginScreen({ onLogin }) {
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     setError('')
     setLoading(true)
     try {
       await onLogin(username, password)
     } catch (err) {
+      reportFormError(validationForm, err)
       setError(err.message)
     } finally {
       setLoading(false)
@@ -34,10 +38,10 @@ export function LoginScreen({ onLogin }) {
           </div>
         </div>
 
-        <form className="space-y-4" onSubmit={handleSubmit}>
+        <ValidatedForm className="space-y-4" onSubmit={handleSubmit}>
           <label className="block text-sm font-medium">
             Usuario
-            <input
+            <FormControl unframed name="username" required
               className="mission-input mt-2 w-full px-3 py-3"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
@@ -47,7 +51,7 @@ export function LoginScreen({ onLogin }) {
           </label>
           <label className="block text-sm font-medium">
             Senha
-            <input
+            <FormControl unframed name="password" required
               className="mission-input mt-2 w-full px-3 py-3"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
@@ -60,7 +64,7 @@ export function LoginScreen({ onLogin }) {
             <LockKeyhole size={18} />
             {loading ? 'Entrando...' : 'Entrar'}
           </button>
-        </form>
+        </ValidatedForm>
 
         <div className="gold-line my-5" />
 

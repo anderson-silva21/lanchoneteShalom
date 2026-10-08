@@ -52,7 +52,7 @@ router.post('/', (req, res) => {
 
   const email = emailForUsername(payload.username);
   const existing = db.prepare('SELECT id FROM users WHERE username = ? OR email = ?').get(payload.username, email);
-  if (existing) return res.status(409).json({ message: 'Ja existe um usuario com esse username.' });
+  if (existing) return res.status(409).json({ message: 'Ja existe um usuario com esse username.', fieldErrors: { username: 'Este usuario ja existe. Escolha outro nome de usuario.' } });
 
   const temporaryPassword = generateTemporaryPassword();
   const result = db.prepare(`

@@ -1,3 +1,5 @@
+import { ValidatedForm, FormControl } from './ValidatedForm'
+import { reportFormError } from '../utils/formValidation'
 import { ArrowLeft, Minus, MessageCircle, Plus, Search, ShoppingCart, Store, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../services/api'
@@ -114,6 +116,7 @@ export function PublicLibraryStorefront() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [message, setMessage] = useState('')
+  const [identifyError, setIdentifyError] = useState('')
   const [controlsFocused, setControlsFocused] = useState(false)
   const selectedId = useMemo(() => productIdFromPath(), [])
   const controlsHidden = useMobileScrollVisibility({
@@ -189,9 +192,10 @@ export function PublicLibraryStorefront() {
     setCart({ items: [], requestKey: newRequestKey(), requestReference: '' })
   }
 
-  async function continueWhatsApp() {
+  async function continueWhatsApp(form) {
     if (!cart.items.length) return
     setSending(true)
+    setIdentifyError('')
     setMessage('')
     try {
       const request = await api.createPublicLibraryRequest({
@@ -209,6 +213,8 @@ export function PublicLibraryStorefront() {
         setMessage(`Carrinho ${request.reference} salvo. A Livraria ainda nao possui vendedor disponivel para WhatsApp.`)
       }
     } catch (err) {
+      reportFormError(form, err)
+      setIdentifyError(err.message)
       setMessage(err.message)
     } finally {
       setSending(false)
@@ -414,9 +420,9 @@ export function PublicLibraryStorefront() {
 
       {identifyOpen ? (
         <div className="dashboard-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="library-identify-title">
-          <form className="dashboard-modal-panel mission-panel p-4" onSubmit={(event) => {
+          <ValidatedForm className="dashboard-modal-panel mission-panel p-4" onSubmit={(event) => {
             event.preventDefault()
-            continueWhatsApp()
+            continueWhatsApp(event.currentTarget)
           }}>
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -428,14 +434,15 @@ export function PublicLibraryStorefront() {
               </button>
             </div>
             <div className="mt-4 grid gap-3">
-              <input className="mission-input px-3 py-3" value={customer.customer_name} onChange={(event) => setCustomer({ ...customer, customer_name: event.target.value })} placeholder="Seu nome" required minLength={2} maxLength={120} />
-              <input className="mission-input px-3 py-3" value={customer.customer_contact} onChange={(event) => setCustomer({ ...customer, customer_contact: event.target.value })} placeholder="WhatsApp com DDD" required minLength={10} maxLength={24} inputMode="tel" />
+              <label className="text-sm font-medium">Seu nome<FormControl unframed name="customer_name" className="mission-input mt-1 w-full px-3 py-3" value={customer.customer_name} onChange={(event) => { setIdentifyError(''); setCustomer({ ...customer, customer_name: event.target.value }) }} required minLength={2} maxLength={120} /></label>
+              <label className="text-sm font-medium">WhatsApp com DDD<FormControl unframed name="customer_contact" className="mission-input mt-1 w-full px-3 py-3" value={customer.customer_contact} onChange={(event) => { setIdentifyError(''); setCustomer({ ...customer, customer_contact: event.target.value }) }} required minLength={10} maxLength={24} inputMode="tel" data-format="phone" /></label>
             </div>
+            {identifyError ? <p className="form-field-error" role="alert">{identifyError}</p> : null}
             <button type="submit" className="mission-btn mission-btn-primary mt-4 inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" disabled={sending}>
               <MessageCircle size={18} />
               {sending ? 'Abrindo WhatsApp...' : 'Falar com a Livraria'}
             </button>
-          </form>
+          </ValidatedForm>
         </div>
       ) : null}
     </div>

@@ -1,3 +1,5 @@
+import { ValidatedForm, FormControl } from './ValidatedForm'
+import { reportFormError } from '../utils/formValidation'
 import { KeyRound, LockKeyhole } from 'lucide-react'
 import { useState } from 'react'
 import { BrandMark } from './BrandMark'
@@ -10,23 +12,15 @@ export function ChangePasswordScreen({ user, onChangePassword, onLogout }) {
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     setMessage('')
-
-    if (newPassword.length < 6) {
-      setMessage('A nova senha deve ter pelo menos 6 caracteres.')
-      return
-    }
-
-    if (newPassword !== confirmPassword) {
-      setMessage('A confirmacao da senha nao confere.')
-      return
-    }
 
     setLoading(true)
     try {
       await onChangePassword(currentPassword, newPassword)
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     } finally {
       setLoading(false)
@@ -46,10 +40,10 @@ export function ChangePasswordScreen({ user, onChangePassword, onLogout }) {
           </div>
         </div>
 
-        <form className="space-y-4" onSubmit={handleSubmit}>
+        <ValidatedForm className="space-y-4" onSubmit={handleSubmit}>
           <label className="block text-sm font-medium">
             Senha temporaria
-            <input
+            <FormControl unframed name="current_password" required
               className="mission-input mt-2 w-full px-3 py-3"
               value={currentPassword}
               onChange={(event) => setCurrentPassword(event.target.value)}
@@ -59,7 +53,7 @@ export function ChangePasswordScreen({ user, onChangePassword, onLogout }) {
           </label>
           <label className="block text-sm font-medium">
             Nova senha
-            <input
+            <FormControl unframed name="new_password" required minLength={6}
               className="mission-input mt-2 w-full px-3 py-3"
               value={newPassword}
               onChange={(event) => setNewPassword(event.target.value)}
@@ -69,7 +63,7 @@ export function ChangePasswordScreen({ user, onChangePassword, onLogout }) {
           </label>
           <label className="block text-sm font-medium">
             Confirmar nova senha
-            <input
+            <FormControl unframed name="confirm_password" required data-match="new_password"
               className="mission-input mt-2 w-full px-3 py-3"
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
@@ -82,7 +76,7 @@ export function ChangePasswordScreen({ user, onChangePassword, onLogout }) {
             <LockKeyhole size={18} />
             {loading ? 'Salvando...' : 'Salvar nova senha'}
           </button>
-        </form>
+        </ValidatedForm>
 
         <button
           type="button"

@@ -191,6 +191,7 @@ export function ComboCreatorModal({ products, onClose, onCreated, initialCombo =
   }
 
   async function submit(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     setMessage('')
 
@@ -215,6 +216,7 @@ export function ComboCreatorModal({ products, onClose, onCreated, initialCombo =
       const combo = initialCombo ? await api.updateCombo(initialCombo.id, payload) : await api.createCombo(payload)
       onCreated(combo)
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     } finally {
       setSaving(false)
@@ -233,7 +235,7 @@ export function ComboCreatorModal({ products, onClose, onCreated, initialCombo =
           </div>
         </div>
 
-        <form className="px-4 pb-24 lg:pb-0" onSubmit={submit}>
+        <ValidatedForm className="px-4 pb-24 lg:pb-0" onSubmit={submit}>
           <section className="py-5">
             <h3 className="font-semibold">Informacoes basicas</h3>
             <div className="scrollbar-hidden mt-2 flex gap-6 overflow-x-auto" role="tablist" aria-label="Tipo da oferta">
@@ -244,9 +246,9 @@ export function ComboCreatorModal({ products, onClose, onCreated, initialCombo =
             <div className="mt-3 grid min-w-0 gap-4 sm:grid-cols-[minmax(0,1fr)_180px]">
               <label className="block text-sm font-medium">
                 Nome {draft.kind === 'promotion' ? 'da promocao' : 'do combo'}
-                <input className="mission-input mt-1 w-full px-3 py-2.5" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder={draft.kind === 'promotion' ? 'Ex.: Oferta do dia' : 'Ex.: Combo lanche'} required />
+                <FormControl minLength={2} unframed name="name" className="mission-input mt-1 w-full px-3 py-2.5" value={draft.name} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder={draft.kind === 'promotion' ? 'Ex.: Oferta do dia' : 'Ex.: Combo lanche'} required />
               </label>
-              {initialCombo ? <label className="flex min-h-11 items-center justify-between gap-3 self-end border-y border-line/70 py-2 text-sm font-medium dark:border-shalom-gold/10">Ativo<input type="checkbox" className="h-5 w-5 accent-shalom-orange" checked={draft.active} onChange={(event) => setDraft((current) => ({ ...current, active: event.target.checked }))} /></label> : null}
+              {initialCombo ? <label className="flex min-h-11 items-center justify-between gap-3 self-end border-y border-line/70 py-2 text-sm font-medium dark:border-shalom-gold/10">Ativo<FormControl unframed type="checkbox" className="h-5 w-5 accent-shalom-orange" checked={draft.active} onChange={(event) => setDraft((current) => ({ ...current, active: event.target.checked }))} /></label> : null}
             </div>
           </section>
 
@@ -257,7 +259,7 @@ export function ComboCreatorModal({ products, onClose, onCreated, initialCombo =
             </div>
             {selectedItems.length ? (
               <div className="mt-2 divide-y divide-line/70 dark:divide-shalom-gold/10">
-                {selectedItems.map(({ product, quantity }) => (
+                {selectedItems.map(({ product, quantity }, index) => (
                   <div key={product.id} className="flex min-w-0 items-center gap-3 py-3">
                     <div className="min-w-0 flex-1">
                       <strong className="block truncate text-sm">{product.name}</strong>
@@ -265,7 +267,7 @@ export function ComboCreatorModal({ products, onClose, onCreated, initialCombo =
                     </div>
                     <div className="flex h-11 shrink-0 items-center border-y border-line/80 dark:border-shalom-gold/15">
                       <button type="button" className="flex h-11 w-11 items-center justify-center" onClick={() => updateProductQuantity(product, quantity - 1)} aria-label={`Diminuir quantidade de ${product.name}`}><Minus size={17} /></button>
-                      <input className="w-10 bg-transparent text-center text-sm font-semibold outline-none" type="number" inputMode="numeric" min="0" max={Math.floor(Number(product.stock_quantity) || 0)} step="1" value={quantity} onChange={(event) => updateProductQuantity(product, event.target.value)} aria-label={`Quantidade de ${product.name}`} />
+                      <FormControl name={`items.${index}.quantity`} className="w-10 bg-transparent text-center text-sm font-semibold outline-none" type="number" inputMode="numeric" min="0" max={Math.floor(Number(product.stock_quantity) || 0)} step="1" value={quantity} onChange={(event) => updateProductQuantity(product, event.target.value)} aria-label={`Quantidade de ${product.name}`} />
                       <button type="button" className="flex h-11 w-11 items-center justify-center disabled:opacity-35" onClick={() => updateProductQuantity(product, quantity + 1)} disabled={quantity >= Math.floor(Number(product.stock_quantity) || 0)} aria-label={`Aumentar quantidade de ${product.name}`}><Plus size={17} /></button>
                     </div>
                     <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center text-shalom-wine dark:text-rose-200" onClick={() => updateProductQuantity(product, 0)} aria-label={`Remover ${product.name}`} title="Remover"><Trash2 size={17} /></button>
@@ -279,7 +281,7 @@ export function ComboCreatorModal({ products, onClose, onCreated, initialCombo =
               <label className="relative block">
                 <span className="mb-1 block text-sm font-medium">Buscar produto</span>
                 <Search className="pointer-events-none absolute bottom-3 left-3 text-shalom-orange/70" size={17} aria-hidden="true" />
-                <input type="search" className="mission-input h-11 w-full pl-10 pr-3" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Nome ou categoria" />
+                <FormControl unframed name="productQuery" type="search" className="mission-input h-11 w-full pl-10 pr-3" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder="Nome ou categoria" />
               </label>
               <div className="mt-2 max-h-56 divide-y divide-line/70 overflow-y-auto scrollbar-thin dark:divide-shalom-gold/10">
                 {availableProducts.map((product) => (
@@ -299,7 +301,7 @@ export function ComboCreatorModal({ products, onClose, onCreated, initialCombo =
               <div><p className="mission-muted text-xs">Preco normal</p><strong className="mt-1 block font-display text-xl text-shalom-blue dark:text-shalom-gold">{money.format(regularPrice)}</strong></div>
               <label className="block text-sm font-medium">
                 {draft.kind === 'promotion' ? 'Preco promocional' : 'Preco do combo'}
-                <input className="mission-input mt-1 w-full px-3 py-2.5" inputMode="decimal" value={draft.sale_price} onChange={(event) => setDraft((current) => ({ ...current, sale_price: event.target.value }))} placeholder="0,00" required />
+                <FormControl data-format="decimal" unframed name="sale_price" className="mission-input mt-1 w-full px-3 py-2.5" inputMode="decimal" value={draft.sale_price} onChange={(event) => setDraft((current) => ({ ...current, sale_price: event.target.value }))} placeholder="0,00" required />
               </label>
             </div>
             <div className="mt-3 flex flex-wrap gap-x-8 gap-y-1 border-t border-line/60 pt-3 text-sm dark:border-shalom-gold/10">
@@ -329,7 +331,7 @@ export function ComboCreatorModal({ products, onClose, onCreated, initialCombo =
               {saving ? 'Salvando...' : initialCombo ? 'Salvar alteracoes' : draft.kind === 'promotion' ? 'Criar promocao' : 'Criar combo'}
             </button>
           </div>
-        </form>
+        </ValidatedForm>
       </section>
   )
 }

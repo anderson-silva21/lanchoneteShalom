@@ -1,3 +1,5 @@
+import { ValidatedForm, FormControl } from './ValidatedForm'
+import { reportFormError } from '../utils/formValidation'
 import { ArrowDown, ArrowUp, ArrowUpDown, Boxes, PackagePlus, Save, Search, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -90,7 +92,7 @@ function DeleteProductModal({ product, confirmation, deleting, onConfirmationCha
           </button>
         </div>
 
-        <form className="dashboard-modal-body scrollbar-thin space-y-4 p-4" onSubmit={onConfirm}>
+        <ValidatedForm className="dashboard-modal-body scrollbar-thin space-y-4 p-4" onSubmit={onConfirm}>
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
             <div className="rounded-xl bg-shalom-mist/70 p-3 dark:bg-white/10">
               <dt className="mission-muted">Produto</dt>
@@ -112,7 +114,7 @@ function DeleteProductModal({ product, confirmation, deleting, onConfirmationCha
 
           <label className="block text-sm font-medium">
             Confirmacao
-            <input
+            <FormControl unframed name="confirmation"
               className="mission-input mt-2 w-full px-3 py-2.5"
               value={confirmation}
               onChange={(event) => onConfirmationChange(event.target.value)}
@@ -129,7 +131,7 @@ function DeleteProductModal({ product, confirmation, deleting, onConfirmationCha
             <Trash2 size={17} />
             {deleting ? 'Excluindo...' : 'Excluir produto'}
           </button>
-        </form>
+        </ValidatedForm>
       </section>
     </div>,
     document.body
@@ -295,6 +297,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   }, [sortedProducts.length])
 
   async function importProducts(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     setMessage('')
     if (!importCsv.trim()) {
@@ -310,6 +313,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       onChanged()
       setMessage(`${result.total} produtos importados.`)
     } catch (err) {
+      reportFormError(validationForm, err)
       const errors = err.payload?.errors || []
       setMessage(errors.length ? `${err.message} Linha ${errors[0].line}: ${errors[0].message}` : err.message)
     } finally {
@@ -323,6 +327,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   }
 
   async function createProduct(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     setMessage('')
     if (!draft.category) {
@@ -344,11 +349,12 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       onChanged()
       setMessage('Produto cadastrado.')
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     }
   }
 
-  async function saveProduct(product) {
+  async function saveProduct(product, validationForm) {
     setMessage('')
     const productPayload = {
       ...product,
@@ -367,6 +373,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       onChanged()
       setMessage('Produto atualizado.')
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     }
   }
@@ -378,6 +385,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   }
 
   async function deleteSelectedProduct(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     if (!productToDelete) return
 
@@ -404,6 +412,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       onChanged()
       setMessage(result.message || `Produto ${deletedProduct.name} excluido.`)
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     } finally {
       setDeletingProduct(false)
@@ -411,6 +420,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   }
 
   async function createMovement(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     setMessage('')
     const mode = getMovementMode(adjustment)
@@ -457,6 +467,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       onChanged()
       setMessage('Estoque ajustado.')
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     }
   }
@@ -511,7 +522,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
     }
   }
 
-  async function updateHistoricalSaleItemCost(saleItem, nextUnitCost, reason) {
+  async function updateHistoricalSaleItemCost(saleItem, nextUnitCost, reason, validationForm) {
     setMessage('')
     const unitCost = Number(nextUnitCost)
     if (!Number.isFinite(unitCost) || unitCost < 0) {
@@ -533,6 +544,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       onChanged()
       setMessage('Custo historico da venda corrigido.')
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     }
   }
@@ -906,7 +918,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
 
         <div className="min-w-0 space-y-5">
           {setupMode ? (
-            <form className="mission-panel p-4" onSubmit={importProducts}>
+            <ValidatedForm className="mission-panel p-4" onSubmit={importProducts}>
               <div className="mb-4 flex items-center gap-2">
                 <Upload size={20} />
                 <h2 className="font-display text-lg font-semibold">Importar planilha</h2>
@@ -914,7 +926,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
               <div className="grid min-w-0 grid-cols-1 gap-3">
                 <label className="text-sm font-medium">
                   Arquivo CSV
-                  <input
+                  <FormControl unframed
                     type="file"
                     accept=".csv,text/csv"
                     className="mission-input mt-1 w-full px-3 py-2"
@@ -923,7 +935,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 </label>
                 <label className="text-sm font-medium">
                   CSV
-                  <textarea
+                  <FormControl unframed as="textarea" name="importCsv"
                     className="mission-input mt-1 min-h-36 w-full px-3 py-2 font-mono text-xs"
                     value={importCsv}
                     onChange={(event) => setImportCsv(event.target.value)}
@@ -939,10 +951,10 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 <Upload size={17} />
                 {importing ? 'Importando...' : 'Importar CSV'}
               </button>
-            </form>
+            </ValidatedForm>
           ) : null}
 
-          <form className="mission-panel p-4" onSubmit={createProduct}>
+          <ValidatedForm className="mission-panel p-4" onSubmit={createProduct}>
             <div className="mb-4 flex items-center gap-2">
               <PackagePlus size={20} />
               <h2 className="font-display text-lg font-semibold">{setupMode ? 'Adicionar item real' : 'Novo produto'}</h2>
@@ -950,36 +962,36 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
               <div className="grid min-w-0 grid-cols-1 gap-3">
               <label className="text-sm font-medium">
                 Nome
-                <input className="mission-input mt-1 w-full px-3 py-2" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+                <FormControl required minLength={2} unframed name="name" className="mission-input mt-1 w-full px-3 py-2" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
               </label>
               <label className="text-sm font-medium">
                 Categoria
-                <select className="mission-input mt-1 w-full px-3 py-2" value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>
+                <FormControl required unframed as="select" name="category" className="mission-input mt-1 w-full px-3 py-2" value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>
                   <option value="" disabled>Selecione</option>
                   {categories.map((categoryName) => <option key={categoryName} value={categoryName}>{categoryName}</option>)}
-                </select>
+                </FormControl>
               </label>
               <label className="text-sm font-medium">
                 Unidade
-                <input className="mission-input mt-1 w-full px-3 py-2" value={draft.unit} onChange={(event) => setDraft({ ...draft, unit: event.target.value })} />
+                <FormControl unframed name="unit" className="mission-input mt-1 w-full px-3 py-2" value={draft.unit} onChange={(event) => setDraft({ ...draft, unit: event.target.value })} />
               </label>
               <label className="text-sm font-medium">
                 Fornecedor
-                <input className="mission-input mt-1 w-full px-3 py-2" value={draft.supplier} onChange={(event) => setDraft({ ...draft, supplier: event.target.value })} />
+                <FormControl unframed name="supplier" className="mission-input mt-1 w-full px-3 py-2" value={draft.supplier} onChange={(event) => setDraft({ ...draft, supplier: event.target.value })} />
               </label>
               <label className="text-sm font-medium">
                 URL da imagem
-                <input type="url" className="mission-input mt-1 w-full px-3 py-2" value={draft.image_url || ''} onChange={(event) => setDraft({ ...draft, image_url: event.target.value })} placeholder="https://exemplo.com/produto.jpg" />
+                <FormControl name="image_url" data-format="http-url" unframed type="url" className="mission-input mt-1 w-full px-3 py-2" value={draft.image_url || ''} onChange={(event) => setDraft({ ...draft, image_url: event.target.value })} placeholder="https://exemplo.com/produto.jpg" />
               </label>
               {draft.image_url ? <div key={draft.image_url} className="overflow-hidden rounded-md bg-shalom-cream/60"><img className="aspect-video w-full object-cover" src={draft.image_url} alt="Preview do produto" onError={(event) => { event.currentTarget.hidden = true; event.currentTarget.nextElementSibling.hidden = false }} /><p className="mission-muted hidden p-3 text-sm">Nao foi possivel carregar a imagem.</p></div> : null}
-              {canManagePosVisibility && Number(draft.sale_price) > 0 ? <label className="flex items-center justify-between gap-3 rounded-xl border border-line/80 px-3 py-2 text-sm font-medium dark:border-shalom-gold/10"><span><span className="block">Exibir no PDV</span><span className="mission-muted block text-xs font-normal">Ocultar nao remove estoque ou historico.</span></span><input type="checkbox" className="h-5 w-5 accent-shalom-orange" checked={Boolean(draft.visible_in_pos)} onChange={(event) => setDraft({ ...draft, visible_in_pos: event.target.checked })} /></label> : canManagePosVisibility ? <p className="mission-muted text-sm">Informe um preco de venda para habilitar este produto no PDV.</p> : null}
+              {canManagePosVisibility && Number(draft.sale_price) > 0 ? <label className="flex items-center justify-between gap-3 rounded-xl border border-line/80 px-3 py-2 text-sm font-medium dark:border-shalom-gold/10"><span><span className="block">Exibir no PDV</span><span className="mission-muted block text-xs font-normal">Ocultar nao remove estoque ou historico.</span></span><FormControl unframed type="checkbox" className="h-5 w-5 accent-shalom-orange" checked={Boolean(draft.visible_in_pos)} onChange={(event) => setDraft({ ...draft, visible_in_pos: event.target.checked })} /></label> : canManagePosVisibility ? <p className="mission-muted text-sm">Informe um preco de venda para habilitar este produto no PDV.</p> : null}
               <label className="flex items-center justify-between gap-3 rounded-xl border border-line/80 px-3 py-2 text-sm font-medium dark:border-shalom-gold/10">
                 <span>Produto recebido por doacao</span>
-                <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={Boolean(draft.is_donation)} onChange={(event) => setDraft({ ...draft, is_donation: event.target.checked, cost_price: event.target.checked ? 0 : draft.cost_price })} />
+                <FormControl unframed type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={Boolean(draft.is_donation)} onChange={(event) => setDraft({ ...draft, is_donation: event.target.checked, cost_price: event.target.checked ? 0 : draft.cost_price })} />
               </label>
               <label className="text-sm font-medium">
                 Validade
-                <input type="date" className="mission-input mt-1 w-full px-3 py-2" value={draft.expiration_date} onChange={(event) => setDraft({ ...draft, expiration_date: event.target.value })} />
+                <FormControl unframed name="expiration_date" type="date" className="mission-input mt-1 w-full px-3 py-2" value={draft.expiration_date} onChange={(event) => setDraft({ ...draft, expiration_date: event.target.value })} />
               </label>
               <div className="grid min-w-0 grid-cols-1 gap-3 min-[380px]:grid-cols-2">
                 {[
@@ -990,7 +1002,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 ].map(([field, label, step]) => (
                   <label key={field} className="text-sm font-medium">
                     {label}
-                    <input type="number" inputMode="decimal" min="0" step={step} className="mission-input mt-1 w-full px-3 py-2 disabled:opacity-60" value={field === 'cost_price' && draft.is_donation ? 0 : draft[field]} disabled={field === 'cost_price' && draft.is_donation} onChange={(event) => setDraft({ ...draft, [field]: Number(event.target.value) })} />
+                    <FormControl name={field} unframed type="number" inputMode="decimal" min="0" step={step} className="mission-input mt-1 w-full px-3 py-2 disabled:opacity-60" value={field === 'cost_price' && draft.is_donation ? 0 : draft[field]} disabled={field === 'cost_price' && draft.is_donation} onChange={(event) => setDraft({ ...draft, [field]: Number(event.target.value) })} />
                   </label>
                 ))}
               </div>
@@ -999,16 +1011,16 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
               <PackagePlus size={17} />
               Cadastrar
             </button>
-          </form>
+          </ValidatedForm>
 
-          <form ref={movementFormRef} className="mission-panel p-4" onSubmit={createMovement}>
+          <ValidatedForm ref={movementFormRef} className="mission-panel p-4" onSubmit={createMovement}>
             <div className="mb-4 flex items-center gap-2">
               <SlidersHorizontal size={20} />
               <h2 className="font-display text-lg font-semibold">Movimentar estoque</h2>
             </div>
             <label className="text-sm font-medium">
               Produto
-              <select
+              <FormControl required unframed as="select" name="product_id"
                 ref={movementProductRef}
                 className="mission-input mt-1 w-full px-3 py-2"
                 value={adjustment.product_id}
@@ -1027,12 +1039,12 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
               >
                 <option value="">Selecione</option>
                 {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
-              </select>
+              </FormControl>
             </label>
             <div className="mt-3 grid min-w-0 grid-cols-1 gap-3 min-[380px]:grid-cols-2">
               <label className="text-sm font-medium">
                 Tipo
-                <select
+                <FormControl unframed as="select" name="movementMode"
                   className="mission-input mt-1 w-full px-3 py-2"
                   value={movementMode}
                   onChange={(event) => {
@@ -1052,27 +1064,27 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                   <option value="adjustment_in">Ajuste entrada</option>
                   <option value="adjustment_out">Ajuste saida</option>
                   <option value="waste">Desperdicio</option>
-                </select>
+                </FormControl>
               </label>
               <label className="text-sm font-medium">
                 Quantidade
-                <input type="number" inputMode="decimal" min="0.001" step="0.001" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.quantity} onChange={(event) => setAdjustment({ ...adjustment, quantity: Number(event.target.value) })} />
+                <FormControl required aria-label="Quantidade" unframed name="quantity" type="number" inputMode="decimal" min="0.001" step="0.001" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.quantity} onChange={(event) => setAdjustment({ ...adjustment, quantity: Number(event.target.value) })} />
               </label>
             </div>
             {movementMode === 'purchase' ? (
               <div className="mt-3 grid gap-3">
                 <label className="flex items-center justify-between gap-3 rounded-xl border border-line/80 px-3 py-2 text-sm font-medium dark:border-shalom-gold/10">
                   <span>Entrada recebida por doacao</span>
-                  <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={Boolean(adjustment.is_donation)} onChange={(event) => setAdjustment({ ...adjustment, is_donation: event.target.checked, cost_price: event.target.checked ? 0 : adjustment.cost_price })} />
+                  <FormControl unframed type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={Boolean(adjustment.is_donation)} onChange={(event) => setAdjustment({ ...adjustment, is_donation: event.target.checked, cost_price: event.target.checked ? 0 : adjustment.cost_price })} />
                 </label>
                 <div className="grid min-w-0 grid-cols-1 gap-3 min-[380px]:grid-cols-2">
                   <label className="text-sm font-medium">
                     Custo do produto
-                    <input type="number" inputMode="decimal" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2 disabled:opacity-60" value={adjustment.is_donation ? 0 : (adjustment.cost_price ?? '')} disabled={Boolean(adjustment.is_donation)} onChange={(event) => setAdjustment({ ...adjustment, cost_price: event.target.value })} />
+                    <FormControl name="cost_price" unframed type="number" inputMode="decimal" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2 disabled:opacity-60" value={adjustment.is_donation ? 0 : (adjustment.cost_price ?? '')} disabled={Boolean(adjustment.is_donation)} onChange={(event) => setAdjustment({ ...adjustment, cost_price: event.target.value })} />
                   </label>
                   <label className="text-sm font-medium">
                     Valor de venda
-                    <input type="number" inputMode="decimal" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.sale_price ?? ''} onChange={(event) => setAdjustment({ ...adjustment, sale_price: event.target.value })} />
+                    <FormControl name="sale_price" unframed type="number" inputMode="decimal" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.sale_price ?? ''} onChange={(event) => setAdjustment({ ...adjustment, sale_price: event.target.value })} />
                   </label>
                 </div>
               </div>
@@ -1080,31 +1092,31 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
             {movementMode !== 'purchase' ? (
               <label className="mt-3 block text-sm font-medium">
                 Lote {needsMovementBatch ? '' : '(opcional)'}
-                <select className="mission-input mt-1 w-full px-3 py-2" value={adjustment.batch_id} onChange={(event) => setAdjustment({ ...adjustment, batch_id: event.target.value })}>
+                <FormControl required={needsMovementBatch} unframed as="select" name="batch_id" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.batch_id} onChange={(event) => setAdjustment({ ...adjustment, batch_id: event.target.value })}>
                   <option value="">{needsMovementBatch ? 'Selecione um lote' : 'Criar novo lote'}</option>
                   {movementBatches.map((batch) => (
                     <option key={batch.id} value={batch.id}>
                       #{batch.id} - {formatDate(batch.expiration_date)} - {formatQuantityWithUnit(batch.quantity_available, batch.unit)}
                     </option>
                   ))}
-                </select>
+                </FormControl>
               </label>
             ) : null}
             {showsMovementExpiration ? (
               <label className="mt-3 block text-sm font-medium">
                 Validade do lote
-                <input type="date" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.expiration_date} onChange={(event) => setAdjustment({ ...adjustment, expiration_date: event.target.value })} />
+                <FormControl unframed name="expiration_date" type="date" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.expiration_date} onChange={(event) => setAdjustment({ ...adjustment, expiration_date: event.target.value })} />
               </label>
             ) : null}
             <label className="mt-3 block text-sm font-medium">
               Observacao
-              <input className="mission-input mt-1 w-full px-3 py-2" value={adjustment.notes} onChange={(event) => setAdjustment({ ...adjustment, notes: event.target.value })} />
+              <FormControl unframed name="notes" className="mission-input mt-1 w-full px-3 py-2" value={adjustment.notes} onChange={(event) => setAdjustment({ ...adjustment, notes: event.target.value })} />
             </label>
             <button className="mission-btn mission-btn-gold mt-4 flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold">
               <Save size={17} />
               Salvar movimento
             </button>
-          </form>
+          </ValidatedForm>
         </div>
       </section>
 

@@ -1,3 +1,5 @@
+import { ValidatedForm, FormControl } from './ValidatedForm'
+import { reportFormError } from '../utils/formValidation'
 import { ChevronRight, Clipboard, Download, ExternalLink, RotateCcw, Save, Send, Trash2, Upload, UserPlus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -142,6 +144,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
   }, [loadAuditLogs, loadBackups, loadHealth, loadStatus, loadTelegramStatus, loadUsers])
 
   async function createUser(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     setMessage('')
     setUserMessage('')
@@ -165,6 +168,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
       setUserMessage('Usuario criado.')
       setMessage('Usuario criado.')
     } catch (err) {
+      reportFormError(validationForm, err)
       const displayError = getDisplayError(err)
       setUserMessage(displayError)
       setMessage(displayError)
@@ -220,6 +224,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
   }
 
   async function resetOperationalData(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     setMessage('')
     setResetting(true)
@@ -230,6 +235,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
       onChanged()
       setMessage(result.message)
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     } finally {
       setResetting(false)
@@ -268,6 +274,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
   }
 
   async function saveTelegramSettings(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     setMessage('')
     setSavingTelegram(true)
@@ -289,6 +296,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
       loadAuditLogs()
       setMessage('Configuracao Telegram salva.')
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     } finally {
       setSavingTelegram(false)
@@ -312,6 +320,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
   }
 
   async function importBackup(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     if (!backupFile) return
     setMessage('')
@@ -325,6 +334,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
       await loadAuditLogs()
       setMessage(`Backup importado: ${backup.file}`)
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     } finally {
       setBackupBusy('')
@@ -415,7 +425,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
             <span className={`block h-4 w-4 rounded-full bg-white transition ${initialLoadEnabled ? 'translate-x-5' : ''}`} />
           </span>
         </button>
-        <form className="mt-6" onSubmit={saveTelegramSettings}>
+        <ValidatedForm className="mt-6" onSubmit={saveTelegramSettings}>
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="font-medium">Alertas Telegram</p>
@@ -448,7 +458,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
           <div className="mt-3 grid gap-2">
             <label className="flex items-center justify-between gap-3 border-b border-line/70 py-3 text-sm font-medium dark:border-shalom-gold/10">
               <span>Envio automatico</span>
-              <input
+              <FormControl unframed
                 type="checkbox"
                 className="h-4 w-4 accent-shalom-orange"
                 checked={telegramDraft.enabled}
@@ -457,7 +467,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
             </label>
             <label className="text-xs font-medium">
               Chat ID
-              <input
+              <FormControl unframed name="chat_id"
                 className="mission-input mt-1 w-full px-3 py-2"
                 value={telegramDraft.chat_id}
                 onChange={(event) => setTelegramDraft({ ...telegramDraft, chat_id: event.target.value })}
@@ -466,7 +476,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
             </label>
             <label className="text-xs font-medium">
               Link do grupo
-              <input
+              <FormControl unframed name="group_url"
                 className="mission-input mt-1 w-full px-3 py-2"
                 value={telegramDraft.group_url}
                 onChange={(event) => setTelegramDraft({ ...telegramDraft, group_url: event.target.value })}
@@ -475,7 +485,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
             <div className="grid grid-cols-2 gap-2">
               <label className="text-xs font-medium">
                 Intervalo min.
-                <input
+                <FormControl unframed name="interval_minutes"
                   type="number"
                   min="5"
                   max="1440"
@@ -486,7 +496,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
               </label>
               <label className="text-xs font-medium">
                 Itens por bloco
-                <input
+                <FormControl unframed name="max_items"
                   type="number"
                   min="3"
                   max="30"
@@ -498,7 +508,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
             </div>
             <label className="text-xs font-medium">
               Categorias ignoradas sem validade
-              <input
+              <FormControl unframed name="ignored_missing_expiration_categories"
                 className="mission-input mt-1 w-full px-3 py-2"
                 value={telegramDraft.ignored_missing_expiration_categories}
                 onChange={(event) => setTelegramDraft({ ...telegramDraft, ignored_missing_expiration_categories: event.target.value })}
@@ -523,7 +533,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
             <ExternalLink size={16} />
             Entrar no grupo do Telegram
           </a>
-        </form>
+        </ValidatedForm>
       </aside>
       </> : null}
 
@@ -553,10 +563,10 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
           ) : null}
         </div>
 
-        <form className="mt-4 grid gap-3 lg:grid-cols-[1fr_180px_160px_auto]" onSubmit={createUser}>
+        <ValidatedForm className="mt-4 grid gap-3 lg:grid-cols-[1fr_180px_160px_auto]" onSubmit={createUser}>
           <label className="text-sm font-medium">
             Nome
-            <input
+            <FormControl minLength={2} unframed name="name"
               className="mission-input mt-1 w-full px-3 py-2"
               value={userDraft.name}
               onChange={(event) => setUserDraft({ ...userDraft, name: event.target.value })}
@@ -565,7 +575,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
           </label>
           <label className="text-sm font-medium">
             Usuario
-            <input
+            <FormControl minLength={3} maxLength={40} pattern="(?:[a-z0-9._]|-){3,40}" data-pattern-message="Use de 3 a 40 letras minusculas, numeros, pontos, hifens ou sublinhados." unframed name="username"
               className="mission-input mt-1 w-full px-3 py-2"
               value={userDraft.username}
               onChange={(event) => setUserDraft({ ...userDraft, username: event.target.value.toLowerCase() })}
@@ -574,13 +584,13 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
           </label>
           <label className="text-sm font-medium">
             Perfil
-            <select
+            <FormControl unframed as="select" name="role"
               className="mission-input mt-1 w-full px-3 py-2"
               value={userDraft.role}
               onChange={(event) => setUserDraft({ ...userDraft, role: event.target.value })}
             >
               {roleOptions.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
-            </select>
+            </FormControl>
           </label>
           <button
             type="submit"
@@ -590,7 +600,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
             <UserPlus size={17} />
             {savingUser ? 'Criando...' : 'Criar'}
           </button>
-        </form>
+        </ValidatedForm>
         {userMessage ? (
           <p className="mt-3 rounded-xl border border-shalom-gold/25 bg-shalom-cream/60 px-3 py-2 text-sm font-medium text-shalom-deep dark:border-shalom-gold/10 dark:bg-white/10 dark:text-white" aria-live="polite">
             {userMessage}
@@ -747,10 +757,10 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
           </div>
         </div>
 
-        <form className="mt-5 border-t border-line/70 pt-4 dark:border-shalom-gold/10" onSubmit={importBackup}>
+        <ValidatedForm className="mt-5 border-t border-line/70 pt-4 dark:border-shalom-gold/10" onSubmit={importBackup}>
           <label className="block text-sm font-medium">
             Importar backup
-            <input
+            <FormControl unframed
               type="file"
               accept=".sqlite,application/vnd.sqlite3,application/octet-stream"
               className="mt-2 block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-shalom-blue file:px-3 file:py-2 file:font-semibold file:text-white"
@@ -765,7 +775,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
             <Upload size={17} />
             {backupBusy === 'import' ? 'Importando...' : 'Importar arquivo'}
           </button>
-        </form>
+        </ValidatedForm>
       </section>
       ) : null}
 
@@ -900,10 +910,10 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
           </div>
         </div>
 
-        <form className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto]" onSubmit={resetOperationalData}>
+        <ValidatedForm className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto]" onSubmit={resetOperationalData}>
           <label className="text-sm font-medium">
             Confirmacao
-            <input
+            <FormControl unframed name="confirmation"
               className="mission-input mt-1 w-full px-3 py-2"
               value={confirmation}
               onChange={(event) => setConfirmation(event.target.value)}
@@ -918,7 +928,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
             <Trash2 size={17} />
             {resetting ? 'Limpando...' : 'Zerar dados'}
           </button>
-        </form>
+        </ValidatedForm>
       </section>
       ) : null}
       {message ? <p className="border-l-2 border-shalom-blue px-3 py-2 text-sm text-shalom-deep dark:border-shalom-gold dark:text-shalom-gold" aria-live="polite">{message}</p> : null}

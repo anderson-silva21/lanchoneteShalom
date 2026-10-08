@@ -81,6 +81,21 @@ test.beforeEach(() => {
   resetDatabase();
 });
 
+test('troca de senha identifica o campo rejeitado pelo servidor', async () => {
+  const login = await postLogin('admin', 'admin123');
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${login.body.token}` };
+  const wrongCurrent = await fetch(`${baseUrl}/change-password`, {
+    method: 'POST', headers, body: JSON.stringify({ current_password: 'incorreta', new_password: 'nova123' })
+  });
+  assert.equal(wrongCurrent.status, 400);
+  assert.deepEqual((await wrongCurrent.json()).fieldErrors, { current_password: 'Confira a senha temporaria informada.' });
+  const samePassword = await fetch(`${baseUrl}/change-password`, {
+    method: 'POST', headers, body: JSON.stringify({ current_password: 'admin123', new_password: 'admin123' })
+  });
+  assert.equal(samePassword.status, 400);
+  assert.deepEqual((await samePassword.json()).fieldErrors, { new_password: 'Escolha uma senha diferente da senha temporaria.' });
+});
+
 test.after(() => {
   server.close();
   db.close();

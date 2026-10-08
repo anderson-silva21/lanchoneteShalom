@@ -126,11 +126,11 @@ router.post('/change-password', authenticate, (req, res) => {
   if (!user || Number(user.active) !== 1) return res.status(401).json({ message: 'Usuario inativo ou sessao invalida.' });
 
   if (!bcrypt.compareSync(payload.current_password, user.password_hash)) {
-    return res.status(400).json({ message: 'Senha atual invalida.' });
+    return res.status(400).json({ message: 'Senha atual invalida.', fieldErrors: { current_password: 'Confira a senha temporaria informada.' } });
   }
 
   if (bcrypt.compareSync(payload.new_password, user.password_hash)) {
-    return res.status(400).json({ message: 'A nova senha deve ser diferente da senha temporaria.' });
+    return res.status(400).json({ message: 'A nova senha deve ser diferente da senha temporaria.', fieldErrors: { new_password: 'Escolha uma senha diferente da senha temporaria.' } });
   }
 
   db.prepare(`

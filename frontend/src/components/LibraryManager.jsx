@@ -1,3 +1,5 @@
+import { ValidatedForm, FormControl } from './ValidatedForm'
+import { reportFormError } from '../utils/formValidation'
 import { ArrowUpDown, ChevronDown, ChevronRight, Download, Eye, Filter, History, MessageCircle, Minus, PackagePlus, Pencil, Plus, Save, Search, ShoppingCart, Trash2, UserRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -436,6 +438,7 @@ export function LibraryManager({ user }) {
   }
 
   async function saveCategory(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     setSaving(true)
     setMessage('')
@@ -446,6 +449,7 @@ export function LibraryManager({ user }) {
       setMessage('Categoria da Livraria criada.')
       navigate('/gestao-livraria/catalogo')
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     } finally {
       setSaving(false)
@@ -453,6 +457,7 @@ export function LibraryManager({ user }) {
   }
 
   async function saveProduct(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     setSaving(true)
     setMessage('')
@@ -473,6 +478,7 @@ export function LibraryManager({ user }) {
       setMessage(editingProductId ? 'Produto da Livraria atualizado.' : 'Produto da Livraria salvo.')
       navigate('/gestao-livraria/catalogo')
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     } finally {
       setSaving(false)
@@ -579,6 +585,7 @@ export function LibraryManager({ user }) {
   }
 
   async function saveMovement(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     setSaving(true)
     setMessage('')
@@ -588,6 +595,7 @@ export function LibraryManager({ user }) {
       await loadData()
       setMessage('Movimentacao da Livraria registrada.')
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     } finally {
       setSaving(false)
@@ -687,6 +695,7 @@ export function LibraryManager({ user }) {
   }
 
   async function registerInstallmentPayment(event, installment) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     setSaving(true)
     setMessage('')
@@ -697,6 +706,7 @@ export function LibraryManager({ user }) {
       setInstallmentPaymentDraft({ payment_method: 'pix', paid_at: isoDate(new Date()), notes: '' })
       setMessage('Pagamento da parcela registrado.')
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     } finally {
       setSaving(false)
@@ -718,6 +728,7 @@ export function LibraryManager({ user }) {
   }
 
   async function saveSellerRecord(event) {
+    const validationForm = event.currentTarget
     event.preventDefault()
     setSaving(true)
     setMessage('')
@@ -730,6 +741,7 @@ export function LibraryManager({ user }) {
       await loadData()
       setMessage(editingSellerId ? 'Vendedor atualizado.' : 'Vendedor criado.')
     } catch (err) {
+      reportFormError(validationForm, err)
       setMessage(err.message)
     } finally {
       setSaving(false)
@@ -1177,15 +1189,15 @@ export function LibraryManager({ user }) {
 
       {activeTab === 'products' && isNewCategoryRoute ? (
         <section className="mx-auto w-full max-w-2xl">
-          <form onSubmit={saveCategory}>
+          <ValidatedForm onSubmit={saveCategory}>
             <div className="grid gap-4">
               <label className="text-sm font-medium">
                 Nome
-                <input className="mission-input mt-1 w-full px-3 py-2.5" value={categoryDraft.name} onChange={(event) => setCategoryDraft({ ...categoryDraft, name: event.target.value })} disabled={!writable} required autoFocus />
+                <FormControl minLength={2} unframed name="name" className="mission-input mt-1 w-full px-3 py-2.5" value={categoryDraft.name} onChange={(event) => setCategoryDraft({ ...categoryDraft, name: event.target.value })} disabled={!writable} required autoFocus />
               </label>
               <label className="text-sm font-medium">
                 Descricao
-                <textarea className="mission-input mt-1 w-full px-3 py-2.5" value={categoryDraft.description} onChange={(event) => setCategoryDraft({ ...categoryDraft, description: event.target.value })} disabled={!writable} rows={4} />
+                <FormControl unframed as="textarea" name="description" className="mission-input mt-1 w-full px-3 py-2.5" value={categoryDraft.description} onChange={(event) => setCategoryDraft({ ...categoryDraft, description: event.target.value })} disabled={!writable} rows={4} />
               </label>
             </div>
             <div className="mt-6 flex items-center justify-end gap-3 border-t border-line/80 pt-4 dark:border-shalom-gold/10">
@@ -1195,60 +1207,60 @@ export function LibraryManager({ user }) {
                 Criar categoria
               </button>
             </div>
-          </form>
+          </ValidatedForm>
         </section>
       ) : null}
 
       {activeTab === 'products' && isProductFormRoute ? (
         <section className="mx-auto w-full max-w-3xl">
-          <form onSubmit={saveProduct}>
+          <ValidatedForm onSubmit={saveProduct}>
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="text-sm font-medium sm:col-span-2">
                 Nome
-                <input className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.name} onChange={(event) => setProductDraft({ ...productDraft, name: event.target.value })} disabled={!writable} required autoFocus={isNewProductRoute} />
+                <FormControl minLength={2} unframed name="name" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.name} onChange={(event) => setProductDraft({ ...productDraft, name: event.target.value })} disabled={!writable} required autoFocus={isNewProductRoute} />
               </label>
               <label className="text-sm font-medium">
                 SKU
-                <input className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.sku} onChange={(event) => setProductDraft({ ...productDraft, sku: event.target.value })} placeholder="Opcional" disabled={!writable} />
+                <FormControl minLength={2} unframed name="sku" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.sku} onChange={(event) => setProductDraft({ ...productDraft, sku: event.target.value })} placeholder="Opcional" disabled={!writable} />
               </label>
               <label className="text-sm font-medium">
                 Categoria
-                <select className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.category_id} onChange={(event) => setProductDraft({ ...productDraft, category_id: event.target.value })} disabled={!writable}>
+                <FormControl unframed as="select" name="category_id" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.category_id} onChange={(event) => setProductDraft({ ...productDraft, category_id: event.target.value })} disabled={!writable}>
                   <option value="">Sem categoria</option>
                   {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                </select>
+                </FormControl>
               </label>
               <label className="text-sm font-medium sm:col-span-2">
                 Descricao publica
-                <textarea className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.description} onChange={(event) => setProductDraft({ ...productDraft, description: event.target.value })} disabled={!writable} rows={4} />
+                <FormControl unframed as="textarea" name="description" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.description} onChange={(event) => setProductDraft({ ...productDraft, description: event.target.value })} disabled={!writable} rows={4} />
               </label>
               <label className="text-sm font-medium">
                 Preco
-                <input type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.price} onChange={(event) => setProductDraft({ ...productDraft, price: event.target.value })} disabled={!writable} />
+                <FormControl unframed name="price" type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.price} onChange={(event) => setProductDraft({ ...productDraft, price: event.target.value })} disabled={!writable} />
               </label>
               <label className="text-sm font-medium">
                 Custo
-                <input type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.cost_price} onChange={(event) => setProductDraft({ ...productDraft, cost_price: event.target.value })} disabled={!writable} />
+                <FormControl unframed name="cost_price" type="number" min="0" step="0.01" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.cost_price} onChange={(event) => setProductDraft({ ...productDraft, cost_price: event.target.value })} disabled={!writable} />
               </label>
               <label className="text-sm font-medium">
                 Quantidade
-                <input type="number" min="0" step="0.001" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.stock_quantity} onChange={(event) => setProductDraft({ ...productDraft, stock_quantity: event.target.value })} disabled={!writable} />
+                <FormControl unframed name="stock_quantity" type="number" min="0" step="0.001" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.stock_quantity} onChange={(event) => setProductDraft({ ...productDraft, stock_quantity: event.target.value })} disabled={!writable} />
               </label>
               <label className="text-sm font-medium">
                 Estoque minimo
-                <input type="number" min="0" step="0.001" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.min_stock} onChange={(event) => setProductDraft({ ...productDraft, min_stock: event.target.value })} disabled={!writable} />
+                <FormControl unframed name="min_stock" type="number" min="0" step="0.001" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.min_stock} onChange={(event) => setProductDraft({ ...productDraft, min_stock: event.target.value })} disabled={!writable} />
               </label>
               <label className="text-sm font-medium sm:col-span-2">
                 URL da imagem
-                <input className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.image_url} onChange={(event) => setProductDraft({ ...productDraft, image_url: event.target.value })} disabled={!writable} />
+                <FormControl data-format="http-url" type="url" unframed name="images.0.url" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.image_url} onChange={(event) => setProductDraft({ ...productDraft, image_url: event.target.value })} disabled={!writable} />
               </label>
               <label className="flex items-center justify-between border-y border-line/80 py-3 text-sm font-semibold dark:border-shalom-gold/10">
                 Publicar no catalogo
-                <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={productDraft.published} onChange={(event) => setProductDraft({ ...productDraft, published: event.target.checked })} disabled={!writable} />
+                <FormControl unframed type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={productDraft.published} onChange={(event) => setProductDraft({ ...productDraft, published: event.target.checked })} disabled={!writable} />
               </label>
               <label className="flex items-center justify-between border-y border-line/80 py-3 text-sm font-semibold dark:border-shalom-gold/10">
                 Produto ativo
-                <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={productDraft.active} onChange={(event) => setProductDraft({ ...productDraft, active: event.target.checked })} disabled={!writable} />
+                <FormControl unframed type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={productDraft.active} onChange={(event) => setProductDraft({ ...productDraft, active: event.target.checked })} disabled={!writable} />
               </label>
             </div>
             <div className="mt-6 flex items-center justify-end gap-3 border-t border-line/80 pt-4 dark:border-shalom-gold/10">
@@ -1258,31 +1270,31 @@ export function LibraryManager({ user }) {
                 {editingProductId ? 'Atualizar produto' : 'Salvar produto'}
               </button>
             </div>
-          </form>
+          </ValidatedForm>
         </section>
       ) : null}
 
       {activeTab === 'inventory' ? (
         <section className="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
-          <form className="min-w-0" onSubmit={saveMovement}>
+          <ValidatedForm className="min-w-0" onSubmit={saveMovement}>
             <h3 className="font-display text-lg font-semibold">Movimentar estoque</h3>
             <div className="mt-3 grid gap-3">
-              <select className="mission-input px-3 py-2" value={stockDraft.product_id} onChange={(event) => setStockDraft({ ...stockDraft, product_id: event.target.value })} disabled={!writable} required>
+              <FormControl aria-label="Produto" as="select" name="product_id" className="mission-input px-3 py-2" value={stockDraft.product_id} onChange={(event) => setStockDraft({ ...stockDraft, product_id: event.target.value })} disabled={!writable} required>
                 <option value="">Produto</option>
                 {products.map((product) => <option key={product.id} value={product.id}>{product.name} - {decimal.format(product.stock_quantity)}</option>)}
-              </select>
-              <select className="mission-input px-3 py-2" value={stockDraft.operation} onChange={(event) => setStockDraft({ ...stockDraft, operation: event.target.value })} disabled={!writable}>
+              </FormControl>
+              <FormControl as="select" name="operation" className="mission-input px-3 py-2" value={stockDraft.operation} onChange={(event) => setStockDraft({ ...stockDraft, operation: event.target.value })} disabled={!writable}>
                 <option value="in">Entrada</option>
                 <option value="out">Saida/Ajuste negativo</option>
-              </select>
-              <input type="number" min="0.001" step="0.001" className="mission-input px-3 py-2" value={stockDraft.quantity} onChange={(event) => setStockDraft({ ...stockDraft, quantity: event.target.value })} disabled={!writable} />
-              <textarea className="mission-input px-3 py-2" value={stockDraft.reason} onChange={(event) => setStockDraft({ ...stockDraft, reason: event.target.value })} placeholder="Motivo do ajuste" rows={3} disabled={!writable} required />
+              </FormControl>
+              <FormControl required aria-label="Quantidade" name="quantity" type="number" min="0.001" step="0.001" className="mission-input px-3 py-2" value={stockDraft.quantity} onChange={(event) => setStockDraft({ ...stockDraft, quantity: event.target.value })} disabled={!writable} />
+              <FormControl minLength={3} aria-label="Motivo do ajuste" as="textarea" name="reason" className="mission-input px-3 py-2" value={stockDraft.reason} onChange={(event) => setStockDraft({ ...stockDraft, reason: event.target.value })} placeholder="Motivo do ajuste" rows={3} disabled={!writable} required />
             </div>
             <button type="submit" className="mission-btn mission-btn-primary mt-3 inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold" disabled={!writable || saving}>
               <PackagePlus size={17} />
               Registrar
             </button>
-          </form>
+          </ValidatedForm>
           <div className="min-w-0 border-t border-line/80 pt-5 dark:border-shalom-gold/10 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
             <h3 className="font-display text-lg font-semibold">Historico de estoque</h3>
             <div className="mt-3">
@@ -1400,7 +1412,7 @@ export function LibraryManager({ user }) {
 
           {isInstallmentDetailRoute && installmentPlan ? <div className="mx-auto max-w-3xl">
             <div className="border-b border-line/80 pb-5 dark:border-shalom-gold/10"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h2 className="font-display text-xl font-semibold">{installmentPlan.customer_name}</h2><p className="mission-muted mt-1 text-sm">{formatLibraryCustomerContact(installmentPlan.customer_contact)} - Venda #{installmentPlan.sale_id}</p>{installmentPlan.seller_name ? <p className="mission-muted mt-1 text-xs">Vendedor: {installmentPlan.seller_name}</p> : null}</div><span className="font-semibold text-shalom-blue dark:text-shalom-gold">{installmentStatusLabel(installmentPlan.financial_status)}</span></div><div className="mt-5 grid grid-cols-3 gap-4"><div><span className="mission-muted text-xs">Total</span><strong className="mt-1 block">{money.format(installmentPlan.total_amount)}</strong></div><div><span className="mission-muted text-xs">Pago</span><strong className="mt-1 block text-emerald-700 dark:text-emerald-200">{money.format(installmentPlan.paid_amount)}</strong></div><div><span className="mission-muted text-xs">Pendente</span><strong className="mt-1 block text-shalom-wine dark:text-rose-200">{money.format(installmentPlan.pending_amount)}</strong></div></div></div>
-            <div className="divide-y divide-line/80 dark:divide-shalom-gold/10">{installmentPlan.installments.map((installment) => <article key={installment.id} className="py-4"><div className="flex items-start justify-between gap-3"><div><strong>{installment.installment_number}/{installmentPlan.installment_count} - {money.format(installment.amount)}</strong><p className="mission-muted mt-1 text-sm">Vencimento {formatDate(installment.due_date)}</p>{installment.status === 'paid' ? <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-200">Pago em {formatDate(installment.paid_at)} via {installment.paid_method}</p> : installment.overdue ? <p className="mt-1 text-xs font-semibold text-shalom-wine dark:text-rose-200">Vencida</p> : <p className="mission-muted mt-1 text-xs">Pendente</p>}{installment.notes ? <p className="mission-muted mt-1 text-xs">{installment.notes}</p> : null}</div>{installment.status === 'pending' && installmentPlan.status !== 'cancelled' ? <button type="button" className="min-h-11 px-2 text-sm font-semibold text-shalom-blue dark:text-shalom-gold" onClick={() => setPayingInstallmentId((current) => current === installment.id ? null : installment.id)}>Registrar pagamento</button> : null}</div>{payingInstallmentId === installment.id ? <form className="mt-4 grid gap-3 border-t border-line/70 pt-4 dark:border-shalom-gold/10 sm:grid-cols-2" onSubmit={(event) => registerInstallmentPayment(event, installment)}><label className="text-sm font-medium">Forma<select className="mission-input mt-1 h-11 w-full px-3" value={installmentPaymentDraft.payment_method} onChange={(event) => setInstallmentPaymentDraft({ ...installmentPaymentDraft, payment_method: event.target.value })}><option value="pix">Pix</option><option value="dinheiro">Dinheiro</option></select></label><label className="text-sm font-medium">Data do pagamento<input type="date" className="mission-input mt-1 h-11 w-full px-3" value={installmentPaymentDraft.paid_at} onChange={(event) => setInstallmentPaymentDraft({ ...installmentPaymentDraft, paid_at: event.target.value })} required /></label><label className="text-sm font-medium sm:col-span-2">Observacao<input className="mission-input mt-1 h-11 w-full px-3" value={installmentPaymentDraft.notes} onChange={(event) => setInstallmentPaymentDraft({ ...installmentPaymentDraft, notes: event.target.value })} /></label><div className="flex justify-end gap-2 sm:col-span-2"><button type="button" className="min-h-11 px-4 font-semibold" onClick={() => setPayingInstallmentId(null)}>Cancelar</button><button type="submit" className="mission-btn mission-btn-primary min-h-11 px-4 font-semibold" disabled={saving}>Confirmar pagamento</button></div></form> : null}</article>)}</div>
+            <div className="divide-y divide-line/80 dark:divide-shalom-gold/10">{installmentPlan.installments.map((installment) => <article key={installment.id} className="py-4"><div className="flex items-start justify-between gap-3"><div><strong>{installment.installment_number}/{installmentPlan.installment_count} - {money.format(installment.amount)}</strong><p className="mission-muted mt-1 text-sm">Vencimento {formatDate(installment.due_date)}</p>{installment.status === 'paid' ? <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-200">Pago em {formatDate(installment.paid_at)} via {installment.paid_method}</p> : installment.overdue ? <p className="mt-1 text-xs font-semibold text-shalom-wine dark:text-rose-200">Vencida</p> : <p className="mission-muted mt-1 text-xs">Pendente</p>}{installment.notes ? <p className="mission-muted mt-1 text-xs">{installment.notes}</p> : null}</div>{installment.status === 'pending' && installmentPlan.status !== 'cancelled' ? <button type="button" className="min-h-11 px-2 text-sm font-semibold text-shalom-blue dark:text-shalom-gold" onClick={() => setPayingInstallmentId((current) => current === installment.id ? null : installment.id)}>Registrar pagamento</button> : null}</div>{payingInstallmentId === installment.id ? <ValidatedForm className="mt-4 grid gap-3 border-t border-line/70 pt-4 dark:border-shalom-gold/10 sm:grid-cols-2" onSubmit={(event) => registerInstallmentPayment(event, installment)}><label className="text-sm font-medium">Forma<FormControl unframed as="select" name="payment_method" className="mission-input mt-1 h-11 w-full px-3" value={installmentPaymentDraft.payment_method} onChange={(event) => setInstallmentPaymentDraft({ ...installmentPaymentDraft, payment_method: event.target.value })}><option value="pix">Pix</option><option value="dinheiro">Dinheiro</option></FormControl></label><label className="text-sm font-medium">Data do pagamento<FormControl unframed name="paid_at" type="date" className="mission-input mt-1 h-11 w-full px-3" value={installmentPaymentDraft.paid_at} onChange={(event) => setInstallmentPaymentDraft({ ...installmentPaymentDraft, paid_at: event.target.value })} required /></label><label className="text-sm font-medium sm:col-span-2">Observacao<FormControl unframed name="notes" className="mission-input mt-1 h-11 w-full px-3" value={installmentPaymentDraft.notes} onChange={(event) => setInstallmentPaymentDraft({ ...installmentPaymentDraft, notes: event.target.value })} /></label><div className="flex justify-end gap-2 sm:col-span-2"><button type="button" className="min-h-11 px-4 font-semibold" onClick={() => setPayingInstallmentId(null)}>Cancelar</button><button type="submit" className="mission-btn mission-btn-primary min-h-11 px-4 font-semibold" disabled={saving}>Confirmar pagamento</button></div></ValidatedForm> : null}</article>)}</div>
             {installmentPlan.status !== 'paid' && installmentPlan.status !== 'cancelled' ? <div className="mt-5 border-t border-line/80 pt-4 text-right dark:border-shalom-gold/10"><button type="button" className="min-h-11 px-3 text-sm font-semibold text-shalom-wine dark:text-rose-200" onClick={cancelCurrentInstallmentPlan} disabled={saving}>Cancelar parcelamento</button></div> : null}
           </div> : null}
         </section>
@@ -1408,7 +1420,7 @@ export function LibraryManager({ user }) {
 
       {activeTab === 'sellers' ? (
         <section className="grid gap-5 xl:grid-cols-[380px_minmax(0,1fr)]">
-          <form className="min-w-0" onSubmit={saveSellerRecord}>
+          <ValidatedForm className="min-w-0" onSubmit={saveSellerRecord}>
             <div className="flex items-center justify-between gap-3">
               <h3 className="font-display text-lg font-semibold">{editingSellerId ? 'Editar vendedor' : 'Novo vendedor'}</h3>
               {editingSellerId ? (
@@ -1421,22 +1433,22 @@ export function LibraryManager({ user }) {
               ) : null}
             </div>
             <div className="mt-3 grid gap-3">
-              <input className="mission-input px-3 py-2" value={sellerDraft.display_name} onChange={(event) => setSellerDraft({ ...sellerDraft, display_name: event.target.value })} placeholder="Nome exibido" disabled={user?.role !== 'admin'} required />
-              <input className="mission-input px-3 py-2" value={sellerDraft.whatsapp_phone} onChange={(event) => setSellerDraft({ ...sellerDraft, whatsapp_phone: event.target.value })} placeholder="WhatsApp com DDI e DDD" disabled={user?.role !== 'admin'} required />
+              <FormControl minLength={2} aria-label="Nome exibido" name="display_name" className="mission-input px-3 py-2" value={sellerDraft.display_name} onChange={(event) => setSellerDraft({ ...sellerDraft, display_name: event.target.value })} placeholder="Nome exibido" disabled={user?.role !== 'admin'} required />
+              <FormControl minLength={10} data-format="phone" aria-label="WhatsApp com DDI e DDD" name="whatsapp_phone" className="mission-input px-3 py-2" value={sellerDraft.whatsapp_phone} onChange={(event) => setSellerDraft({ ...sellerDraft, whatsapp_phone: event.target.value })} placeholder="WhatsApp com DDI e DDD" disabled={user?.role !== 'admin'} required />
               <label className="flex items-center justify-between rounded-xl border border-line/80 px-3 py-2 text-sm font-semibold dark:border-shalom-gold/10">
                 Vendedor ativo
-                <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={sellerDraft.active} onChange={(event) => setSellerDraft({ ...sellerDraft, active: event.target.checked })} disabled={user?.role !== 'admin'} />
+                <FormControl unframed type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={sellerDraft.active} onChange={(event) => setSellerDraft({ ...sellerDraft, active: event.target.checked })} disabled={user?.role !== 'admin'} />
               </label>
               <label className="flex items-center justify-between rounded-xl border border-line/80 px-3 py-2 text-sm font-semibold dark:border-shalom-gold/10">
                 Participa da rotacao
-                <input type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={sellerDraft.eligible} onChange={(event) => setSellerDraft({ ...sellerDraft, eligible: event.target.checked })} disabled={user?.role !== 'admin'} />
+                <FormControl unframed type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={sellerDraft.eligible} onChange={(event) => setSellerDraft({ ...sellerDraft, eligible: event.target.checked })} disabled={user?.role !== 'admin'} />
               </label>
             </div>
             <button type="submit" className="mission-btn mission-btn-primary mt-3 inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold disabled:opacity-55" disabled={user?.role !== 'admin' || saving}>
               <Save size={17} />
               {editingSellerId ? 'Atualizar vendedor' : 'Salvar vendedor'}
             </button>
-          </form>
+          </ValidatedForm>
           <div className="min-w-0 border-t border-line/80 pt-5 dark:border-shalom-gold/10 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -1499,7 +1511,7 @@ export function LibraryManager({ user }) {
       ) : null}
 
       {activeTab === 'spreadsheet' && isSpreadsheetFilterRoute ? (
-        <form className="mx-auto grid w-full max-w-3xl gap-6" onSubmit={applySpreadsheetFilters}>
+        <ValidatedForm className="mx-auto grid w-full max-w-3xl gap-6" onSubmit={applySpreadsheetFilters}>
           <div>
             <p className="mission-muted text-sm">Refine os dados exibidos na planilha. A busca por texto continua disponivel na tela principal.</p>
           </div>
@@ -1507,40 +1519,40 @@ export function LibraryManager({ user }) {
           {spreadsheetSection === 'sales' && spreadsheetFilterDraft ? (
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="grid gap-1 text-sm font-medium">Data inicial
-                <input type="date" className="mission-input px-3 py-2.5" value={spreadsheetFilterDraft.start_date} onChange={(event) => setSpreadsheetFilterDraft((current) => ({ ...current, start_date: event.target.value }))} />
+                <FormControl unframed name="start_date" type="date" className="mission-input px-3 py-2.5" value={spreadsheetFilterDraft.start_date} onChange={(event) => setSpreadsheetFilterDraft((current) => ({ ...current, start_date: event.target.value }))} />
               </label>
               <label className="grid gap-1 text-sm font-medium">Data final
-                <input type="date" className="mission-input px-3 py-2.5" value={spreadsheetFilterDraft.end_date} onChange={(event) => setSpreadsheetFilterDraft((current) => ({ ...current, end_date: event.target.value }))} />
+                <FormControl unframed name="end_date" type="date" className="mission-input px-3 py-2.5" value={spreadsheetFilterDraft.end_date} onChange={(event) => setSpreadsheetFilterDraft((current) => ({ ...current, end_date: event.target.value }))} />
               </label>
               <label className="grid gap-1 text-sm font-medium">Produto
-                <select className="mission-input px-3 py-2.5" value={spreadsheetFilterDraft.product_id} onChange={(event) => setSpreadsheetFilterDraft((current) => ({ ...current, product_id: event.target.value }))}>
+                <FormControl unframed as="select" name="product_id" className="mission-input px-3 py-2.5" value={spreadsheetFilterDraft.product_id} onChange={(event) => setSpreadsheetFilterDraft((current) => ({ ...current, product_id: event.target.value }))}>
                   <option value="">Todos os produtos</option>
                   {spreadsheetOptions.products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
-                </select>
+                </FormControl>
               </label>
               <label className="grid gap-1 text-sm font-medium">Categoria
-                <select className="mission-input px-3 py-2.5" value={spreadsheetFilterDraft.category_id} onChange={(event) => setSpreadsheetFilterDraft((current) => ({ ...current, category_id: event.target.value }))}>
+                <FormControl unframed as="select" name="category_id" className="mission-input px-3 py-2.5" value={spreadsheetFilterDraft.category_id} onChange={(event) => setSpreadsheetFilterDraft((current) => ({ ...current, category_id: event.target.value }))}>
                   <option value="">Todas as categorias</option>
                   {spreadsheetOptions.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                </select>
+                </FormControl>
               </label>
               <label className="grid gap-1 text-sm font-medium">Vendedor
-                <select className="mission-input px-3 py-2.5" value={spreadsheetFilterDraft.seller_id} onChange={(event) => setSpreadsheetFilterDraft((current) => ({ ...current, seller_id: event.target.value }))}>
+                <FormControl unframed as="select" name="seller_id" className="mission-input px-3 py-2.5" value={spreadsheetFilterDraft.seller_id} onChange={(event) => setSpreadsheetFilterDraft((current) => ({ ...current, seller_id: event.target.value }))}>
                   <option value="">Todos os vendedores</option>
                   {spreadsheetOptions.sellers.map((seller) => <option key={seller.id} value={seller.id}>{seller.display_name}</option>)}
-                </select>
+                </FormControl>
               </label>
               <label className="grid gap-1 text-sm font-medium">Forma de pagamento
-                <select className="mission-input px-3 py-2.5" value={spreadsheetFilterDraft.payment_method} onChange={(event) => setSpreadsheetFilterDraft((current) => ({ ...current, payment_method: event.target.value }))}>
+                <FormControl unframed as="select" name="payment_method" className="mission-input px-3 py-2.5" value={spreadsheetFilterDraft.payment_method} onChange={(event) => setSpreadsheetFilterDraft((current) => ({ ...current, payment_method: event.target.value }))}>
                   <option value="">Todas as formas</option>
                   {spreadsheetOptions.payment_methods.map((method) => <option key={method} value={method}>{method}</option>)}
-                </select>
+                </FormControl>
               </label>
               <label className="grid gap-1 text-sm font-medium">Status
-                <select className="mission-input px-3 py-2.5" value={spreadsheetFilterDraft.status} onChange={(event) => setSpreadsheetFilterDraft((current) => ({ ...current, status: event.target.value }))}>
+                <FormControl unframed as="select" name="status" className="mission-input px-3 py-2.5" value={spreadsheetFilterDraft.status} onChange={(event) => setSpreadsheetFilterDraft((current) => ({ ...current, status: event.target.value }))}>
                   <option value="">Todos os status</option>
                   <option value="completed">Concluida</option>
-                </select>
+                </FormControl>
               </label>
             </div>
           ) : null}
@@ -1548,31 +1560,31 @@ export function LibraryManager({ user }) {
           {spreadsheetSection === 'stock' && stockSpreadsheetFilterDraft ? (
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="grid gap-1 text-sm font-medium">Categoria
-                <select className="mission-input px-3 py-2.5" value={stockSpreadsheetFilterDraft.category_id} onChange={(event) => setStockSpreadsheetFilterDraft((current) => ({ ...current, category_id: event.target.value }))}>
+                <FormControl unframed as="select" name="category_id" className="mission-input px-3 py-2.5" value={stockSpreadsheetFilterDraft.category_id} onChange={(event) => setStockSpreadsheetFilterDraft((current) => ({ ...current, category_id: event.target.value }))}>
                   <option value="">Todas as categorias</option>
                   {spreadsheetOptions.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                </select>
+                </FormControl>
               </label>
               <label className="grid gap-1 text-sm font-medium">Status
-                <select className="mission-input px-3 py-2.5" value={stockSpreadsheetFilterDraft.active} onChange={(event) => setStockSpreadsheetFilterDraft((current) => ({ ...current, active: event.target.value }))}>
+                <FormControl unframed as="select" name="active" className="mission-input px-3 py-2.5" value={stockSpreadsheetFilterDraft.active} onChange={(event) => setStockSpreadsheetFilterDraft((current) => ({ ...current, active: event.target.value }))}>
                   <option value="">Todos os status</option>
                   <option value="active">Ativos</option>
                   <option value="inactive">Inativos</option>
-                </select>
+                </FormControl>
               </label>
               <label className="grid gap-1 text-sm font-medium">Publicacao
-                <select className="mission-input px-3 py-2.5" value={stockSpreadsheetFilterDraft.published} onChange={(event) => setStockSpreadsheetFilterDraft((current) => ({ ...current, published: event.target.value }))}>
+                <FormControl unframed as="select" name="published" className="mission-input px-3 py-2.5" value={stockSpreadsheetFilterDraft.published} onChange={(event) => setStockSpreadsheetFilterDraft((current) => ({ ...current, published: event.target.value }))}>
                   <option value="">Publicados e nao publicados</option>
                   <option value="published">Publicados</option>
                   <option value="draft">Nao publicados</option>
-                </select>
+                </FormControl>
               </label>
               <label className="grid gap-1 text-sm font-medium">Estoque
-                <select className="mission-input px-3 py-2.5" value={stockSpreadsheetFilterDraft.stock} onChange={(event) => setStockSpreadsheetFilterDraft((current) => ({ ...current, stock: event.target.value }))}>
+                <FormControl unframed as="select" name="stock" className="mission-input px-3 py-2.5" value={stockSpreadsheetFilterDraft.stock} onChange={(event) => setStockSpreadsheetFilterDraft((current) => ({ ...current, stock: event.target.value }))}>
                   <option value="">Todos os estoques</option>
                   <option value="in_stock">Com estoque</option>
                   <option value="out_of_stock">Sem estoque</option>
-                </select>
+                </FormControl>
               </label>
             </div>
           ) : null}
@@ -1584,7 +1596,7 @@ export function LibraryManager({ user }) {
               <button type="submit" className="mission-btn mission-btn-primary px-4 py-2.5 text-sm font-semibold">Aplicar filtros</button>
             </div>
           </div>
-        </form>
+        </ValidatedForm>
       ) : null}
 
       {activeTab === 'spreadsheet' && !isSpreadsheetFilterRoute ? (

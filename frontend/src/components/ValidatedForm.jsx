@@ -29,16 +29,19 @@ export function ValidatedForm({ children, onSubmit, ref, scrollToError = false, 
   function revalidate(event) {
     const form = event.currentTarget
     const changedField = event.target
-    setErrors((current) => {
-      const next = { ...current }
-      for (const field of Array.from(form.elements)) {
-        if (attemptedRef.current && field.id && (field === changedField || field.dataset.match === changedField.name)) {
-          const message = fieldError(field, form)
-          if (message) next[field.id] = message
-          else delete next[field.id]
+    queueMicrotask(() => {
+      if (formRef.current !== form || !form.contains(changedField)) return
+      setErrors((current) => {
+        const next = { ...current }
+        for (const field of Array.from(form.elements)) {
+          if (attemptedRef.current && field.id && (field === changedField || field.dataset.match === changedField.name)) {
+            const message = fieldError(field, form)
+            if (message) next[field.id] = message
+            else delete next[field.id]
+          }
         }
-      }
-      return next
+        return next
+      })
     })
   }
 
