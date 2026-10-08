@@ -100,6 +100,65 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  frontend-tests:
+    name: Frontend & Browser Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      NODE_ENV: test
+      VITE_API_URL: http://127.0.0.1:4000/api
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Install Chromium and system dependencies
+        run: node node_modules/playwright/cli.js install --with-deps chromium
+        working-directory: frontend
+
+      - name: Run frontend unit tests
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-results
+          npm test 2>&1 | tee test-results/frontend-unit-tests.txt
+        working-directory: frontend
+
+      - name: Run browser tests including pending-payment checkout
+        shell: bash
+        env:
+          TMPDIR: ${{ runner.temp }}/frontend-browser-tests
+        run: |
+          set -o pipefail
+          mkdir -p test-results "$TMPDIR"
+          npm run test:forms 2>&1 | tee test-results/frontend-browser-tests.txt
+        working-directory: frontend
+
+      - name: Upload frontend failure reports and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-test-failure-artifacts
+          path: |
+            frontend/test-results/
+            ${{ runner.temp }}/frontend-browser-tests/shalom-*.png
+          if-no-files-found: warn
+          retention-days: 14
+
   security:
     name: Security & Dependency Audit
     runs-on: ubuntu-latest
