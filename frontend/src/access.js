@@ -24,6 +24,10 @@ export function hasRole(subject, ...allowed) {
   return rolesFor(subject).some((role) => allowed.includes(role))
 }
 
+export function profileLabels(subject) {
+  return rolesFor(subject).map((role) => roleOptions.find((option) => option.value === role)?.label || role).join(', ')
+}
+
 export function allowedViewsForRole(subject, options = {}) {
   return [...new Set(rolesFor(subject).flatMap((role) => viewAccess[role] || []))]
     .filter((view) => view !== 'setup' || options.setupEnabled)

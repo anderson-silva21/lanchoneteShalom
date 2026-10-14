@@ -56,7 +56,7 @@ const libraryOperationalRateLimit = rateLimit({
   }
 });
 
-function hideOperationalSensitiveForFinance(req, payload) {
+function hideOperationalSensitiveWithoutWritePermission(req, payload) {
   if (can(req.user, 'library:write')) return payload;
   const sanitizeRequest = (request) => ({
     ...request,
@@ -204,11 +204,11 @@ router.delete('/sellers/:id', libraryOperationalRateLimit, authenticate, require
 });
 
 router.get('/seller-monitoring', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
-  return res.json(hideOperationalSensitiveForFinance(req, getSellerMonitoring()));
+  return res.json(hideOperationalSensitiveWithoutWritePermission(req, getSellerMonitoring()));
 });
 
 router.get('/requests', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
-  return res.json(hideOperationalSensitiveForFinance(req, listAssistedRequests({
+  return res.json(hideOperationalSensitiveWithoutWritePermission(req, listAssistedRequests({
     status: req.query.status,
     sellerId: req.query.seller_id,
     q: req.query.q,
@@ -217,7 +217,7 @@ router.get('/requests', libraryOperationalRateLimit, authenticate, requirePermis
 });
 
 router.get('/requests/:reference', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
-  return res.json(hideOperationalSensitiveForFinance(req, getAssistedRequest(req.params.reference)));
+  return res.json(hideOperationalSensitiveWithoutWritePermission(req, getAssistedRequest(req.params.reference)));
 });
 
 router.patch('/requests/:reference/items', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:write'), (req, res) => {

@@ -25,3 +25,5 @@ Ao implantar, mantenha `BACKUP_BEFORE_MIGRATIONS=true`, conserve uma cópia comp
 Os testes cobrem as APIs de usuários, autenticação com JWT antigo, união de permissões, revogação, último administrador, auditoria com rollback e migração com reabertura em outro processo. Os testes de navegador verificam criação, edição, menus, redirecionamento e sincronização de perfis em 390 e 1440 pixels.
 
 O projeto usa JavaScript e não possui comando de typecheck. A validação usa as suítes Node, ESLint, build Vite e testes Playwright existentes. Uma fixture de parcelamento foi atualizada para uma data futura porque a data fixa antiga já havia vencido.
+
+Resultados finais: backend 94/94, frontend unitário 15/15, navegador 21/21; ESLint, build Vite e `git diff --check` aprovados. A [revisão final](../.scratch/multiple-user-roles/review.md) registra os dois eixos e as sugestões corrigidas.

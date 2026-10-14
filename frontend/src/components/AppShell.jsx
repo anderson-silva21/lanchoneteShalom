@@ -15,7 +15,7 @@ import {
   Sun,
   WalletCards
 } from 'lucide-react'
-import { canAccessView, rolesFor } from '../access'
+import { canAccessView, profileLabels } from '../access'
 import { BrandMark } from './BrandMark'
 
 const navItems = [
@@ -28,14 +28,6 @@ const navItems = [
   { key: 'library', label: 'Livraria', icon: BookOpen },
   { key: 'settings', label: 'Sistema', icon: Settings }
 ]
-
-const roleLabels = {
-  admin: 'Admin',
-  manager: 'Gerente',
-  finance: 'Financeiro',
-  cashier: 'Caixa',
-  library: 'Livraria'
-}
 
 const mobileNavLabels = { sales: 'Vender' }
 
@@ -128,14 +120,14 @@ export function AppShell({ activeView, setActiveView, pageTitle, onBack, user, d
             className={`rounded-2xl border border-shalom-gold/35 bg-white/75 text-shalom-deep shadow-sm backdrop-blur dark:border-white/20 dark:bg-white/10 dark:text-white ${
               sidebarCollapsed ? 'flex h-12 items-center justify-center p-2' : 'p-3'
             }`}
-            title={sidebarCollapsed ? `${user?.name} (${rolesFor(user).map((role) => roleLabels[role] || role).join(', ')})` : undefined}
+            title={sidebarCollapsed ? `${user?.name} (${profileLabels(user)})` : undefined}
           >
             {sidebarCollapsed ? (
               <span className="font-display text-base font-semibold uppercase text-shalom-orange dark:text-shalom-gold">{user?.name?.charAt(0)}</span>
             ) : (
               <>
                 <p className="text-sm font-semibold">{user?.name}</p>
-                <p className="text-xs font-semibold text-shalom-orange dark:text-shalom-gold">{rolesFor(user).map((role) => roleLabels[role] || role).join(', ')}</p>
+                <p className="text-xs font-semibold text-shalom-orange dark:text-shalom-gold">{profileLabels(user)}</p>
               </>
             )}
           </div>
@@ -151,7 +143,7 @@ export function AppShell({ activeView, setActiveView, pageTitle, onBack, user, d
                 <div className="lg:hidden">
                   <h1 className="truncate font-display text-lg font-semibold leading-tight text-shalom-deep dark:text-white">{pageTitle || allowedNavItems.find((item) => item.key === activeView)?.label}</h1>
                   <p className="truncate text-xs font-semibold text-shalom-deep/80 dark:text-slate-200">{firstName}</p>
-                  <p className="break-words text-[11px] font-semibold text-shalom-orange dark:text-shalom-gold">{rolesFor(user).map((role) => roleLabels[role] || role).join(', ')}</p>
+                  <p className="break-words text-[11px] font-semibold text-shalom-orange dark:text-shalom-gold">{profileLabels(user)}</p>
                 </div>
                 <div className="hidden lg:block">
                   <p className="text-sm font-semibold uppercase tracking-[0.16em] text-shalom-orange dark:text-shalom-gold/90">Gestao da difusao</p>

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
 import { decimal, formatDateTime } from '../utils/formatters'
-import { rolesFor, roleOptions } from '../access'
+import { rolesFor, roleOptions, profileLabels } from '../access'
 import { RoleSelector } from './RoleSelector'
 
 const permissionRows = [
@@ -24,14 +24,6 @@ function getDisplayError(err) {
   if (issue?.path?.some((field) => field === 'role' || field === 'roles')) return 'Selecione pelo menos um perfil valido, sem duplicados.'
   if (issue?.message) return issue.message
   return err.message || 'Nao foi possivel completar a acao.'
-}
-
-function roleLabel(role) {
-  return roleOptions.find((item) => item.value === role)?.label || role
-}
-
-function profileLabels(user) {
-  return rolesFor(user).map(roleLabel).join(', ')
 }
 
 function formatBytes(value) {
