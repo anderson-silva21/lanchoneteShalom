@@ -5,20 +5,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
 import { decimal, formatDateTime } from '../utils/formatters'
-
-const roleOptions = [
-  { value: 'cashier', label: 'Caixa' },
-  { value: 'manager', label: 'Gerente' },
-  { value: 'finance', label: 'Financeiro' },
-  { value: 'library', label: 'Livraria' },
-  { value: 'admin', label: 'Admin' }
-]
+import { rolesFor, roleOptions, profileLabels } from '../access'
+import { RoleSelector } from './RoleSelector'
 
 const permissionRows = [
   ['dashboard', 'Dashboard', ['admin', 'finance']],
   ['setup', 'Carga inicial', ['admin', 'manager', 'finance']],
   ['sales', 'PDV', ['admin', 'manager', 'cashier', 'finance']],
-  ['payments', 'Pagamentos', ['admin', 'manager', 'cashier', 'finance']],
+  ['payments', 'Pagamentos', ['admin', 'manager', 'finance']],
   ['products', 'Produtos', ['admin', 'manager', 'finance']],
   ['sheet', 'Planilha', ['admin', 'manager', 'cashier', 'finance']],
   ['library', 'Livraria', ['admin', 'finance', 'library']],
@@ -27,13 +21,9 @@ const permissionRows = [
 
 function getDisplayError(err) {
   const issue = err.payload?.issues?.[0]
-  if (issue?.path?.includes('role')) return 'Perfil invalido. Atualize/reinicie o backend e tente novamente.'
+  if (issue?.path?.some((field) => field === 'role' || field === 'roles')) return 'Selecione pelo menos um perfil valido, sem duplicados.'
   if (issue?.message) return issue.message
   return err.message || 'Nao foi possivel completar a acao.'
-}
-
-function roleLabel(role) {
-  return roleOptions.find((item) => item.value === role)?.label || role
 }
 
 function formatBytes(value) {
@@ -48,7 +38,9 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
   const navigate = useNavigate()
   const [status, setStatus] = useState(null)
   const [users, setUsers] = useState([])
-  const [userDraft, setUserDraft] = useState({ name: '', username: '', role: 'cashier' })
+  const [userDraft, setUserDraft] = useState({ name: '', username: '', roles: ['cashier'] })
+  const [editingUser, setEditingUser] = useState(null)
+  const [savingRoles, setSavingRoles] = useState(false)
   const [generatedPassword, setGeneratedPassword] = useState(null)
   const [confirmation, setConfirmation] = useState('')
   const [message, setMessage] = useState('')
@@ -155,11 +147,16 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
       return
     }
 
+    if (!userDraft.roles.length) {
+      setUserMessage('Selecione pelo menos um perfil.')
+      validationForm.querySelector('[name="roles"]')?.focus()
+      return
+    }
     setSavingUser(true)
     try {
       const result = await api.createUser(userDraft)
       setUsers((current) => [...current, result.user].sort((left, right) => left.name.localeCompare(right.name, 'pt-BR')))
-      setUserDraft({ name: '', username: '', role: 'cashier' })
+      setUserDraft({ name: '', username: '', roles: ['cashier'] })
       setGeneratedPassword({
         title: 'Senha inicial criada',
         username: result.user.username,
@@ -175,6 +172,34 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
     } finally {
       setSavingUser(false)
     }
+  }
+
+  async function saveUserRoles(event) {
+    event.preventDefault()
+    setUserMessage('')
+    if (!editingUser.roles.length) {
+      setUserMessage('Selecione pelo menos um perfil.')
+      event.currentTarget.querySelector('[name="roles"]')?.focus()
+      return
+    }
+    setSavingRoles(true)
+    try {
+      const result = await api.updateUserRoles(editingUser.id, editingUser.roles)
+      setUsers((current) => current.map((item) => item.id === result.user.id ? result.user : item))
+      setUserMessage(`Perfis de ${result.user.username} atualizados.`)
+      setEditingUser(null)
+      loadAuditLogs()
+      window.dispatchEvent(new Event('shalom:permissions-changed'))
+    } catch (err) {
+      setUserMessage(getDisplayError(err))
+    } finally {
+      setSavingRoles(false)
+    }
+  }
+
+  function startRolesEdit(item) {
+    setUserMessage('')
+    setEditingUser({ ...item, roles: [...rolesFor(item)] })
   }
 
   async function resetUserPassword(userId) {
@@ -359,7 +384,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
   const initialLoadEnabled = status?.setup_enabled ?? setupEnabled
   const telegramLabel = telegramStatus?.enabled ? 'Ativo' : telegramStatus?.configured ? 'Desativado' : 'Nao configurado'
   const items = [
-    { label: 'Perfil', value: roleLabel(user?.role) || '-' },
+    { label: 'Perfis', value: profileLabels(user) || '-' },
     { label: 'Sessao', value: user?.username || '-' },
     { label: 'Produtos', value: decimal.format(counts.products || 0) },
     { label: 'Telegram', value: telegramLabel },
@@ -563,7 +588,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
           ) : null}
         </div>
 
-        <ValidatedForm className="mt-4 grid gap-3 lg:grid-cols-[1fr_180px_160px_auto]" onSubmit={createUser}>
+        <ValidatedForm className="mt-4 grid gap-3 lg:grid-cols-2" onSubmit={createUser}>
           <label className="text-sm font-medium">
             Nome
             <FormControl minLength={2} unframed name="name"
@@ -582,16 +607,8 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
               required
             />
           </label>
-          <label className="text-sm font-medium">
-            Perfil
-            <FormControl unframed as="select" name="role"
-              className="mission-input mt-1 w-full px-3 py-2"
-              value={userDraft.role}
-              onChange={(event) => setUserDraft({ ...userDraft, role: event.target.value })}
-            >
-              {roleOptions.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
-            </FormControl>
-          </label>
+          <RoleSelector roles={userDraft.roles} legend="Perfis do novo usuario" disabled={savingUser}
+            onChange={(roles) => setUserDraft({ ...userDraft, roles })} />
           <button
             type="submit"
             className="mission-btn mission-btn-primary flex items-center justify-center gap-2 px-4 py-3 font-semibold lg:self-end"
@@ -601,6 +618,18 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
             {savingUser ? 'Criando...' : 'Criar'}
           </button>
         </ValidatedForm>
+        {editingUser ? (
+          <form onSubmit={saveUserRoles} className="mt-4 grid gap-3 rounded-xl border border-line/80 p-3 dark:border-shalom-gold/10">
+            <RoleSelector roles={editingUser.roles} legend={`Perfis de ${editingUser.username}`} disabled={savingRoles}
+              onChange={(roles) => setEditingUser({ ...editingUser, roles })} />
+            <div className="flex flex-wrap gap-2">
+              <button type="submit" className="mission-btn mission-btn-primary min-h-11 px-4 py-2" disabled={savingRoles}>
+                {savingRoles ? 'Salvando...' : 'Salvar perfis'}
+              </button>
+              <button type="button" className="mission-btn min-h-11 px-4 py-2" disabled={savingRoles} onClick={() => setEditingUser(null)}>Cancelar</button>
+            </div>
+          </form>
+        ) : null}
         {userMessage ? (
           <p className="mt-3 rounded-xl border border-shalom-gold/25 bg-shalom-cream/60 px-3 py-2 text-sm font-medium text-shalom-deep dark:border-shalom-gold/10 dark:bg-white/10 dark:text-white" aria-live="polite">
             {userMessage}
@@ -615,10 +644,12 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
                   <h3 className="break-words font-semibold">{item.name}</h3>
                   <p className="mission-muted mt-1 break-all text-sm">{item.username}</p>
                 </div>
-                <span className="shrink-0 text-sm font-medium text-shalom-blue dark:text-shalom-gold">{roleLabel(item.role)}</span>
+                <span className="max-w-[50%] text-right text-sm font-medium text-shalom-blue dark:text-shalom-gold">{profileLabels(item)}</span>
               </div>
               <p className="mission-muted mt-2 text-xs">Senha: {item.password_must_change ? 'Troca pendente' : 'Definida'}</p>
               <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" className="mission-btn min-h-11 border border-line/80 px-3 py-2 text-sm font-semibold"
+                  aria-label={`Editar perfis de ${item.username}`} disabled={savingRoles} onClick={() => startRolesEdit(item)}>Editar perfis</button>
                 <button
                   type="button"
                   className="mission-btn inline-flex min-h-11 items-center gap-2 border border-line/80 px-3 py-2 text-sm font-semibold dark:border-shalom-gold/10"
@@ -658,12 +689,14 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
                 <tr key={item.id}>
                   <td className="border-b border-line/80 px-3 py-2 font-semibold dark:border-shalom-gold/10">{item.name}</td>
                   <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{item.username}</td>
-                  <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{roleLabel(item.role)}</td>
+                  <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{profileLabels(item)}</td>
                   <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
                     {item.password_must_change ? 'Troca pendente' : 'Definida'}
                   </td>
                   <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
                     <div className="flex flex-wrap justify-end gap-2">
+                      <button type="button" className="mission-btn min-h-11 border border-line/80 px-3 py-2 text-sm font-semibold"
+                        aria-label={`Editar perfis de ${item.username}`} disabled={savingRoles} onClick={() => startRolesEdit(item)}>Editar perfis</button>
                       <button
                         type="button"
                         className="mission-btn inline-flex items-center justify-center gap-2 border border-line/80 px-3 py-2 font-semibold hover:bg-shalom-cream/70 disabled:cursor-not-allowed disabled:opacity-55 dark:border-shalom-gold/10 dark:hover:bg-white/10"

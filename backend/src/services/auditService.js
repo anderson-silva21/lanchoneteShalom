@@ -20,7 +20,8 @@ function recordAudit({
   entityType = null,
   entityId = null,
   summary,
-  metadata = null
+  metadata = null,
+  strict = false
 }) {
   try {
     const actor = user || req?.user || {};
@@ -42,6 +43,7 @@ function recordAudit({
       req?.id || null
     );
   } catch (error) {
+    if (strict) throw error;
     console.error(`Falha ao registrar auditoria: ${error.message}`);
   }
 }

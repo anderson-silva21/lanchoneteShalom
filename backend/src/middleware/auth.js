@@ -1,6 +1,8 @@
 const jwt = require('jsonwebtoken');
 const { db } = require('../db');
 const { getJwtSecret } = require('../config/security');
+const { getUserRoles } = require('../services/userRolesService');
+const { hasRole } = require('../utils/roles');
 
 const jwtSecret = getJwtSecret();
 
@@ -16,6 +18,7 @@ function publicUser(user) {
     username: user.username,
     email: user.email,
     role: user.role,
+    roles: getUserRoles(user.id),
     password_must_change: Boolean(user.password_must_change)
   };
 }
@@ -56,7 +59,7 @@ function authenticate(req, res, next) {
 
 function requireRole(...roles) {
   return (req, res, next) => {
-    if (!roles.includes(req.user.role)) {
+    if (!hasRole(req.user, ...roles)) {
       return res.status(403).json({ message: 'Acesso restrito para este perfil.' });
     }
     return next();
@@ -67,11 +70,6 @@ function signUser(user) {
   return jwt.sign(
     {
       id: user.id,
-      name: user.name,
-      username: user.username,
-      email: user.email,
-      role: user.role,
-      password_must_change: Boolean(user.password_must_change)
     },
     jwtSecret,
     { expiresIn: '12h' }

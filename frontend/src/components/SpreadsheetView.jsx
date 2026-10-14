@@ -1,3 +1,4 @@
+import { hasRole } from '../access'
 import { ValidatedForm, FormControl } from './ValidatedForm'
 import { reportFormError } from '../utils/formValidation'
 import { ChevronDown, ChevronRight, Download, Filter, Save, Search, Trash2, X } from 'lucide-react'
@@ -175,12 +176,12 @@ export function SpreadsheetView({ refreshKey, onChanged, user }) {
   const [productToDelete, setProductToDelete] = useState(null)
   const [productDeleteConfirmation, setProductDeleteConfirmation] = useState('')
   const [deletingProduct, setDeletingProduct] = useState(false)
-  const canEditNotes = ['admin', 'finance'].includes(user?.role)
-  const canEditProducts = ['admin', 'manager', 'finance'].includes(user?.role)
-  const canDeleteProducts = user?.role === 'admin'
-  const canConfirmPayments = ['admin', 'manager', 'cashier', 'finance'].includes(user?.role)
-  const canDeleteSales = user?.role === 'admin'
-  const canViewCosts = ['admin', 'manager', 'finance'].includes(user?.role)
+  const canEditNotes = hasRole(user, 'admin', 'finance')
+  const canEditProducts = hasRole(user, 'admin', 'manager', 'finance')
+  const canDeleteProducts = hasRole(user, 'admin')
+  const canConfirmPayments = hasRole(user, 'admin', 'manager', 'cashier', 'finance')
+  const canDeleteSales = hasRole(user, 'admin')
+  const canViewCosts = hasRole(user, 'admin', 'manager', 'finance')
   const filterRouteMatch = location.pathname.match(/^\/planilha\/filtros\/([^/]+)$/)
   const editRouteMatch = location.pathname.match(/^\/planilha\/editar\/([^/]+)\/([^/]+)$/)
   const editRouteSheet = editRouteMatch?.[1] || ''

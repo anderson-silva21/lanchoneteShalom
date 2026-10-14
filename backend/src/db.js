@@ -9,7 +9,7 @@ const dbPath = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.jo
 const backupDir = path.join(path.dirname(dbPath), 'backups');
 let migrationBackupCreated = false;
 const BRAZIL_TIMESTAMP_MIGRATION_KEY = 'timestamps_brazil_minus3_migrated_v1';
-const USER_ROLES = ['admin', 'manager', 'cashier', 'finance', 'library'];
+const { USER_ROLES } = require('./utils/roles');
 
 fs.mkdirSync(dataDir, { recursive: true });
 
@@ -974,6 +974,46 @@ function repairLegacyUserForeignKeys() {
   }
 }
 
+function ensureMultipleUserRolesSchema() {
+  if (!tableExists('users') || tableExists('user_roles')) return;
+  createMigrationBackup('user_roles');
+  const primaryRoleFor = (userId) => `SELECT role FROM user_roles WHERE user_id = ${userId}
+    ORDER BY CASE role ${USER_ROLES.map((role, index) => `WHEN '${role}' THEN ${index}`).join(' ')} END LIMIT 1`;
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE user_roles (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'cashier', 'finance', 'library')),
+        PRIMARY KEY (user_id, role)
+      );
+      INSERT INTO user_roles (user_id, role) SELECT id, role FROM users;
+      CREATE INDEX idx_user_roles_role ON user_roles(role, user_id);
+
+      -- Legacy inserts (seeds/CLI) still create one assignment.
+      CREATE TRIGGER trg_users_initial_role AFTER INSERT ON users
+      BEGIN
+        INSERT INTO user_roles (user_id, role) VALUES (NEW.id, NEW.role);
+      END;
+      -- users.role is only a deterministic compatibility projection.
+      CREATE TRIGGER trg_user_roles_insert AFTER INSERT ON user_roles
+      BEGIN
+        UPDATE users SET role = (${primaryRoleFor('NEW.user_id')}) WHERE id = NEW.user_id;
+      END;
+      CREATE TRIGGER trg_user_roles_delete AFTER DELETE ON user_roles
+      WHEN EXISTS (SELECT 1 FROM user_roles WHERE user_id = OLD.user_id)
+      BEGIN
+        UPDATE users SET role = (${primaryRoleFor('OLD.user_id')})
+        WHERE id = OLD.user_id;
+      END;
+      CREATE TRIGGER trg_user_roles_immutable BEFORE UPDATE ON user_roles
+      BEGIN SELECT RAISE(ABORT, 'Replace role assignments instead of updating them'); END;
+      CREATE TRIGGER trg_users_role_projection BEFORE UPDATE OF role ON users
+      WHEN NEW.role != (${primaryRoleFor('NEW.id')})
+      BEGIN SELECT RAISE(ABORT, 'users.role is a projection; write user_roles'); END;
+    `);
+  })();
+}
+
 function runMigrations() {
   ensureAppSettingsSchema();
   ensureAuditLogSchema();
@@ -1007,6 +1047,7 @@ function runMigrations() {
   addColumnIfMissing('inventory_movements', 'expiration_date', 'TEXT');
   addColumnIfMissing('inventory_movements', 'batch_id', 'INTEGER REFERENCES stock_batches(id)');
   repairLegacyUserForeignKeys();
+  ensureMultipleUserRolesSchema();
   migrateLegacyStockBatches();
 }
 

@@ -1,3 +1,4 @@
+import { hasRole } from '../access'
 import { ValidatedForm, FormControl } from './ValidatedForm'
 import { reportFormError } from '../utils/formValidation'
 import { ArrowUpDown, ChevronDown, ChevronRight, Download, Eye, Filter, History, MessageCircle, Minus, PackagePlus, Pencil, Plus, Save, Search, ShoppingCart, Trash2, UserRound, X } from 'lucide-react'
@@ -106,7 +107,7 @@ function newSaleKey() {
 }
 
 function canWrite(user) {
-  return ['admin', 'library'].includes(user?.role)
+  return hasRole(user, 'admin', 'library')
 }
 
 const libraryPaymentMethods = [
@@ -179,7 +180,7 @@ function LibrarySaleProductCard({ product, quantity, writable, onAdd, onChangeQu
 
 export function LibraryManager({ user }) {
   const writable = canWrite(user)
-  const canManageLibraryFinance = ['admin', 'finance'].includes(user?.role)
+  const canManageLibraryFinance = hasRole(user, 'admin', 'finance')
   const location = useLocation()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('overview')
@@ -761,7 +762,7 @@ export function LibraryManager({ user }) {
   }
 
   async function removeSellerRecord(seller) {
-    if (user?.role !== 'admin') return
+    if (!hasRole(user, 'admin')) return
     const hasHistory = seller.archived || Number(seller.operational_history_count || 0) > 0
     const confirmation = hasHistory
       ? 'Remover vendedor?\n\nEste vendedor possui historico de atendimentos ou vendas. Ele sera arquivado e deixara de receber novos clientes, mas seus registros historicos serao preservados.'
@@ -1059,7 +1060,7 @@ export function LibraryManager({ user }) {
                       <button type="button" className="mission-btn border border-line/80 px-3 py-2 font-semibold disabled:opacity-55 dark:border-shalom-gold/10" onClick={() => cancelRequest(request)} disabled={saving}>Cancelar</button>
                     </div>
                   ) : null}
-                  {user?.role === 'admin' && ['pending', 'in_progress'].includes(request.status) ? (
+                  {hasRole(user, 'admin') && ['pending', 'in_progress'].includes(request.status) ? (
                     <div className="mt-3">
                       <select className="mission-input w-full px-3 py-2" value={request.assigned_seller_id || ''} onChange={(event) => reassignRequest(request, event.target.value)} disabled={saving}>
                         <option value="">Reatribuir vendedor</option>
@@ -1433,18 +1434,18 @@ export function LibraryManager({ user }) {
               ) : null}
             </div>
             <div className="mt-3 grid gap-3">
-              <FormControl minLength={2} aria-label="Nome exibido" name="display_name" className="mission-input px-3 py-2" value={sellerDraft.display_name} onChange={(event) => setSellerDraft({ ...sellerDraft, display_name: event.target.value })} placeholder="Nome exibido" disabled={user?.role !== 'admin'} required />
-              <FormControl minLength={10} data-format="phone" aria-label="WhatsApp com DDI e DDD" name="whatsapp_phone" className="mission-input px-3 py-2" value={sellerDraft.whatsapp_phone} onChange={(event) => setSellerDraft({ ...sellerDraft, whatsapp_phone: event.target.value })} placeholder="WhatsApp com DDI e DDD" disabled={user?.role !== 'admin'} required />
+              <FormControl minLength={2} aria-label="Nome exibido" name="display_name" className="mission-input px-3 py-2" value={sellerDraft.display_name} onChange={(event) => setSellerDraft({ ...sellerDraft, display_name: event.target.value })} placeholder="Nome exibido" disabled={!hasRole(user, 'admin')} required />
+              <FormControl minLength={10} data-format="phone" aria-label="WhatsApp com DDI e DDD" name="whatsapp_phone" className="mission-input px-3 py-2" value={sellerDraft.whatsapp_phone} onChange={(event) => setSellerDraft({ ...sellerDraft, whatsapp_phone: event.target.value })} placeholder="WhatsApp com DDI e DDD" disabled={!hasRole(user, 'admin')} required />
               <label className="flex items-center justify-between rounded-xl border border-line/80 px-3 py-2 text-sm font-semibold dark:border-shalom-gold/10">
                 Vendedor ativo
-                <FormControl unframed type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={sellerDraft.active} onChange={(event) => setSellerDraft({ ...sellerDraft, active: event.target.checked })} disabled={user?.role !== 'admin'} />
+                <FormControl unframed type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={sellerDraft.active} onChange={(event) => setSellerDraft({ ...sellerDraft, active: event.target.checked })} disabled={!hasRole(user, 'admin')} />
               </label>
               <label className="flex items-center justify-between rounded-xl border border-line/80 px-3 py-2 text-sm font-semibold dark:border-shalom-gold/10">
                 Participa da rotacao
-                <FormControl unframed type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={sellerDraft.eligible} onChange={(event) => setSellerDraft({ ...sellerDraft, eligible: event.target.checked })} disabled={user?.role !== 'admin'} />
+                <FormControl unframed type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={sellerDraft.eligible} onChange={(event) => setSellerDraft({ ...sellerDraft, eligible: event.target.checked })} disabled={!hasRole(user, 'admin')} />
               </label>
             </div>
-            <button type="submit" className="mission-btn mission-btn-primary mt-3 inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold disabled:opacity-55" disabled={user?.role !== 'admin' || saving}>
+            <button type="submit" className="mission-btn mission-btn-primary mt-3 inline-flex w-full items-center justify-center gap-2 px-4 py-3 font-semibold disabled:opacity-55" disabled={!hasRole(user, 'admin') || saving}>
               <Save size={17} />
               {editingSellerId ? 'Atualizar vendedor' : 'Salvar vendedor'}
             </button>
@@ -1455,7 +1456,7 @@ export function LibraryManager({ user }) {
                 <h3 className="font-display text-lg font-semibold">Vendedores da Livraria</h3>
                 <p className="mission-muted mt-1 text-sm">Remover arquiva vendedores com historico e apaga apenas cadastros sem uso.</p>
               </div>
-              <select className="mission-input px-3 py-2 text-sm" value={sellerVisibility} onChange={(event) => setSellerVisibility(event.target.value)} disabled={user?.role !== 'admin'}>
+              <select className="mission-input px-3 py-2 text-sm" value={sellerVisibility} onChange={(event) => setSellerVisibility(event.target.value)} disabled={!hasRole(user, 'admin')}>
                 <option value="active">Ativos</option>
                 <option value="archived">Arquivados</option>
                 <option value="all">Todos</option>
@@ -1489,11 +1490,11 @@ export function LibraryManager({ user }) {
                         </td>
                         <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
                           <div className="flex flex-wrap items-center gap-2">
-                            <button type="button" className="mission-btn inline-flex items-center gap-2 border border-line/80 px-3 py-2 font-semibold disabled:opacity-55 dark:border-shalom-gold/10" onClick={() => startSellerEdit(seller)} disabled={user?.role !== 'admin' || saving || seller.archived}>
+                            <button type="button" className="mission-btn inline-flex items-center gap-2 border border-line/80 px-3 py-2 font-semibold disabled:opacity-55 dark:border-shalom-gold/10" onClick={() => startSellerEdit(seller)} disabled={!hasRole(user, 'admin') || saving || seller.archived}>
                               <Pencil size={16} />
                               Editar
                             </button>
-                            <button type="button" className="mission-btn inline-flex items-center gap-2 border border-shalom-wine/30 px-3 py-2 font-semibold text-shalom-wine disabled:opacity-55 dark:border-rose-300/20 dark:text-rose-100" onClick={() => removeSellerRecord(seller)} disabled={user?.role !== 'admin' || saving}>
+                            <button type="button" className="mission-btn inline-flex items-center gap-2 border border-shalom-wine/30 px-3 py-2 font-semibold text-shalom-wine disabled:opacity-55 dark:border-rose-300/20 dark:text-rose-100" onClick={() => removeSellerRecord(seller)} disabled={!hasRole(user, 'admin') || saving}>
                               <Trash2 size={16} />
                               Remover
                             </button>

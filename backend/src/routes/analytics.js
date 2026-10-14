@@ -1,3 +1,4 @@
+const { hasRole } = require('../utils/roles');
 const express = require('express');
 const { authenticate } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
@@ -10,7 +11,7 @@ router.use(authenticate, requireScreen('dashboard'));
 
 router.get('/dashboard', (req, res) => {
   const analytics = getDashboardAnalytics();
-  if (req.user.role === 'finance') {
+  if (hasRole(req.user, 'finance')) {
     analytics.telegram_group_url = getTelegramGroupUrl();
   }
   return res.json(analytics);

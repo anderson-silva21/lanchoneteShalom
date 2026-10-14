@@ -2,7 +2,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/accessControl');
+const { can, requirePermission } = require('../middleware/accessControl');
 const { recordAudit } = require('../services/auditService');
 const { toCsv, toLibraryReportPdfStream, toLibraryReportXlsxBuffer, toLibraryStockPdfStream, toLibraryStockXlsxBuffer } = require('../services/exportService');
 const { brazilDate } = require('../utils/time');
@@ -56,8 +56,8 @@ const libraryOperationalRateLimit = rateLimit({
   }
 });
 
-function hideOperationalSensitiveForFinance(req, payload) {
-  if (req.user?.role !== 'finance') return payload;
+function hideOperationalSensitiveWithoutWritePermission(req, payload) {
+  if (can(req.user, 'library:write')) return payload;
   const sanitizeRequest = (request) => ({
     ...request,
     seller: request.seller ? { ...request.seller, whatsapp_phone: undefined } : request.seller
@@ -158,7 +158,7 @@ router.get('/dashboard', libraryOperationalRateLimit, authenticate, requirePermi
 });
 
 router.get('/sellers', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
-  const sellers = listSellers({ visibility: req.query.visibility }).map((seller) => req.user.role === 'finance' ? { ...seller, whatsapp_phone: undefined } : seller);
+  const sellers = listSellers({ visibility: req.query.visibility }).map((seller) => !can(req.user, 'library:write') ? { ...seller, whatsapp_phone: undefined } : seller);
   return res.json(sellers);
 });
 
@@ -204,11 +204,11 @@ router.delete('/sellers/:id', libraryOperationalRateLimit, authenticate, require
 });
 
 router.get('/seller-monitoring', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
-  return res.json(hideOperationalSensitiveForFinance(req, getSellerMonitoring()));
+  return res.json(hideOperationalSensitiveWithoutWritePermission(req, getSellerMonitoring()));
 });
 
 router.get('/requests', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
-  return res.json(hideOperationalSensitiveForFinance(req, listAssistedRequests({
+  return res.json(hideOperationalSensitiveWithoutWritePermission(req, listAssistedRequests({
     status: req.query.status,
     sellerId: req.query.seller_id,
     q: req.query.q,
@@ -217,7 +217,7 @@ router.get('/requests', libraryOperationalRateLimit, authenticate, requirePermis
 });
 
 router.get('/requests/:reference', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
-  return res.json(hideOperationalSensitiveForFinance(req, getAssistedRequest(req.params.reference)));
+  return res.json(hideOperationalSensitiveWithoutWritePermission(req, getAssistedRequest(req.params.reference)));
 });
 
 router.patch('/requests/:reference/items', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:write'), (req, res) => {

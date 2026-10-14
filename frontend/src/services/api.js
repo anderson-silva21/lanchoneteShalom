@@ -33,6 +33,7 @@ async function request(path, options = {}) {
     const errorPayload = await response.json().catch(() => ({}))
     const error = new Error(errorPayload.message || 'Nao foi possivel completar a acao.')
     error.payload = errorPayload
+    error.status = response.status
     throw error
   }
 
@@ -74,10 +75,11 @@ async function uploadBackup(file) {
 
 export const api = {
   login: (username, password) => request('/auth/login', { method: 'POST', body: { username, password } }),
-  me: () => request('/auth/me'),
+  me: () => request('/auth/me', { cache: 'no-store' }),
   changePassword: (payload) => request('/auth/change-password', { method: 'POST', body: payload }),
   users: () => request('/users'),
   createUser: (payload) => request('/users', { method: 'POST', body: payload }),
+  updateUserRoles: (id, roles) => request(`/users/${id}/roles`, { method: 'PATCH', body: { roles } }),
   resetUserPassword: (id) => request(`/users/${id}/reset-password`, { method: 'POST' }),
   deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),
   dashboard: () => request('/analytics/dashboard', { cache: 'no-store' }),
