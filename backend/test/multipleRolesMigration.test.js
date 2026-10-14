@@ -7,16 +7,19 @@ const { execFileSync } = require('child_process');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 const express = require('express');
+const { randomBytes } = require('node:crypto');
+
+const migrationPassword = randomBytes(24).toString('hex');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'shalom-roles-migration-'));
 process.env.DB_PATH = path.join(tempDir, 'legacy.sqlite');
-process.env.JWT_SECRET = 'roles-migration-test-secret';
+process.env.JWT_SECRET = randomBytes(32).toString('hex');
 const legacy = new Database(process.env.DB_PATH);
 legacy.exec(fs.readFileSync(path.join(__dirname, '../../database/schema.sql'), 'utf8'));
 const profiles = ['admin', 'manager', 'cashier', 'finance', 'library'];
 for (const [index, role] of profiles.entries()) {
   legacy.prepare('INSERT INTO users (id, name, username, email, password_hash, role) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(31 + index, role, role, `${role}@test.local`, bcrypt.hashSync('Preservada123!', 4), role);
+    .run(31 + index, role, role, `${role}@test.local`, bcrypt.hashSync(migrationPassword, 4), role);
 }
 legacy.prepare("INSERT INTO sales (total, payment_method, sold_by) VALUES (10, 'pix', 33)").run();
 legacy.close();
@@ -46,7 +49,7 @@ test('migracao preserva IDs, senhas e acessos antigos; reinicio conserva a edica
   let adminToken;
   for (const [index, role] of profiles.entries()) {
     const response = await fetch(`${baseUrl}/auth/login`, { method: 'POST',
-      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: role, password: 'Preservada123!' }) });
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: role, password: migrationPassword }) });
     assert.equal(response.status, 200);
     const login = await response.json();
     assert.equal(login.user.id, 31 + index);
@@ -71,12 +74,13 @@ test('migracao preserva IDs, senhas e acessos antigos; reinicio conserva a edica
       try {
         const result = await fetch('http://127.0.0.1:' + server.address().port + '/api/auth/login', {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ username: 'cashier', password: 'Preservada123!' })
+          body: JSON.stringify({ username: 'cashier', password: process.env.MIGRATION_TEST_PASSWORD })
         });
-        console.log(JSON.stringify(await result.json()));
+        const { user } = await result.json();
+        console.log(JSON.stringify({ user }));
       } finally { server.close(); db.close(); }
     });
-  `], { cwd: path.join(__dirname, '..'), env: process.env, encoding: 'utf8', timeout: 15000 });
+  `], { cwd: path.join(__dirname, '..'), env: { ...process.env, MIGRATION_TEST_PASSWORD: migrationPassword }, encoding: 'utf8', timeout: 15000 });
   const restarted = JSON.parse(output.trim().split(/\r?\n/).at(-1));
   assert.equal(restarted.user.id, 33);
   assert.deepEqual(restarted.user.roles, ['finance', 'library']);

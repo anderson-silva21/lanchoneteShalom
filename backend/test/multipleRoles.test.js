@@ -4,14 +4,19 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const express = require('express');
+const bcrypt = require('bcryptjs');
+const { randomBytes } = require('node:crypto');
+
+const cashierPassword = randomBytes(24).toString('hex');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'shalom-roles-'));
 process.env.DB_PATH = path.join(tempDir, 'test.sqlite');
-process.env.JWT_SECRET = 'multiple-roles-test-secret';
+process.env.JWT_SECRET = randomBytes(32).toString('hex');
 const { db, initDatabase } = require('../src/db');
 const { signUser, authenticate } = require('../src/middleware/auth');
 const { requireScreen } = require('../src/middleware/accessControl');
 initDatabase();
+db.prepare("UPDATE users SET password_hash = ? WHERE username = 'caixa'").run(bcrypt.hashSync(cashierPassword, 4));
 const app = express();
 app.use(express.json());
 app.use('/api/users', require('../src/routes/users'));
@@ -57,7 +62,7 @@ test('admin cria Caixa + Livraria e os perfis persistem na listagem', async () =
 });
 
 test('um JWT usa a uniao dos perfis atuais e perde acessos revogados sem novo login', async () => {
-  const login = await request('/auth/login', { method: 'POST', body: { username: 'caixa', password: 'caixa123' } });
+  const login = await request('/auth/login', { method: 'POST', body: { username: 'caixa', password: cashierPassword } });
   const token = login.body.token;
   const id = login.body.user.id;
   assert.deepEqual(login.body.user.roles, ['cashier']);
@@ -91,7 +96,7 @@ test('ultimo administrador ativo nao pode perder o perfil, inclusive com outro a
 });
 
 test('usuarios comuns nao criam contas nem editam perfis proprios ou alheios', async () => {
-  const login = await request('/auth/login', { method: 'POST', body: { username: 'caixa', password: 'caixa123' } });
+  const login = await request('/auth/login', { method: 'POST', body: { username: 'caixa', password: cashierPassword } });
   for (const id of [login.body.user.id, 1]) {
     assert.equal((await request(`/users/${id}/roles`, { token: login.body.token, method: 'PATCH', body: { roles: ['admin'] } })).status, 403);
   }
@@ -107,7 +112,7 @@ test('criacao legada, troca obrigatoria de senha, auditoria e persistencia mante
   const login = await request('/auth/login', { method: 'POST', body: { username: 'legado', password: created.body.temporary_password } });
   assert.equal((await request('/probe/sales', { token: login.body.token })).status, 403);
   const changed = await request('/auth/change-password', { token: login.body.token, method: 'POST', body: {
-    current_password: created.body.temporary_password, new_password: 'NovaSenha123!'
+    current_password: created.body.temporary_password, new_password: randomBytes(24).toString('hex')
   } });
   assert.equal(changed.status, 200);
   await request(`/users/${created.body.user.id}/roles`, { method: 'PATCH', body: { roles: ['library', 'cashier'] } });
@@ -126,7 +131,7 @@ test('Financeiro + Livraria conserva o acesso operacional e financeiro sem admin
   const seller = await request('/library/sellers', { method: 'POST', body: { display_name: 'Vendedor Teste', whatsapp_phone: '5511999999999' } });
   assert.equal(seller.status, 201);
   const cashier = (await request('/users')).body.find((user) => user.username === 'caixa');
-  const login = await request('/auth/login', { method: 'POST', body: { username: 'caixa', password: 'caixa123' } });
+  const login = await request('/auth/login', { method: 'POST', body: { username: 'caixa', password: cashierPassword } });
   const token = login.body.token;
   await request(`/users/${cashier.id}/roles`, { method: 'PATCH', body: { roles: ['finance', 'library'] } });
   const sellers = await request('/library/sellers', { token });

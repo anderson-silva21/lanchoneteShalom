@@ -4,6 +4,7 @@ import { chromium } from 'playwright'
 import { createServer } from 'vite'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { randomBytes } from 'node:crypto'
 
 let server
 let browser
@@ -262,7 +263,7 @@ test('usuarios: criar e editar Caixa + Livraria com selecao acessivel em mobile 
       if (request.method() === 'POST') {
         const body = request.postDataJSON()
         users.push({ id: 21, ...body, active: true, password_must_change: true })
-        await route.fulfill({ status: 201, json: { user: users[0], temporary_password: 'Temp123!' } })
+        await route.fulfill({ status: 201, json: { user: users[0], temporary_password: randomBytes(18).toString('hex') } })
       } else if (request.method() === 'PATCH') {
         users[0] = { ...users[0], roles: request.postDataJSON().roles }
         await route.fulfill({ json: { user: users[0] } })
