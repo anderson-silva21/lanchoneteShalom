@@ -1,3 +1,4 @@
+import { hasRole } from '../access'
 import { ValidatedForm, FormControl } from './ValidatedForm'
 import { reportFormError } from '../utils/formValidation'
 import {
@@ -235,7 +236,7 @@ export function Dashboard({ refreshKey, onNavigateToProducts, user }) {
   const expirationAlerts = data.expiration_alerts || []
   const missingExpirationProducts = data.missing_expiration_products || []
   const eventRevenue = data.event_revenue || []
-  const canOpenTelegramGroup = user?.role === 'finance' && data.telegram_group_url
+  const canOpenTelegramGroup = hasRole(user, 'finance') && data.telegram_group_url
   const eventNameOptions = Array.from(new Set(events.map((event) => event.name).filter(Boolean))).sort((a, b) => a.localeCompare(b))
   const isDashboardHome = location.pathname === '/dashboard' || location.pathname === '/'
 

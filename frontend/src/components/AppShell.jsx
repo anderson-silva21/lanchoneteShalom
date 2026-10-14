@@ -15,7 +15,7 @@ import {
   Sun,
   WalletCards
 } from 'lucide-react'
-import { canAccessView } from '../access'
+import { canAccessView, rolesFor } from '../access'
 import { BrandMark } from './BrandMark'
 
 const navItems = [
@@ -44,7 +44,7 @@ function getFirstName(fullName) {
 }
 
 export function AppShell({ activeView, setActiveView, pageTitle, onBack, user, darkMode, setDarkMode, setupEnabled = false, onLogout, children }) {
-  const allowedNavItems = navItems.filter((item) => canAccessView(user?.role, item.key, { setupEnabled }))
+  const allowedNavItems = navItems.filter((item) => canAccessView(user, item.key, { setupEnabled }))
   const mobileNavColumns = allowedNavItems.length > 7 ? Math.ceil(allowedNavItems.length / 2) : allowedNavItems.length
   const firstName = getFirstName(user?.name)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
@@ -128,14 +128,14 @@ export function AppShell({ activeView, setActiveView, pageTitle, onBack, user, d
             className={`rounded-2xl border border-shalom-gold/35 bg-white/75 text-shalom-deep shadow-sm backdrop-blur dark:border-white/20 dark:bg-white/10 dark:text-white ${
               sidebarCollapsed ? 'flex h-12 items-center justify-center p-2' : 'p-3'
             }`}
-            title={sidebarCollapsed ? `${user?.name} (${user?.role})` : undefined}
+            title={sidebarCollapsed ? `${user?.name} (${rolesFor(user).map((role) => roleLabels[role] || role).join(', ')})` : undefined}
           >
             {sidebarCollapsed ? (
               <span className="font-display text-base font-semibold uppercase text-shalom-orange dark:text-shalom-gold">{user?.name?.charAt(0)}</span>
             ) : (
               <>
                 <p className="text-sm font-semibold">{user?.name}</p>
-                <p className="text-xs font-semibold text-shalom-orange dark:text-shalom-gold">{roleLabels[user?.role] || user?.role}</p>
+                <p className="text-xs font-semibold text-shalom-orange dark:text-shalom-gold">{rolesFor(user).map((role) => roleLabels[role] || role).join(', ')}</p>
               </>
             )}
           </div>
@@ -151,7 +151,7 @@ export function AppShell({ activeView, setActiveView, pageTitle, onBack, user, d
                 <div className="lg:hidden">
                   <h1 className="truncate font-display text-lg font-semibold leading-tight text-shalom-deep dark:text-white">{pageTitle || allowedNavItems.find((item) => item.key === activeView)?.label}</h1>
                   <p className="truncate text-xs font-semibold text-shalom-deep/80 dark:text-slate-200">{firstName}</p>
-                  <p className="truncate text-[11px] font-semibold text-shalom-orange dark:text-shalom-gold">{roleLabels[user?.role] || user?.role}</p>
+                  <p className="break-words text-[11px] font-semibold text-shalom-orange dark:text-shalom-gold">{rolesFor(user).map((role) => roleLabels[role] || role).join(', ')}</p>
                 </div>
                 <div className="hidden lg:block">
                   <p className="text-sm font-semibold uppercase tracking-[0.16em] text-shalom-orange dark:text-shalom-gold/90">Gestao da difusao</p>

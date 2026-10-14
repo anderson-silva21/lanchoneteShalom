@@ -1,3 +1,4 @@
+import { hasRole } from '../access'
 import { ValidatedForm, FormControl } from './ValidatedForm'
 import { reportFormError } from '../utils/formValidation'
 import { ArrowDown, ArrowUp, ArrowUpDown, Boxes, PackagePlus, Save, Search, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react'
@@ -610,8 +611,8 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   const selectedProduct = products.find((product) => String(product.id) === String(selectedProductId)) || selectedStock?.product
   const needsMovementBatch = movementMode === 'adjustment_out' || movementMode === 'waste'
   const showsMovementExpiration = movementMode === 'purchase' || (movementMode === 'adjustment_in' && !adjustment.batch_id)
-  const canDeleteProducts = user?.role === 'admin' && !setupMode
-  const canManagePosVisibility = ['admin', 'finance'].includes(user?.role)
+  const canDeleteProducts = hasRole(user, 'admin') && !setupMode
+  const canManagePosVisibility = hasRole(user, 'admin', 'finance')
 
   useEffect(() => {
     if (movementMode !== 'purchase' || !adjustment.product_id) return
@@ -689,7 +690,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
           stock={{ adjustment, movementBatches, movementMode, movementProductRef, needsMovementBatch, setAdjustment, showsMovementExpiration }}
           permissions={{
             canDeleteProducts,
-            canEditHistoricalCosts: ['admin', 'finance'].includes(user?.role),
+            canEditHistoricalCosts: hasRole(user, 'admin', 'finance'),
             canManagePosVisibility
           }}
           ui={{ detailMode, message, mobileContextOpen, productSection }}
@@ -1132,7 +1133,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       />
 
       <ProductHistoryPanel
-        canEditHistoricalCosts={['admin', 'finance'].includes(user?.role)}
+        canEditHistoricalCosts={hasRole(user, 'admin', 'finance')}
         onUpdateSaleItemCost={updateHistoricalSaleItemCost}
         productHistory={productHistory}
         selectedProduct={selectedProduct}

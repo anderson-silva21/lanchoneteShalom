@@ -252,10 +252,10 @@ test('Pix parcelado cria recebiveis mensais com centavos exatos e baixa ate pago
 test('Dinheiro parcelado exige cliente e contato e faz rollback completo', () => {
   const category = createCategory({ name: 'Dinheiro Recebiveis' });
   const product = saveProduct({ name: 'Livro Dinheiro Recebiveis', category_id: category.id, sku: 'TEST-DIN-REC', price: 60, cost_price: 20, stock_quantity: 2, min_stock: 0, published: true });
-  assert.throws(() => createSale({ payment_method: 'dinheiro', receivable_installments: 2, first_due_date: '2026-10-10', idempotency_key: 'cash-receivable-invalid', items: [{ product_id: product.id, quantity: 1 }] }, { id: 1 }), /nome do cliente/);
+  assert.throws(() => createSale({ payment_method: 'dinheiro', receivable_installments: 2, first_due_date: '2099-10-10', idempotency_key: 'cash-receivable-invalid', items: [{ product_id: product.id, quantity: 1 }] }, { id: 1 }), /nome do cliente/);
   assert.equal(db.prepare('SELECT stock_quantity FROM library_products WHERE id = ?').get(product.id).stock_quantity, 2);
 
-  const sale = createSale({ customer_name: 'Jose Cliente', customer_contact: '5512988888888', payment_method: 'dinheiro', receivable_installments: 2, first_due_date: '2026-10-10', idempotency_key: 'cash-receivable-valid', items: [{ product_id: product.id, quantity: 1 }] }, { id: 1 });
+  const sale = createSale({ customer_name: 'Jose Cliente', customer_contact: '5512988888888', payment_method: 'dinheiro', receivable_installments: 2, first_due_date: '2099-10-10', idempotency_key: 'cash-receivable-valid', items: [{ product_id: product.id, quantity: 1 }] }, { id: 1 });
   assert.equal(sale.installment_plan.installment_count, 2);
   assert.equal(sale.installment_plan.financial_status, 'unpaid');
 })

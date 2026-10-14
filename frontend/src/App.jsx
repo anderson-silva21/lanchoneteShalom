@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { canAccessView, defaultViewForRole } from './access'
+import { canAccessView, defaultViewForRole, hasRole } from './access'
 import { AppShell } from './components/AppShell'
 import { ChangePasswordScreen } from './components/ChangePasswordScreen'
 import { Dashboard } from './components/Dashboard'
@@ -110,26 +110,39 @@ function App() {
   useEffect(() => {
     if (!getToken()) return undefined
     let mounted = true
-    api.me()
+    let syncVersion = 0
+    function syncUser() {
+      if (!getToken()) return
+      const version = ++syncVersion
+      api.me()
       .then(({ user: currentUser }) => {
-        if (!mounted) return
-        setUser(currentUser)
+        if (!mounted || version !== syncVersion) return
+        setUser((previous) => JSON.stringify(previous) === JSON.stringify(currentUser) ? previous : currentUser)
         localStorage.setItem('lanchonete_user', JSON.stringify(currentUser))
       })
-      .catch(() => {
-        if (!mounted) return
+      .catch((error) => {
+        if (error.status !== 401) return
+        if (!mounted || version !== syncVersion) return
         setToken('')
         setUser(null)
         localStorage.removeItem('lanchonete_user')
       })
+    }
+    syncUser()
+    const interval = window.setInterval(syncUser, 30000)
+    window.addEventListener('focus', syncUser)
+    window.addEventListener('shalom:permissions-changed', syncUser)
 
     return () => {
       mounted = false
+      window.clearInterval(interval)
+      window.removeEventListener('focus', syncUser)
+      window.removeEventListener('shalom:permissions-changed', syncUser)
     }
-  }, [])
+  }, [user?.id])
 
   useEffect(() => {
-    if (!user || user.password_must_change || !['admin', 'manager', 'finance'].includes(user.role)) {
+    if (!user || user.password_must_change || !hasRole(user, 'admin', 'manager', 'finance')) {
       setSetupEnabled(false)
       return undefined
     }
@@ -154,9 +167,9 @@ function App() {
     setUser(payload.user)
     if (!payload.user.password_must_change) {
       const requestedView = viewFromPath(location.pathname)
-      const nextView = requestedView && canAccessView(payload.user.role, requestedView)
+      const nextView = requestedView && canAccessView(payload.user, requestedView)
         ? requestedView
-        : defaultViewForRole(payload.user.role)
+        : defaultViewForRole(payload.user)
       setActiveView(nextView)
       if (!requestedView) navigate(viewPaths[nextView], { replace: true })
     }
@@ -170,7 +183,7 @@ function App() {
     })
     setToken(payload.token)
     setUser(payload.user)
-    const nextView = defaultViewForRole(payload.user.role, { setupEnabled })
+    const nextView = defaultViewForRole(payload.user, { setupEnabled })
     setActiveView(nextView)
     navigate(viewPaths[nextView], { replace: true })
     localStorage.setItem('lanchonete_user', JSON.stringify(payload.user))
@@ -254,6 +267,14 @@ function App() {
     navigate(viewPaths[view] || '/')
   }
 
+  useEffect(() => {
+    if (!user || user.password_must_change || isPublicLibrary) return
+    const requested = viewFromPath(location.pathname)
+    if (!requested || !canAccessView(user, requested, { setupEnabled })) {
+      navigate(viewPaths[defaultViewForRole(user, { setupEnabled })], { replace: true })
+    }
+  }, [user, setupEnabled, location.pathname, navigate, isPublicLibrary])
+
   if (isPublicLibrary) {
     return <PublicLibraryStorefront />
   }
@@ -267,7 +288,7 @@ function App() {
   }
 
   const requestedView = viewFromPath(location.pathname) || activeView
-  const currentView = canAccessView(user.role, requestedView, { setupEnabled }) ? requestedView : defaultViewForRole(user.role, { setupEnabled })
+  const currentView = canAccessView(user, requestedView, { setupEnabled }) ? requestedView : defaultViewForRole(user, { setupEnabled })
   const pageTitle = pageTitleFromPath(location.pathname)
   const views = {
     dashboard: <Dashboard refreshKey={refreshKey} onNavigateToProducts={navigateToProducts} user={user} />,

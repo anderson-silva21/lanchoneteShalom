@@ -2,7 +2,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
-const { requirePermission } = require('../middleware/accessControl');
+const { can, requirePermission } = require('../middleware/accessControl');
 const { recordAudit } = require('../services/auditService');
 const { toCsv, toLibraryReportPdfStream, toLibraryReportXlsxBuffer, toLibraryStockPdfStream, toLibraryStockXlsxBuffer } = require('../services/exportService');
 const { brazilDate } = require('../utils/time');
@@ -57,7 +57,7 @@ const libraryOperationalRateLimit = rateLimit({
 });
 
 function hideOperationalSensitiveForFinance(req, payload) {
-  if (req.user?.role !== 'finance') return payload;
+  if (can(req.user, 'library:write')) return payload;
   const sanitizeRequest = (request) => ({
     ...request,
     seller: request.seller ? { ...request.seller, whatsapp_phone: undefined } : request.seller
@@ -158,7 +158,7 @@ router.get('/dashboard', libraryOperationalRateLimit, authenticate, requirePermi
 });
 
 router.get('/sellers', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
-  const sellers = listSellers({ visibility: req.query.visibility }).map((seller) => req.user.role === 'finance' ? { ...seller, whatsapp_phone: undefined } : seller);
+  const sellers = listSellers({ visibility: req.query.visibility }).map((seller) => !can(req.user, 'library:write') ? { ...seller, whatsapp_phone: undefined } : seller);
   return res.json(sellers);
 });
 

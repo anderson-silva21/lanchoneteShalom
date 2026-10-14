@@ -1,3 +1,4 @@
+const { hasRole } = require('../utils/roles');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
@@ -316,7 +317,7 @@ router.get('/:id/history', requireScreen('products'), productHistoryRateLimit, (
 
 router.post('/', requireScreen('products'), (req, res) => {
   const payload = productSchema.parse(req.body);
-  if (!payload.visible_in_pos && !['admin', 'finance'].includes(req.user.role)) {
+  if (!payload.visible_in_pos && !hasRole(req.user, 'admin', 'finance')) {
     return res.status(403).json({ message: 'Sem permissao para alterar a visibilidade no PDV.' });
   }
   const product = {

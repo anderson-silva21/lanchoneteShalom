@@ -251,6 +251,85 @@ test('usuarios real: formato, erro da API e correcao', async (t) => {
   await page.waitForFunction(() => !document.querySelector('[name="username"]').hasAttribute('aria-invalid'))
 })
 
+test('usuarios: criar e editar Caixa + Livraria com selecao acessivel em mobile e desktop', async (t) => {
+  for (const width of [390, 1440]) {
+    const page = await browser.newPage({ viewport: { width, height: 900 } })
+    t.after(() => page.close())
+    await mockAdminApi(page)
+    const users = []
+    await page.route('**/api/users**', async (route) => {
+      const request = route.request()
+      if (request.method() === 'POST') {
+        const body = request.postDataJSON()
+        users.push({ id: 21, ...body, active: true, password_must_change: true })
+        await route.fulfill({ status: 201, json: { user: users[0], temporary_password: 'Temp123!' } })
+      } else if (request.method() === 'PATCH') {
+        users[0] = { ...users[0], roles: request.postDataJSON().roles }
+        await route.fulfill({ json: { user: users[0] } })
+      } else await route.fulfill({ json: users })
+    })
+    await page.goto(`${baseUrl}/e2e/forms.html?screen=settings`)
+    await page.locator('[name="name"]').fill('Maria Livraria')
+    await page.locator('[name="username"]').fill('maria')
+    const profiles = page.getByRole('group', { name: 'Perfis do novo usuario' })
+    await profiles.getByRole('checkbox', { name: 'Caixa', exact: true }).uncheck()
+    await page.getByRole('button', { name: 'Criar', exact: true }).click()
+    await page.getByText('Selecione pelo menos um perfil.', { exact: true }).waitFor()
+    assert.equal(users.length, 0)
+    await profiles.getByRole('checkbox', { name: 'Caixa', exact: true }).check()
+    await profiles.getByRole('checkbox', { name: 'Livraria', exact: true }).check()
+    await page.getByRole('button', { name: 'Criar', exact: true }).click()
+    await page.getByText('Caixa, Livraria', { exact: true }).filter({ visible: true }).waitFor()
+    assert.deepEqual(users[0].roles, ['cashier', 'library'])
+    await page.getByRole('button', { name: 'Editar perfis de maria', exact: true }).filter({ visible: true }).click()
+    const editor = page.getByRole('group', { name: 'Perfis de maria' })
+    await editor.getByRole('checkbox', { name: 'Caixa', exact: true }).uncheck()
+    await page.getByRole('button', { name: 'Salvar perfis', exact: true }).click()
+    await page.getByText('Perfis de maria atualizados.', { exact: true }).waitFor()
+    assert.deepEqual(users[0].roles, ['library'])
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false)
+    await page.close()
+  }
+})
+
+test('navegacao combina Caixa e Livraria e atualiza acessos e redirecionamento apos revogacao', async (t) => {
+  for (const width of [390, 1440]) {
+    const page = await browser.newPage({ viewport: { width, height: 900 }, serviceWorkers: 'block' })
+    t.after(() => page.close())
+    const errors = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    let user = { id: 21, name: 'Maria Livraria', username: 'maria', role: 'cashier', roles: ['cashier', 'library'], password_must_change: false }
+    await page.addInitScript((initialUser) => {
+      localStorage.setItem('lanchonete_token', 'one-session')
+      localStorage.setItem('lanchonete_user', JSON.stringify(initialUser))
+    }, user)
+    await mockAdminApi(page)
+    await page.route('**/api/auth/me', (route) => route.fulfill({ json: { user } }))
+    await page.goto(`${baseUrl}/pdv`)
+    const nav = page.locator('nav').filter({ visible: true })
+    assert.equal(await nav.getByRole('button', { name: width < 1000 ? 'Vender' : 'PDV', exact: true }).count(), 1)
+    assert.equal(await nav.getByRole('button', { name: 'Livraria', exact: true }).count(), 1)
+    assert.equal(await nav.getByRole('button', { name: 'Sistema', exact: true }).count(), 0)
+    assert.equal(await nav.getByRole('button', { name: 'Financeiro', exact: true }).count(), 0)
+    await nav.getByRole('button', { name: 'Livraria', exact: true }).click()
+    await page.waitForURL('**/gestao-livraria')
+    await nav.getByRole('button', { name: width < 1000 ? 'Vender' : 'PDV', exact: true }).click()
+    await page.waitForURL('**/pdv')
+    user = { ...user, role: 'library', roles: ['library'] }
+    const synchronized = page.waitForResponse('**/api/auth/me')
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    const refreshed = await synchronized
+    assert.deepEqual((await refreshed.json()).user.roles, ['library'])
+    await page.waitForURL('**/gestao-livraria', { timeout: 5000 })
+    assert.equal(await nav.getByRole('button', { name: width < 1000 ? 'Vender' : 'PDV', exact: true }).count(), 0)
+    assert.equal(await page.evaluate(() => localStorage.getItem('lanchonete_token')), 'one-session')
+    await page.goto(`${baseUrl}/sistema`)
+    await page.waitForURL('**/gestao-livraria')
+    assert.deepEqual(errors, [])
+    await page.close()
+  }
+})
+
 const pendingCustomerMessage = 'Informe o nome do cliente para registrar uma venda com pagamento pendente.'
 
 async function openPendingSale(t, { width = 390, productCount = 1, rejectCustomer = false } = {}) {

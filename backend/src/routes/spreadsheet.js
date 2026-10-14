@@ -1,3 +1,4 @@
+const { hasRole } = require('../utils/roles');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
@@ -92,7 +93,7 @@ function normalizeNotes(value) {
 }
 
 function requirePrivilegedForNotes(req, res) {
-  if (['admin', 'finance'].includes(req.user.role)) return true;
+  if (hasRole(req.user, 'admin', 'finance')) return true;
   res.status(403).json({ message: 'Somente administradores e financeiro podem alterar observacoes.' });
   return false;
 }

@@ -1,4 +1,5 @@
 const { requireRole } = require('./auth');
+const { hasRole } = require('../utils/roles');
 
 const screenRoles = {
   dashboard: ['admin', 'finance'],
@@ -28,8 +29,8 @@ function requireScreen(screen) {
   return requireRole(...roles);
 }
 
-function can(role, permission) {
-  return Boolean(permissions[permission]?.includes(role));
+function can(subject, permission) {
+  return hasRole(subject, ...(permissions[permission] || []));
 }
 
 function requirePermission(permission) {
