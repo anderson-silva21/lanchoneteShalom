@@ -102,6 +102,21 @@ test('editar quantidade pelo catalogo persiste estoque e registra ajuste pela AP
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
+    const { libraryProductPayload, libraryPublicationPayload } = await import('../../frontend/src/utils/libraryProductPayload.js');
+    for (const buildPayload of [
+      () => libraryPublicationPayload(product),
+      () => libraryProductPayload({ ...product, stock_quantity: '2', description: 'Descricao editada' }, product.stock_quantity)
+    ]) {
+      createSale({ items: [{ product_id: product.id, quantity: 1 }], payment_method: 'pix' }, { id: userId });
+      const movementCount = db.prepare('SELECT COUNT(*) AS total FROM library_inventory_movements WHERE product_id = ?').get(product.id).total;
+      const response = await patch(buildPayload());
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).stock_quantity, 1, 'editar publicacao ou descricao nao deve desfazer a venda');
+      assert.equal(db.prepare('SELECT stock_quantity FROM library_products WHERE id = ?').get(product.id).stock_quantity, 1);
+      assert.equal(db.prepare('SELECT COUNT(*) AS total FROM library_inventory_movements WHERE product_id = ?').get(product.id).total, movementCount);
+      const reset = await patch({ stock_quantity: 2 });
+      assert.equal(reset.status, 200);
+    }
     let before = 2;
     for (const after of [5, 1.125, 0]) {
       const response = await patch({ ...product, stock_quantity: after });

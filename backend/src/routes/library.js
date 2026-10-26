@@ -321,7 +321,9 @@ router.post('/products', libraryOperationalRateLimit, authenticate, requirePermi
 
 router.patch('/products/:id', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:write'), (req, res) => {
   const current = getProduct(req.params.id);
-  const payload = productSchema.partial().parse(req.body);
+  const parsed = productSchema.partial().parse(req.body);
+  // Creation defaults must not overwrite omitted fields in a partial update.
+  const payload = Object.fromEntries(Object.entries(parsed).filter(([key]) => Object.hasOwn(req.body, key)));
   const product = saveProduct({
     ...current,
     ...payload,

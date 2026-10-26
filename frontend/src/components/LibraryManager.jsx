@@ -8,6 +8,7 @@ import { Area, CartesianGrid, ComposedChart, Legend, ResponsiveContainer, Toolti
 import { api } from '../services/api'
 import { decimal, formatDate, formatDateTime, money } from '../utils/formatters'
 import { formatLibraryCustomerContact } from '../utils/libraryRequestDrafts'
+import { libraryProductPayload, libraryPublicationPayload } from '../utils/libraryProductPayload'
 import { cartFromLibraryRequest, filterLibrarySaleProducts, normalizeLibrarySaleProducts } from '../utils/librarySale'
 import { addPosCartItem, changePosCartQuantity, getPosCartSummary } from '../utils/posCart'
 
@@ -237,6 +238,7 @@ export function LibraryManager({ user }) {
   const [sellerDraft, setSellerDraft] = useState({ display_name: '', whatsapp_phone: '', active: true, eligible: true, user_id: '' })
   const [editingSellerId, setEditingSellerId] = useState(null)
   const [editingProductId, setEditingProductId] = useState(null)
+  const [initialStockQuantity, setInitialStockQuantity] = useState(null)
   const [categoryDraft, setCategoryDraft] = useState({ name: '', description: '' })
   const [stockDraft, setStockDraft] = useState({ product_id: '', type: 'replenishment', operation: 'in', quantity: 1, reason: '' })
   const [saleDraft, setSaleDraft] = useState({ customer_name: '', customer_contact: '', payment_method: 'manual', payment_mode: 'full', payment_installments: 1, receivable_installments: 2, first_due_date: isoDate(new Date()), first_installment_paid: false, notes: '', items: [] })
@@ -463,11 +465,7 @@ export function LibraryManager({ user }) {
     setSaving(true)
     setMessage('')
     try {
-      const payload = {
-        ...productDraft,
-        category_id: productDraft.category_id || null,
-        images: productDraft.image_url ? [{ url: productDraft.image_url, alt_text: productDraft.name }] : []
-      }
+      const payload = libraryProductPayload(productDraft, editingProductId ? initialStockQuantity : undefined)
       if (editingProductId) {
         await api.updateLibraryProduct(editingProductId, payload)
       } else {
@@ -490,12 +488,7 @@ export function LibraryManager({ user }) {
     setSaving(true)
     setMessage('')
     try {
-      await api.updateLibraryProduct(product.id, {
-        ...product,
-        category_id: product.category_id || null,
-        published: !product.published,
-        images: product.images || []
-      })
+      await api.updateLibraryProduct(product.id, libraryPublicationPayload(product))
       await loadData()
     } catch (err) {
       setMessage(err.message)
@@ -505,6 +498,7 @@ export function LibraryManager({ user }) {
   }
 
   function startProductEdit(product) {
+    setInitialStockQuantity(product.stock_quantity)
     setEditingProductId(product.id)
     setProductDraft({
       name: product.name,
@@ -530,6 +524,7 @@ export function LibraryManager({ user }) {
     if (!catalogProductId || String(editingProductId) === String(catalogProductId)) return
     const product = products.find((candidate) => String(candidate.id) === String(catalogProductId))
     if (!product) return
+    setInitialStockQuantity(product.stock_quantity)
     setEditingProductId(product.id)
     setProductDraft({
       name: product.name,
