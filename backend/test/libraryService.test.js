@@ -78,6 +78,61 @@ test('catalogo publico exibe somente produtos ativos publicados e nao vaza custo
   assert.equal(products[0].images[0].url, 'https://example.com/livro.jpg');
 });
 
+test('editar quantidade pelo catalogo persiste estoque e registra ajuste pela API', async () => {
+  initDatabase();
+  const product = saveProduct({ name: '5 Paes e 2 Peixinhos I Vol. 1', sku: '5P2P1', price: 0, cost_price: 0, stock_quantity: 2, published: true });
+  const userId = db.prepare(`
+    INSERT INTO users (name, username, email, password_hash, role)
+    VALUES ('Admin Catalogo', 'admin-catalog-stock', 'admin-catalog-stock@example.local', 'x', 'admin')
+  `).run().lastInsertRowid;
+  const token = signUser(db.prepare('SELECT * FROM users WHERE id = ?').get(userId));
+  const app = express();
+  app.use(express.json());
+  app.use('/api/library', libraryRoutes);
+  app.use(errorHandler);
+  const server = app.listen(0, '127.0.0.1');
+
+  try {
+    const baseUrl = await new Promise((resolve) => {
+      if (server.listening) return resolve(`http://127.0.0.1:${server.address().port}`);
+      return server.once('listening', () => resolve(`http://127.0.0.1:${server.address().port}`));
+    });
+    const patch = (payload) => fetch(`${baseUrl}/api/library/products/${product.id}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    let before = 2;
+    for (const after of [5, 1.125, 0]) {
+      const response = await patch({ ...product, stock_quantity: after });
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).stock_quantity, after);
+      const read = await fetch(`${baseUrl}/api/library/products/${product.id}`, { headers: { Authorization: `Bearer ${token}` } });
+      assert.equal((await read.json()).stock_quantity, after);
+      const movement = db.prepare('SELECT * FROM library_inventory_movements WHERE product_id = ? ORDER BY id DESC LIMIT 1').get(product.id);
+      assert.equal(movement.type, 'adjustment');
+      assert.equal(movement.quantity_before, before);
+      assert.equal(movement.quantity_after, after);
+      assert.equal(movement.quantity_change, after - before);
+      assert.equal(movement.created_by, userId);
+      before = after;
+    }
+    const countMovements = () => db.prepare('SELECT COUNT(*) AS total FROM library_inventory_movements WHERE product_id = ?').get(product.id).total;
+    const count = countMovements();
+    for (const payload of [{ stock_quantity: 0 }, { description: 'Descricao atualizada' }]) {
+      const response = await patch(payload);
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).stock_quantity, 0);
+      assert.equal(countMovements(), count);
+    }
+    const invalid = await patch({ stock_quantity: -1 });
+    assert.equal(invalid.status, 400);
+    assert.equal(countMovements(), count);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test('catalogo publico ordena por preco com filtros de busca e categoria', () => {
   const category = createCategory({ name: 'Ordenacao' });
   saveProduct({

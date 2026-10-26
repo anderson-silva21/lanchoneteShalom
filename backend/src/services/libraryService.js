@@ -396,7 +396,7 @@ const saveProductTransaction = db.transaction((payload, id = null) => {
     sku: normalizeSku(payload.sku || (id ? null : generateSku(payload.name))),
     price: money(payload.price),
     cost_price: money(payload.cost_price),
-    stock_quantity: id ? undefined : quantity(payload.stock_quantity),
+    stock_quantity: payload.stock_quantity === undefined && id ? undefined : quantity(payload.stock_quantity),
     min_stock: quantity(payload.min_stock),
     active: payload.active === false || payload.active === 0 ? 0 : 1,
     published: payload.published === true || payload.published === 1 ? 1 : 0
@@ -412,6 +412,9 @@ const saveProductTransaction = db.transaction((payload, id = null) => {
   if (productId) {
     const current = db.prepare('SELECT * FROM library_products WHERE id = ?').get(productId);
     if (!current) throw createHttpError('Produto da Livraria nao encontrado.', 404);
+    const before = quantity(current.stock_quantity);
+    const after = product.stock_quantity === undefined ? before : product.stock_quantity;
+    if (!Number.isFinite(after) || after < 0) throw createHttpError('Informe uma quantidade de estoque valida.', 400);
     db.prepare(`
       UPDATE library_products
       SET name = @name,
@@ -420,11 +423,24 @@ const saveProductTransaction = db.transaction((payload, id = null) => {
           sku = @sku,
           price = @price,
           cost_price = @cost_price,
+          stock_quantity = @stock_quantity,
           min_stock = @min_stock,
           active = @active,
           published = @published
       WHERE id = @id
-    `).run({ ...product, id: productId });
+    `).run({ ...product, stock_quantity: after, id: productId });
+    if (after !== before) {
+      insertMovement({
+        productId,
+        movementType: 'adjustment',
+        quantityChange: quantity(after - before),
+        quantityBefore: before,
+        quantityAfter: after,
+        referenceType: 'product_update',
+        reason: 'Estoque atualizado pelo cadastro da Livraria',
+        userId: payload.user_id || null
+      });
+    }
   } else {
     productId = db.prepare(`
       INSERT INTO library_products
