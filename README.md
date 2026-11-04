@@ -6,7 +6,7 @@ Aplicacao web para controle de estoque, vendas e operacao do setor de producao S
 
 - Frontend: React, Vite, TailwindCSS, Recharts, Lucide
 - Backend: Node.js, Express, SQLite
-- Banco: `database/lanchonete.sqlite`
+- Dados persistentes: `database/lanchonete.sqlite` e `database/uploads/products/`
 - Exportacao: CSV, XLSX e PDF
 - PWA: manifest e service worker
 
@@ -90,7 +90,7 @@ Travas de seguranca do seed demo:
 - Login protegido com rate limit, bloqueio temporario apos falhas repetidas e auditoria de tentativas invalidas.
 - Administrador cria usuarios ativos, gera senha inicial aleatoria, reseta senhas e exclui acessos ativos.
 - Primeiro acesso com senha temporaria exige troca de senha antes de abrir o sistema.
-- Backup manual, backup automatico, backup pre-migracao e restauracao controlada do banco SQLite.
+- Backup manual, backup automatico, backup pre-migracao e restauracao controlada do banco SQLite, incluindo uma copia recuperavel das imagens normalizadas.
 - Auditoria de acoes criticas: usuarios, produtos, estoque, vendas, pagamentos, fechamentos, Telegram e reset de dados.
 - Saude do sistema em `Sistema`: versao, integridade do banco, tamanho dos arquivos, ultimo backup e status do Telegram.
 - Historico por produto com movimentacoes, vendas e auditoria.
@@ -179,6 +179,7 @@ Se o grupo do Telegram virar supergrupo, o `TELEGRAM_CHAT_ID` muda e normalmente
 
 - Antes de migracoes destrutivas, o backend cria `database/backups/lanchonete-pre-migration-*.sqlite`.
 - Backups manuais e restauracao ficam em `Relatorios > Backups` para administradores.
+- As imagens ficam em `database/uploads/products/` por padrao e tambem sao mantidas no SQLite para que backups baixados e restauracoes preservem o catalogo completo.
 - A restauracao cria um backup `pre-restore`, substitui o SQLite e encerra o processo para o PM2/subprocesso iniciar novamente com o banco restaurado.
 - A auditoria recente fica em `Sistema`; registros completos podem ser consultados pela API `/api/system/audit-logs`.
 - O fechamento de caixa/evento fica em `Pagamentos > Fechamento`, com data, evento opcional e observacoes.
@@ -195,6 +196,6 @@ VITE_API_URL=http://localhost:4000/api
 2. Sirva `frontend/dist` em Nginx, Vercel, Netlify ou outro host estatico.
 3. Rode `npm start --prefix backend` em um servidor Node.
 4. Configure `CORS_ORIGINS` com todos os dominios do frontend e use um `JWT_SECRET` forte.
-5. Persista a pasta `database/` em volume permanente.
+5. Persista toda a pasta `database/` em volume permanente; ela contem o SQLite e os arquivos de imagem normalizados.
 
 Veja [docs/DEPLOY.md](docs/DEPLOY.md) para detalhes.

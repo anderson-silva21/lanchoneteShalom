@@ -2,6 +2,7 @@ import { Boxes, PackagePlus, Save, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { formatDate, formatQuantityWithUnit, money } from '../../utils/formatters'
 import { StatusPill } from '../StatusPill'
+import { ImageUploadField } from '../ImageUploadField'
 
 export function ProductMobileList({
   products,
@@ -14,7 +15,8 @@ export function ProductMobileList({
   onSaveProduct,
   onUpdatePosVisibility,
   onSelectProduct,
-  onStartStockMovement
+  onStartStockMovement,
+  savingProductId
 }) {
   const [editingProductId, setEditingProductId] = useState('')
 
@@ -128,11 +130,7 @@ export function ProductMobileList({
                     {categories.map((categoryName) => <option key={categoryName} value={categoryName}>{categoryName}</option>)}
                   </select>
                 </label>
-                <label className="block text-sm font-medium">
-                  URL da imagem
-                  <input type="url" className="mission-input mt-1 w-full px-3 py-2.5" value={product.image_url || ''} onChange={(event) => onChangeProduct(product.id, 'image_url', event.target.value)} placeholder="https://exemplo.com/produto.jpg" />
-                </label>
-                {product.image_url ? <div key={product.image_url} className="overflow-hidden rounded-md bg-shalom-cream/60"><img className="aspect-video w-full object-cover" src={product.image_url} alt={`Preview de ${product.name}`} onError={(event) => { event.currentTarget.hidden = true; event.currentTarget.nextElementSibling.hidden = false }} /><p className="mission-muted hidden p-3 text-sm">Nao foi possivel carregar a imagem.</p></div> : null}
+                <ImageUploadField currentImageUrl={product.image_removed ? '' : product.image_url} selectedFile={product.image_file} uploading={savingProductId === String(product.id)} onSelect={(file) => { onChangeProduct(product.id, 'image_file', file); onChangeProduct(product.id, 'image_removed', false) }} onRemove={() => { onChangeProduct(product.id, 'image_file', null); onChangeProduct(product.id, 'image_url', ''); onChangeProduct(product.id, 'image_removed', true) }} />
                 <div className="grid min-w-0 grid-cols-1 gap-3 min-[380px]:grid-cols-2">
                   <label className="block text-sm font-medium">
                     Custo
@@ -184,10 +182,11 @@ export function ProductMobileList({
                 <button
                   type="button"
                   className="mission-btn mission-btn-primary flex min-h-12 w-full items-center justify-center gap-2 px-4 py-3 font-semibold"
+                  disabled={savingProductId === String(product.id)}
                   onClick={() => onSaveProduct(product)}
                 >
                   <Save size={17} />
-                  Salvar produto
+                  {savingProductId === String(product.id) ? 'Salvando...' : 'Salvar produto'}
                 </button>
               </div>
             ) : null}

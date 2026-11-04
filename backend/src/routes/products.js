@@ -7,6 +7,7 @@ const { authenticate, requireRole } = require('../middleware/auth');
 const { requireScreen } = require('../middleware/accessControl');
 const { addStock, roundQuantity } = require('../services/stockService');
 const { deleteProductSafely } = require('../services/productService');
+const { receiveProductImage, removeStoredProductImage, serveProductImage, storeProductImage } = require('../services/productImageService');
 const { recordAudit } = require('../services/auditService');
 
 const router = express.Router();
@@ -196,6 +197,8 @@ function normalizeImportRow(row) {
   };
 }
 
+router.get('/images/:filename', serveProductImage);
+
 router.use(authenticate);
 
 router.get('/', (req, res) => {
@@ -315,13 +318,15 @@ router.get('/:id/history', requireScreen('products'), productHistoryRateLimit, (
   return res.json({ product, movements, sales, audit, cost_corrections: costCorrections });
 });
 
-router.post('/', requireScreen('products'), (req, res) => {
+router.post('/', requireScreen('products'), receiveProductImage, async (req, res) => {
   const payload = productSchema.parse(req.body);
   if (!payload.visible_in_pos && !hasRole(req.user, 'admin', 'finance')) {
     return res.status(403).json({ message: 'Sem permissao para alterar a visibilidade no PDV.' });
   }
+  const storedImageUrl = await storeProductImage(req.file, req);
   const product = {
     ...payload,
+    image_url: storedImageUrl || payload.image_url,
     internal_code: generateProductCode(payload.category),
     cost_price: payload.is_donation ? 0 : payload.cost_price,
     is_donation: payload.is_donation ? 1 : 0,
@@ -356,7 +361,13 @@ router.post('/', requireScreen('products'), (req, res) => {
     return result.lastInsertRowid;
   });
 
-  const productId = transaction();
+  let productId;
+  try {
+    productId = transaction();
+  } catch (error) {
+    await removeStoredProductImage(storedImageUrl);
+    throw error;
+  }
   const created = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
   recordAudit({
     req,
@@ -450,11 +461,16 @@ router.post('/import', requireScreen('products'), (req, res) => {
   return res.status(201).json({ created, total: created.length });
 });
 
-router.patch('/:id', requireScreen('products'), (req, res) => {
+router.patch('/:id', requireScreen('products'), receiveProductImage, async (req, res) => {
   const current = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
   if (!current) return res.status(404).json({ message: 'Produto nao encontrado.' });
 
-  const merged = productSchema.parse({ ...current, ...req.body });
+  const requestedImageUrl = req.body.remove_image === true
+    ? null
+    : req.body.image_url !== undefined ? req.body.image_url : current.image_url;
+  const merged = productSchema.parse({ ...current, ...req.body, image_url: requestedImageUrl });
+  const storedImageUrl = await storeProductImage(req.file, req);
+  if (storedImageUrl) merged.image_url = storedImageUrl;
   const transaction = db.transaction(() => {
     ensureProductCategory(merged.category);
     db.prepare(`
@@ -478,7 +494,14 @@ router.patch('/:id', requireScreen('products'), (req, res) => {
       id: Number(req.params.id)
     });
   });
-  transaction();
+  try {
+    transaction();
+  } catch (error) {
+    await removeStoredProductImage(storedImageUrl);
+    throw error;
+  }
+
+  if (current.image_url !== merged.image_url) await removeStoredProductImage(current.image_url);
 
   const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
   recordAudit({

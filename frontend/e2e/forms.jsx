@@ -9,6 +9,7 @@ import { SettingsView } from '../src/components/SettingsView'
 import { ProductWorkspace } from '../src/components/products/ProductWorkspace'
 import { SalesTerminal } from '../src/components/SalesTerminal'
 import { FormControl, ValidatedForm } from '../src/components/ValidatedForm'
+import { ImageUploadField } from '../src/components/ImageUploadField'
 import { reportFormError } from '../src/utils/formValidation'
 import '../src/index.css'
 
@@ -34,6 +35,17 @@ export function Fields() {
 }
 
 const screen = new URLSearchParams(window.location.search).get('screen')
+export function ImageUploadHarness() {
+  const [image, setImage] = useState({ file: null, url: '' })
+  return <main className="mx-auto max-w-lg p-4">
+    <ImageUploadField
+      currentImageUrl={image.url}
+      selectedFile={image.file}
+      onSelect={(file) => setImage({ file, url: '' })}
+      onRemove={() => setImage({ file: null, url: '' })}
+    />
+  </main>
+}
 export function Workspace() {
   const [product, setProduct] = useState({ id: 1, name: 'Produto', category: 'Alimentos', unit: 'unidade', sale_price: 10, cost_price: 5, min_stock: 0, stock_quantity: 3, image_url: '' })
   const [adjustment, setAdjustment] = useState({ product_id: '1', quantity: 1, batch_id: '', notes: '' })
@@ -44,12 +56,13 @@ export function Workspace() {
     creation={{ draft: product, setDraft: setProduct }}
     stock={{ adjustment, setAdjustment, movementMode: 'adjustment_out', movementBatches: [{ id: 1, quantity_available: 3, unit: 'unidade' }], needsMovementBatch: true }}
     permissions={{}} ui={{ detailMode: screen === 'create-product' ? 'create' : 'product', mobileContextOpen: true, productSection: section }}
-    actions={{ onSelectSection: setSection, onChangeProduct: (_id, field, value) => setProduct({ ...product, [field]: value }), onSaveProduct: (_product, form) => reportFormError(form, { payload: { issues: [{ path: ['unit'], code: 'custom', message: 'Esta unidade nao esta disponivel.' }] } }), onCreateProduct: (event) => { event.preventDefault(); reportFormError(event.currentTarget, { payload: { issues: [{ path: ['image_url'], code: 'custom', message: 'Esta imagem nao esta disponivel. Informe outra URL.' }] } }) }, onCreateMovement: (event) => { event.preventDefault(); event.currentTarget.dataset.saved = 'true' } }}
+    actions={{ onSelectSection: setSection, onChangeProduct: (_id, field, value) => setProduct((current) => ({ ...current, [field]: value })), onSaveProduct: (_product, form) => reportFormError(form, { payload: { issues: [{ path: ['unit'], code: 'custom', message: 'Esta unidade nao esta disponivel.' }] } }), onCreateProduct: (event) => { event.preventDefault(); reportFormError(event.currentTarget, { payload: { issues: [{ path: ['name'], code: 'custom', message: 'Este produto ja esta cadastrado.' }] } }) }, onCreateMovement: (event) => { event.preventDefault(); event.currentTarget.dataset.saved = 'true' } }}
   />
 }
 const fail = async () => { throw Object.assign(new Error('Confira os dados.'), { payload: { fieldErrors: { current_password: 'Confira a senha temporaria informada.' } } }) }
 createRoot(document.getElementById('root')).render(
-  screen === 'login' ? <LoginScreen onLogin={fail} />
+  screen === 'image-upload' ? <ImageUploadHarness />
+    : screen === 'login' ? <LoginScreen onLogin={fail} />
     : screen === 'password' ? <ChangePasswordScreen user={{ name: 'Teste' }} onChangePassword={fail} onLogout={() => {}} />
       : screen === 'storefront' ? <PublicLibraryStorefront />
         : screen === 'sales' ? <SalesTerminal onSaleComplete={() => {}} />

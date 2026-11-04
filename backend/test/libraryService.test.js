@@ -7,11 +7,13 @@ const express = require('express');
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lanchonete-library-'));
 process.env.DB_PATH = path.join(tempDir, 'test.sqlite');
+process.env.PRODUCT_UPLOAD_DIR = path.join(tempDir, 'product-uploads');
 
 const errorHandler = require('../src/middleware/errorHandler');
 const { signUser } = require('../src/middleware/auth');
 const libraryRoutes = require('../src/routes/library');
 const publicLibraryRoutes = require('../src/routes/publicLibrary');
+const productRoutes = require('../src/routes/products');
 const { db, initDatabase } = require('../src/db');
 const {
   adjustStock,
@@ -125,6 +127,71 @@ test('compartilhamento publico entrega metadados do produto e preserva UTMs', as
     assert.match(html, new RegExp(`<meta property="og:image" content="${storefrontOrigin}/shalom\\.png">`));
     assert.match(html, /utm_source=whatsapp/);
     assert.match(html, /utm_medium=social_share/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('cadastro e edicao da Livraria armazenam e removem imagem multipart', async () => {
+  initDatabase();
+  const category = createCategory({ name: 'Produtos com upload' });
+  const userId = db.prepare(`
+    INSERT INTO users (name, username, email, password_hash, role)
+    VALUES ('Operador Upload', 'library-upload', 'library-upload@example.local', 'x', 'library')
+  `).run().lastInsertRowid;
+  const token = signUser(db.prepare('SELECT * FROM users WHERE id = ?').get(userId));
+  const app = express();
+  app.use(express.json());
+  app.use('/api/library', libraryRoutes);
+  app.use('/api/products', productRoutes);
+  app.use(errorHandler);
+  const server = app.listen(0, '127.0.0.1');
+
+  try {
+    const apiOrigin = await new Promise((resolve) => {
+      if (server.listening) return resolve(`http://127.0.0.1:${server.address().port}`);
+      return server.once('listening', () => resolve(`http://127.0.0.1:${server.address().port}`));
+    });
+    const form = new FormData();
+    Object.entries({
+      name: 'Livro com capa',
+      description: 'Produto criado por multipart.',
+      category_id: String(category.id),
+      sku: 'UPLOAD-LIV-001',
+      price: '49.90',
+      cost_price: '20',
+      stock_quantity: '2',
+      min_stock: '1',
+      active: 'true',
+      published: 'true'
+    }).forEach(([key, value]) => form.set(key, value));
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+    form.set('image', new Blob([png], { type: 'image/png' }), 'capa.png');
+
+    const response = await fetch(`${apiOrigin}/api/library/products`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+      body: form
+    });
+    const created = await response.json();
+
+    assert.equal(response.status, 201);
+    assert.equal(created.images.length, 1);
+    assert.match(created.images[0].url, new RegExp(`^${apiOrigin}/api/products/images/[0-9a-f-]{36}\\.webp$`));
+    assert.equal((await fetch(created.images[0].url)).status, 200);
+
+    const removeForm = new FormData();
+    removeForm.set('remove_image', 'true');
+    const removedResponse = await fetch(`${apiOrigin}/api/library/products/${created.id}`, {
+      method: 'PATCH',
+      headers: { authorization: `Bearer ${token}` },
+      body: removeForm
+    });
+    const removed = await removedResponse.json();
+
+    assert.equal(removedResponse.status, 200);
+    assert.deepEqual(removed.images, []);
+    assert.equal((await fetch(created.images[0].url)).status, 404);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

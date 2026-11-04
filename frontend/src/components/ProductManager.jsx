@@ -8,6 +8,7 @@ import { api } from '../services/api'
 import { formatDate, formatQuantityWithUnit } from '../utils/formatters'
 import { PaginationControls } from './PaginationControls'
 import { StatusPill } from './StatusPill'
+import { ImageUploadField } from './ImageUploadField'
 import { ProductHistoryPanel } from './products/ProductHistoryPanel'
 import { ProductMobileList } from './products/ProductMobileList'
 import { ProductStockLots } from './products/ProductStockLots'
@@ -26,6 +27,8 @@ function createEmptyProduct(category = '') {
     unit: 'unidade',
     expiration_date: '',
     image_url: '',
+    image_file: null,
+    image_removed: false,
     visible_in_pos: true
   }
 }
@@ -153,6 +156,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
   const [productHistory, setProductHistory] = useState(null)
   const [movementStock, setMovementStock] = useState(null)
   const [message, setMessage] = useState('')
+  const [savingProductId, setSavingProductId] = useState('')
   const [importCsv, setImportCsv] = useState('')
   const [importing, setImporting] = useState(false)
   const [productToDelete, setProductToDelete] = useState(null)
@@ -344,6 +348,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       return
     }
     try {
+      setSavingProductId('new')
       await api.createProduct(productDraft)
       setDraft(createEmptyProduct(draft.category))
       await loadProducts()
@@ -352,6 +357,8 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
     } catch (err) {
       reportFormError(validationForm, err)
       setMessage(err.message)
+    } finally {
+      setSavingProductId('')
     }
   }
 
@@ -366,6 +373,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
       return
     }
     try {
+      setSavingProductId(String(product.id))
       await api.updateProduct(product.id, productPayload)
       await loadProducts()
       if (String(selectedProductId) === String(product.id)) {
@@ -376,6 +384,8 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
     } catch (err) {
       reportFormError(validationForm, err)
       setMessage(err.message)
+    } finally {
+      setSavingProductId('')
     }
   }
 
@@ -693,7 +703,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
             canEditHistoricalCosts: hasRole(user, 'admin', 'finance'),
             canManagePosVisibility
           }}
-          ui={{ detailMode, message, mobileContextOpen, productSection }}
+          ui={{ detailMode, message, mobileContextOpen, productSection, savingProductId }}
           actions={{
             onBackToList: () => setMobileContextOpen(false),
             onBatchChange: updateSelectedBatch,
@@ -815,6 +825,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
               onUpdatePosVisibility={updatePosVisibility}
               onSelectProduct={selectProductForDetails}
               onStartStockMovement={startStockMovement}
+              savingProductId={savingProductId}
             />
           </div>
 
@@ -875,7 +886,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                       <input type="number" inputMode="decimal" min="0" step="0.001" className="mission-input w-20 px-2 py-1" value={product.min_stock} onChange={(event) => updateRow(product.id, 'min_stock', Number(event.target.value))} />
                     </td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">{formatDate(product.expiration_date)}</td>
-                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10"><input type="url" className="mission-input w-48 px-2 py-1" value={product.image_url || ''} onChange={(event) => updateRow(product.id, 'image_url', event.target.value)} placeholder="https://..." /></td>
+                    <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10"><ImageUploadField compact currentImageUrl={product.image_removed ? '' : product.image_url} selectedFile={product.image_file} uploading={savingProductId === String(product.id)} onSelect={(file) => { updateRow(product.id, 'image_file', file); updateRow(product.id, 'image_removed', false) }} onRemove={() => { updateRow(product.id, 'image_file', null); updateRow(product.id, 'image_url', ''); updateRow(product.id, 'image_removed', true) }} /></td>
                     <td className="border-b border-line/80 px-3 py-2 dark:border-shalom-gold/10">
                       {Number(product.sale_price) <= 0 ? <span className="mission-muted block max-w-28 text-xs">Sem preco de venda</span> : canManagePosVisibility ? <button type="button" role="switch" aria-checked={Boolean(product.visible_in_pos)} aria-label={`Exibir ${product.name} no PDV`} className={`relative h-7 w-12 rounded-full transition ${product.visible_in_pos ? 'bg-shalom-blue dark:bg-shalom-gold' : 'bg-slate-300 dark:bg-slate-600'}`} onClick={() => updatePosVisibility(product, !product.visible_in_pos)}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${product.visible_in_pos ? 'left-6' : 'left-1'}`} /></button> : <span className="mission-muted text-xs">{product.visible_in_pos ? 'Visivel' : 'Oculto'}</span>}
                     </td>
@@ -980,11 +991,7 @@ export function ProductManager({ refreshKey, onChanged = () => {}, intent, setup
                 Fornecedor
                 <FormControl unframed name="supplier" className="mission-input mt-1 w-full px-3 py-2" value={draft.supplier} onChange={(event) => setDraft({ ...draft, supplier: event.target.value })} />
               </label>
-              <label className="text-sm font-medium">
-                URL da imagem
-                <FormControl name="image_url" data-format="http-url" unframed type="url" className="mission-input mt-1 w-full px-3 py-2" value={draft.image_url || ''} onChange={(event) => setDraft({ ...draft, image_url: event.target.value })} placeholder="https://exemplo.com/produto.jpg" />
-              </label>
-              {draft.image_url ? <div key={draft.image_url} className="overflow-hidden rounded-md bg-shalom-cream/60"><img className="aspect-video w-full object-cover" src={draft.image_url} alt="Preview do produto" onError={(event) => { event.currentTarget.hidden = true; event.currentTarget.nextElementSibling.hidden = false }} /><p className="mission-muted hidden p-3 text-sm">Nao foi possivel carregar a imagem.</p></div> : null}
+              <ImageUploadField currentImageUrl={draft.image_removed ? '' : draft.image_url} selectedFile={draft.image_file} uploading={savingProductId === 'new'} onSelect={(file) => setDraft({ ...draft, image_file: file, image_removed: false })} onRemove={() => setDraft({ ...draft, image_file: null, image_url: '', image_removed: true })} />
               {canManagePosVisibility && Number(draft.sale_price) > 0 ? <label className="flex items-center justify-between gap-3 rounded-xl border border-line/80 px-3 py-2 text-sm font-medium dark:border-shalom-gold/10"><span><span className="block">Exibir no PDV</span><span className="mission-muted block text-xs font-normal">Ocultar nao remove estoque ou historico.</span></span><FormControl unframed type="checkbox" className="h-5 w-5 accent-shalom-orange" checked={Boolean(draft.visible_in_pos)} onChange={(event) => setDraft({ ...draft, visible_in_pos: event.target.checked })} /></label> : canManagePosVisibility ? <p className="mission-muted text-sm">Informe um preco de venda para habilitar este produto no PDV.</p> : null}
               <label className="flex items-center justify-between gap-3 rounded-xl border border-line/80 px-3 py-2 text-sm font-medium dark:border-shalom-gold/10">
                 <span>Produto recebido por doacao</span>

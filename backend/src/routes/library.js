@@ -4,6 +4,7 @@ const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
 const { can, requirePermission } = require('../middleware/accessControl');
 const { recordAudit } = require('../services/auditService');
+const { receiveProductImage, removeStoredProductImage, storeProductImage } = require('../services/productImageService');
 const { toCsv, toLibraryReportPdfStream, toLibraryReportXlsxBuffer, toLibraryStockPdfStream, toLibraryStockXlsxBuffer } = require('../services/exportService');
 const { brazilDate } = require('../utils/time');
 const {
@@ -306,8 +307,20 @@ router.get('/products/:id', libraryOperationalRateLimit, authenticate, requirePe
   return res.json(getProduct(req.params.id));
 });
 
-router.post('/products', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:write'), (req, res) => {
-  const product = saveProduct({ ...productSchema.parse(req.body), user_id: req.user.id });
+router.post('/products', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:write'), receiveProductImage, async (req, res) => {
+  const payload = productSchema.parse(req.body);
+  const storedImageUrl = await storeProductImage(req.file, req);
+  let product;
+  try {
+    product = saveProduct({
+      ...payload,
+      images: storedImageUrl ? [{ url: storedImageUrl, alt_text: payload.name }] : payload.images,
+      user_id: req.user.id
+    });
+  } catch (error) {
+    await removeStoredProductImage(storedImageUrl);
+    throw error;
+  }
   recordAudit({
     req,
     action: 'library.product.create',
@@ -319,18 +332,32 @@ router.post('/products', libraryOperationalRateLimit, authenticate, requirePermi
   return res.status(201).json(product);
 });
 
-router.patch('/products/:id', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:write'), (req, res) => {
+router.patch('/products/:id', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:write'), receiveProductImage, async (req, res) => {
   const current = getProduct(req.params.id);
   const parsed = productSchema.partial().parse(req.body);
   // Creation defaults must not overwrite omitted fields in a partial update.
   const payload = Object.fromEntries(Object.entries(parsed).filter(([key]) => Object.hasOwn(req.body, key)));
-  const product = saveProduct({
-    ...current,
-    ...payload,
-    images: payload.images !== undefined ? payload.images : current.images,
-    category_id: payload.category_id !== undefined ? payload.category_id : current.category_id,
-    user_id: req.user.id
-  }, req.params.id);
+  const storedImageUrl = await storeProductImage(req.file, req);
+  const nextImages = storedImageUrl
+    ? [{ url: storedImageUrl, alt_text: payload.name || current.name }]
+    : req.body.remove_image === true ? [] : payload.images !== undefined ? payload.images : current.images;
+  let product;
+  try {
+    product = saveProduct({
+      ...current,
+      ...payload,
+      images: nextImages,
+      category_id: payload.category_id !== undefined ? payload.category_id : current.category_id,
+      user_id: req.user.id
+    }, req.params.id);
+  } catch (error) {
+    await removeStoredProductImage(storedImageUrl);
+    throw error;
+  }
+  const nextImageUrls = new Set(product.images.map((image) => image.url));
+  await Promise.all(current.images
+    .filter((image) => !nextImageUrls.has(image.url))
+    .map((image) => removeStoredProductImage(image.url)));
   recordAudit({
     req,
     action: 'library.product.update',

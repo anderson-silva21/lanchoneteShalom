@@ -349,6 +349,16 @@ function ensureLibrarySchema() {
   `);
 }
 
+function ensureProductImageSchema() {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS product_image_files (
+      filename TEXT PRIMARY KEY,
+      content BLOB NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+    );
+  `);
+}
+
 function ensureCashClosingSchema() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS cash_closings (
@@ -1020,6 +1030,7 @@ function runMigrations() {
   ensureSaleItemCostAuditSchema();
   ensureCashClosingSchema();
   ensureLibrarySchema();
+  ensureProductImageSchema();
   addColumnIfMissing('users', 'username', 'TEXT');
   addColumnIfMissing('users', 'active', 'INTEGER NOT NULL DEFAULT 1');
   addColumnIfMissing('users', 'password_must_change', 'INTEGER NOT NULL DEFAULT 0');

@@ -11,6 +11,7 @@ import { formatLibraryCustomerContact } from '../utils/libraryRequestDrafts'
 import { libraryProductPayload, libraryPublicationPayload } from '../utils/libraryProductPayload'
 import { cartFromLibraryRequest, filterLibrarySaleProducts, normalizeLibrarySaleProducts } from '../utils/librarySale'
 import { addPosCartItem, changePosCartQuantity, getPosCartSummary } from '../utils/posCart'
+import { ImageUploadField } from './ImageUploadField'
 
 const emptyProduct = {
   name: '',
@@ -23,7 +24,9 @@ const emptyProduct = {
   min_stock: 0,
   active: true,
   published: false,
-  image_url: ''
+  image_url: '',
+  image_file: null,
+  image_removed: false
 }
 
 const tabs = [
@@ -511,7 +514,9 @@ export function LibraryManager({ user }) {
       min_stock: product.min_stock,
       active: Boolean(product.active),
       published: Boolean(product.published),
-      image_url: product.images?.[0]?.url || ''
+      image_url: product.images?.[0]?.url || '',
+      image_file: null,
+      image_removed: false
     })
   }
 
@@ -537,7 +542,9 @@ export function LibraryManager({ user }) {
       min_stock: product.min_stock,
       active: Boolean(product.active),
       published: Boolean(product.published),
-      image_url: product.images?.[0]?.url || ''
+      image_url: product.images?.[0]?.url || '',
+      image_file: null,
+      image_removed: false
     })
   }, [catalogProductId, editingProductId, products])
 
@@ -1246,10 +1253,7 @@ export function LibraryManager({ user }) {
                 Estoque minimo
                 <FormControl unframed name="min_stock" type="number" min="0" step="0.001" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.min_stock} onChange={(event) => setProductDraft({ ...productDraft, min_stock: event.target.value })} disabled={!writable} />
               </label>
-              <label className="text-sm font-medium sm:col-span-2">
-                URL da imagem
-                <FormControl data-format="http-url" type="url" unframed name="images.0.url" className="mission-input mt-1 w-full px-3 py-2.5" value={productDraft.image_url} onChange={(event) => setProductDraft({ ...productDraft, image_url: event.target.value })} disabled={!writable} />
-              </label>
+              <ImageUploadField currentImageUrl={productDraft.image_removed ? '' : productDraft.image_url} selectedFile={productDraft.image_file} disabled={!writable} uploading={saving} onSelect={(file) => setProductDraft({ ...productDraft, image_file: file, image_removed: false })} onRemove={() => setProductDraft({ ...productDraft, image_file: null, image_url: '', image_removed: true })} />
               <label className="flex items-center justify-between border-y border-line/80 py-3 text-sm font-semibold dark:border-shalom-gold/10">
                 Publicar no catalogo
                 <FormControl unframed type="checkbox" className="h-4 w-4 accent-shalom-orange" checked={productDraft.published} onChange={(event) => setProductDraft({ ...productDraft, published: event.target.checked })} disabled={!writable} />

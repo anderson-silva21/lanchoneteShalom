@@ -1,3 +1,5 @@
+import { productFormData } from '../utils/productFormData'
+
 const defaultApiUrl = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname || 'localhost'}:4000/api`
   : 'http://localhost:4000/api'
@@ -108,8 +110,8 @@ export const api = {
   libraryCategories: () => request('/library/categories', { cache: 'no-store' }),
   createLibraryCategory: (payload) => request('/library/categories', { method: 'POST', body: payload }),
   libraryProducts: (params = {}) => request(`/library/products?${new URLSearchParams(params)}`, { cache: 'no-store' }),
-  createLibraryProduct: (payload) => request('/library/products', { method: 'POST', body: payload }),
-  updateLibraryProduct: (id, payload) => request(`/library/products/${id}`, { method: 'PATCH', body: payload }),
+  createLibraryProduct: (payload) => request('/library/products', { method: 'POST', body: productFormData(payload) }),
+  updateLibraryProduct: (id, payload) => request(`/library/products/${id}`, { method: 'PATCH', body: productFormData(payload) }),
   createLibraryMovement: (payload) => request('/library/movements', { method: 'POST', body: payload }),
   libraryMovements: () => request('/library/movements?limit=120', { cache: 'no-store' }),
   createLibrarySale: (payload) => request('/library/sales', { method: 'POST', body: payload }),
@@ -121,10 +123,10 @@ export const api = {
   products: (params = {}) => request(`/products?${new URLSearchParams(params)}`),
   posProducts: () => request('/products?catalog=pos'),
   productCategories: () => request('/products/categories'),
-  createProduct: (product) => request('/products', { method: 'POST', body: product }),
+  createProduct: (product) => request('/products', { method: 'POST', body: productFormData(product) }),
   importProducts: (payload) => request('/products/import', { method: 'POST', body: payload }),
   productHistory: (id) => request(`/products/${id}/history`, { cache: 'no-store' }),
-  updateProduct: (id, product) => request(`/products/${id}`, { method: 'PATCH', body: product }),
+  updateProduct: (id, product) => request(`/products/${id}`, { method: 'PATCH', body: productFormData(product) }),
   updateProductPosVisibility: (id, visible_in_pos) => request(`/products/${id}/pos-visibility`, { method: 'PATCH', body: { visible_in_pos } }),
   deleteProduct: (id, payload) => request(`/products/${id}`, { method: 'DELETE', body: payload }),
   combos: () => request('/combos'),

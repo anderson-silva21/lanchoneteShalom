@@ -5,6 +5,7 @@ import { createServer } from 'vite'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import { Buffer } from 'node:buffer'
 
 let server
 let browser
@@ -159,17 +160,16 @@ test('livraria: contato invalido e resposta real da API junto ao campo', async (
   await page.screenshot({ path: join(tmpdir(), 'shalom-storefront-validation.png'), fullPage: true })
 })
 
-test('produto real: protocolo da imagem, unidade e erro do servidor', async (t) => {
+test('produto real: preview da imagem, unidade e erro do servidor', async (t) => {
   const page = await open(t, 'product', 390)
-  const image = page.locator('[name="image_url"]')
+  const image = page.locator('input[type="file"][name="image"]')
   const unit = page.locator('[name="unit"]')
-  await image.fill('ftp://exemplo.com/imagem.jpg')
+  await image.setInputFiles({ name: 'produto.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64') })
   await unit.fill('')
   await page.getByRole('button', { name: 'Salvar produto' }).click()
-  assert.match(await invalid(image), /HTTP ou HTTPS/)
   assert.match(await invalid(unit), /Preencha Unidade/)
   assert.equal(await page.locator('[name="name"]').inputValue(), 'Produto')
-  await image.fill('https://exemplo.com/imagem.jpg')
+  await page.getByRole('img', { name: 'Preview da imagem do produto' }).waitFor()
   await unit.fill('unidade')
   await page.getByRole('button', { name: 'Salvar produto' }).click()
   assert.match(await invalid(unit), /nao esta disponivel/)
@@ -178,21 +178,36 @@ test('produto real: protocolo da imagem, unidade e erro do servidor', async (t) 
   await page.waitForFunction(() => !document.querySelector('[name="unit"]').hasAttribute('aria-invalid'))
 })
 
-test('cadastro real: URL HTTP e erro da API associados a imagem', async (t) => {
+test('cadastro real: upload preservado quando a API rejeita outro campo', async (t) => {
   const page = await open(t, 'create-product')
-  const image = page.locator('[name="image_url"]')
-  await image.fill('ftp://exemplo.com/imagem.jpg')
+  const image = page.locator('input[type="file"][name="image"]')
+  const name = page.locator('[name="name"]')
+  await image.setInputFiles({ name: 'produto.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64') })
   await page.getByRole('button', { name: 'Cadastrar', exact: true }).click()
-  assert.match(await invalid(image), /HTTP ou HTTPS/)
-  assert.equal(await image.evaluate((element) => element === document.activeElement), true)
-  await image.fill('https://exemplo.com/imagem.jpg')
-  await page.waitForFunction(() => !document.querySelector('[name="image_url"]').hasAttribute('aria-invalid'))
-  await page.getByRole('button', { name: 'Cadastrar', exact: true }).click()
-  assert.match(await invalid(image), /Informe outra URL/)
-  assert.equal(await image.evaluate((element) => getComputedStyle(element).borderTopWidth), '2px')
-  assert.equal(await page.locator('[name="name"]').inputValue(), 'Produto')
-  await image.fill('https://exemplo.com/outra.jpg')
-  await page.waitForFunction(() => !document.querySelector('[name="image_url"]').hasAttribute('aria-invalid'))
+  assert.match(await invalid(name), /ja esta cadastrado/)
+  assert.equal(await name.evaluate((element) => element === document.activeElement), true)
+  await page.getByRole('img', { name: 'Preview da imagem do produto' }).waitFor()
+  assert.equal(await name.inputValue(), 'Produto')
+})
+
+test('upload de produto mostra preview e rejeita tipo ou tamanho invalido', async (t) => {
+  const page = await open(t, 'image-upload', 390)
+  const input = page.locator('input[type="file"][name="image"]')
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
+
+  await input.setInputFiles({ name: 'produto.png', mimeType: 'image/png', buffer: png })
+  await page.getByRole('img', { name: 'Preview da imagem do produto' }).waitFor()
+  await page.getByText('produto.png', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Remover imagem' }).click()
+  await page.getByRole('img', { name: 'Preview da imagem do produto' }).waitFor({ state: 'detached' })
+
+  await input.setInputFiles({ name: 'ataque.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg></svg>') })
+  await page.getByRole('alert').getByText(/JPG, PNG ou WebP/).waitFor()
+  assert.equal(await page.getByRole('img', { name: 'Preview da imagem do produto' }).count(), 0)
+
+  await input.setInputFiles({ name: 'grande.png', mimeType: 'image/png', buffer: Buffer.alloc((2 * 1024 * 1024) + 1) })
+  await page.getByRole('alert').getByText(/2 MB/).waitFor()
+  assert.equal(await page.getByRole('img', { name: 'Preview da imagem do produto' }).count(), 0)
 })
 
 test('estoque real: lote obrigatorio e correcao sem perder quantidade', async (t) => {
