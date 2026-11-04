@@ -11,6 +11,7 @@ process.env.DB_PATH = path.join(tempDir, 'test.sqlite');
 const errorHandler = require('../src/middleware/errorHandler');
 const { signUser } = require('../src/middleware/auth');
 const libraryRoutes = require('../src/routes/library');
+const publicLibraryRoutes = require('../src/routes/publicLibrary');
 const { db, initDatabase } = require('../src/db');
 const {
   adjustStock,
@@ -76,6 +77,57 @@ test('catalogo publico exibe somente produtos ativos publicados e nao vaza custo
   assert.equal(products[0].url, `https://shalom.example/livraria/produto/${visible.id}`);
   assert.equal(Object.hasOwn(products[0], 'cost_price'), false);
   assert.equal(products[0].images[0].url, 'https://example.com/livro.jpg');
+});
+
+test('compartilhamento publico entrega metadados do produto e preserva UTMs', async () => {
+  initDatabase();
+  const category = createCategory({ name: 'Itens compartilhados' });
+  const product = saveProduct({
+    name: 'Camisa Shalom Azul',
+    description: 'Camisa em malha azul com estampa Shalom Store.',
+    category_id: category.id,
+    price: 69.9,
+    cost_price: 30,
+    stock_quantity: 3,
+    min_stock: 1,
+    published: true,
+    images: [{ url: '/shalom.png', alt_text: 'Camisa azul Shalom' }]
+  });
+  const app = express();
+  app.use('/api/public/library', publicLibraryRoutes);
+  app.use(errorHandler);
+  const server = app.listen(0, '127.0.0.1');
+
+  try {
+    const apiOrigin = await new Promise((resolve) => {
+      if (server.listening) return resolve(`http://127.0.0.1:${server.address().port}`);
+      return server.once('listening', () => resolve(`http://127.0.0.1:${server.address().port}`));
+    });
+    const storefrontOrigin = 'http://127.0.0.1:5173';
+    const detailResponse = await fetch(`${apiOrigin}/api/public/library/products/${product.id}`, {
+      headers: { Origin: storefrontOrigin }
+    });
+    const detail = await detailResponse.json();
+
+    assert.equal(detail.url, `${storefrontOrigin}/livraria/produto/${product.id}`);
+    assert.ok(detail.share_url.startsWith(`${apiOrigin}/api/public/library/products/${product.id}/share?`));
+
+    const shareUrl = new URL(detail.share_url);
+    shareUrl.searchParams.set('utm_source', 'whatsapp');
+    shareUrl.searchParams.set('utm_medium', 'social_share');
+    const previewResponse = await fetch(shareUrl);
+    const html = await previewResponse.text();
+
+    assert.equal(previewResponse.status, 200);
+    assert.match(previewResponse.headers.get('content-type'), /text\/html/);
+    assert.match(html, /<meta property="og:title" content="Camisa Shalom Azul">/);
+    assert.match(html, /<meta property="og:description" content="Camisa em malha azul com estampa Shalom Store\.">/);
+    assert.match(html, new RegExp(`<meta property="og:image" content="${storefrontOrigin}/shalom\\.png">`));
+    assert.match(html, /utm_source=whatsapp/);
+    assert.match(html, /utm_medium=social_share/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test('editar quantidade pelo catalogo persiste estoque e registra ajuste pela API', async () => {

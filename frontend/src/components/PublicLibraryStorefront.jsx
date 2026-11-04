@@ -113,7 +113,7 @@ const sourceLabels = {
 }
 
 function trackedProductUrl(product, source) {
-  const canonical = product.url || `${window.location.origin}/livraria/produto/${product.id}`
+  const canonical = product.share_url || product.url || `${window.location.origin}/livraria/produto/${product.id}`
   const url = new URL(canonical, window.location.origin)
   url.searchParams.set('utm_source', source)
   url.searchParams.set('utm_medium', 'social_share')
@@ -126,7 +126,7 @@ function whatsappMessage(product, url) {
   const description = product.description ? `\n${product.description.slice(0, 140)}` : ''
   const price = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(product.price)
   return [
-    '📚 Olha o que encontrei na Livraria Shalom!',
+    'Olha o que encontrei na Livraria Shalom!',
     '',
     `*${product.name}*`,
     price,
