@@ -1,6 +1,6 @@
 import { ValidatedForm, FormControl } from './ValidatedForm'
 import { reportFormError } from '../utils/formValidation'
-import { ArrowLeft, Minus, MessageCircle, Plus, Search, ShoppingCart, Store, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Check, Copy, Minus, MessageCircle, Plus, Search, Share2, ShoppingCart, Store, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../services/api'
 import { money } from '../utils/formatters'
@@ -104,6 +104,201 @@ function useMobileScrollVisibility({ locked = false, threshold = 14, topOffset =
   return hidden
 }
 
+const sourceLabels = {
+  whatsapp: 'WhatsApp',
+  instagram: 'Instagram',
+  linkedin: 'LinkedIn',
+  x: 'X',
+  facebook: 'Facebook'
+}
+
+function trackedProductUrl(product, source) {
+  const canonical = product.url || `${window.location.origin}/livraria/produto/${product.id}`
+  const url = new URL(canonical, window.location.origin)
+  url.searchParams.set('utm_source', source)
+  url.searchParams.set('utm_medium', 'social_share')
+  url.searchParams.set('utm_campaign', 'acervo_livraria')
+  url.searchParams.set('utm_content', `produto_${product.id}`)
+  return url.toString()
+}
+
+function whatsappMessage(product, url) {
+  const description = product.description ? `\n${product.description.slice(0, 140)}` : ''
+  const price = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(product.price)
+  return [
+    '📚 Olha o que encontrei na Livraria Shalom!',
+    '',
+    `*${product.name}*`,
+    price,
+    description,
+    '',
+    'Veja os detalhes:',
+    url
+  ].filter(Boolean).join('\n')
+}
+
+function shareUrlFor(network, product) {
+  const url = trackedProductUrl(product, network)
+  const shortText = `Encontrei ${product.name} na Livraria Shalom.`
+  const destinations = {
+    whatsapp: `https://wa.me/?text=${encodeURIComponent(whatsappMessage(product, url))}`,
+    linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`,
+    x: `https://twitter.com/intent/tweet?text=${encodeURIComponent(shortText)}&url=${encodeURIComponent(url)}`,
+    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`
+  }
+  return destinations[network]
+}
+
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    textarea.remove()
+  }
+}
+
+export function SocialShareDialog({ open, product, onClose }) {
+  const dialogRef = useRef(null)
+  const [feedback, setFeedback] = useState('')
+  const image = product.images?.[0]?.url || '/shalom.png'
+
+  const formattedPrice = useMemo(
+    () => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(product.price),
+    [product.price]
+  )
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (!dialog) return
+    if (open && !dialog.open) dialog.showModal()
+    if (!open && dialog.open) dialog.close()
+  }, [open])
+
+  useEffect(() => {
+    if (!feedback) return
+    const timeout = window.setTimeout(() => setFeedback(''), 2500)
+    return () => window.clearTimeout(timeout)
+  }, [feedback])
+
+  async function copyLink(source = 'copy_link', message = 'Link copiado!') {
+    await copyToClipboard(trackedProductUrl(product, source))
+    setFeedback(message)
+  }
+
+  async function shareToInstagram() {
+    const url = trackedProductUrl(product, 'instagram')
+    const data = {
+      title: product.name,
+      text: `Encontrei ${product.name} na Livraria Shalom.`,
+      url
+    }
+    try {
+      if (navigator.share && (!navigator.canShare || navigator.canShare(data))) {
+        await navigator.share(data)
+        onClose()
+        return
+      }
+      await copyLink('instagram', 'Link copiado! Agora cole no Instagram.')
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        await copyLink('instagram', 'Link copiado! Agora cole no Instagram.')
+      }
+    }
+  }
+
+  function share(network) {
+    if (network === 'instagram') {
+      shareToInstagram()
+      return
+    }
+    const destination = shareUrlFor(network, product)
+    window.open(destination, '_blank', 'noopener,noreferrer,width=720,height=720')
+    onClose()
+  }
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby="share-dialog-title"
+      onCancel={(event) => { event.preventDefault(); onClose() }}
+      onClose={onClose}
+      onClick={(event) => { if (event.target === event.currentTarget) onClose() }}
+      className="fixed inset-x-0 bottom-0 top-auto m-0 w-full max-w-none rounded-t-3xl bg-white p-0 text-shalom-deep shadow-2xl backdrop:bg-slate-950/55 backdrop:backdrop-blur-sm sm:inset-0 sm:m-auto sm:max-w-lg sm:rounded-3xl"
+    >
+      <section className="p-5 sm:p-6" onClick={(event) => event.stopPropagation()}>
+        <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200 sm:hidden" />
+        <header className="flex items-center justify-between gap-4">
+          <h2 id="share-dialog-title" className="font-display text-xl font-semibold">
+            Compartilhar este item
+          </h2>
+          <button type="button" className="mission-btn border border-line/80 p-2" onClick={onClose} aria-label="Fechar">
+            <X size={19} />
+          </button>
+        </header>
+
+        <div className="my-5 flex items-center gap-4 rounded-2xl bg-[#f7f5ef] p-3">
+          <img src={image} alt="" className="h-16 w-16 rounded-xl object-cover" />
+          <div className="min-w-0">
+            <p className="truncate font-semibold">{product.name}</p>
+            <p className="mt-1 text-sm font-semibold text-shalom-orange">{formattedPrice}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            className="mission-btn mission-btn-primary col-span-2 px-4 py-3 font-semibold"
+            onClick={() => share('whatsapp')}
+          >
+            WhatsApp — enviar para alguém
+          </button>
+
+          {['instagram', 'facebook', 'linkedin', 'x'].map((network) => (
+            <button
+              key={network}
+              type="button"
+              className="mission-btn min-h-12 border border-shalom-gold/40 bg-white px-4 py-3 font-semibold"
+              onClick={() => share(network)}
+            >
+              {sourceLabels[network]}
+            </button>
+          ))}
+
+          <button
+            type="button"
+            className="mission-btn col-span-2 inline-flex min-h-12 items-center justify-center gap-2 border border-shalom-gold/40 bg-white px-4 py-3 font-semibold"
+            onClick={() => copyLink()}
+          >
+            {feedback ? <Check size={18} /> : <Copy size={18} />}
+            {feedback || 'Copiar link'}
+          </button>
+        </div>
+        <p className="sr-only" role="status" aria-live="polite">{feedback}</p>
+      </section>
+    </dialog>
+  )
+}
+
+export function ShareProductButton({ onClick }) {
+  return (
+    <button
+      type="button"
+      className="mission-btn inline-flex items-center justify-center gap-2 border border-shalom-gold/40 bg-white px-5 py-3 font-semibold"
+      onClick={onClick}
+    >
+      <Share2 size={18} />
+      Compartilhar
+    </button>
+  )
+}
+
 export function PublicLibraryStorefront() {
   const [categories, setCategories] = useState([])
   const [products, setProducts] = useState([])
@@ -116,6 +311,7 @@ export function PublicLibraryStorefront() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [message, setMessage] = useState('')
+  const [shareOpen, setShareOpen] = useState(false)
   const [identifyError, setIdentifyError] = useState('')
   const [controlsFocused, setControlsFocused] = useState(false)
   const selectedId = useMemo(() => productIdFromPath(), [])
@@ -305,6 +501,7 @@ export function PublicLibraryStorefront() {
                   <ShoppingCart size={19} />
                   Adicionar ao carrinho
                 </button>
+                <ShareProductButton onClick={() => setShareOpen(true)} />
                 <button type="button" className="mission-btn border border-shalom-gold/40 bg-white px-5 py-3 font-semibold" onClick={() => setCartOpen(true)}>
                   Ver carrinho
                 </button>
@@ -352,6 +549,14 @@ export function PublicLibraryStorefront() {
           </>
         )}
       </main>
+
+      {visibleProduct ? (
+        <SocialShareDialog
+          open={shareOpen}
+          product={visibleProduct}
+          onClose={() => setShareOpen(false)}
+        />
+      ) : null}
 
       {cartOpen ? (
         <div className="fixed inset-0 z-40 bg-black/35" role="dialog" aria-modal="true" aria-labelledby="library-cart-title">
