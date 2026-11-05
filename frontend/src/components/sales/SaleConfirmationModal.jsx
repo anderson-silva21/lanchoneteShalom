@@ -1,6 +1,14 @@
-import { CheckCircle2, ReceiptText, WalletCards, X } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import {
+  CheckCircle2,
+  QrCode,
+  ReceiptText,
+  WalletCards,
+  X
+} from 'lucide-react'
+import QRCode from 'qrcode'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { api } from '../../services/api'
 import { money } from '../../utils/formatters'
 
 const paymentLabels = {
@@ -9,6 +17,7 @@ const paymentLabels = {
   dinheiro: 'Dinheiro',
   pagamento_pendente: 'Pagamento pendente'
 }
+
 
 export function SaleConfirmationModal({
   cart,
@@ -23,16 +32,87 @@ export function SaleConfirmationModal({
   onConfirm
 }) {
   const modalRef = useRef(null)
+  const qrModalRef = useRef(null)
+  const qrButtonRef = useRef(null)
+  const qrOpenRef = useRef(false)
   const confirmButtonRef = useRef(null)
   const previousFocusRef = useRef(null)
+  const [showQrCode, setShowQrCode] = useState(false)
 
   const loadingRef = useRef(loading)
   const onCloseRef = useRef(onClose)
+  const isPixPayment = payment === 'pix'
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState('')
+  const [qrLoading, setQrLoading] = useState(false)
+  const [qrError, setQrError] = useState('')
 
   useEffect(() => {
     loadingRef.current = loading
     onCloseRef.current = onClose
-  }, [loading, onClose])
+    qrOpenRef.current = showQrCode && isPixPayment
+  }, [loading, onClose, showQrCode, isPixPayment])
+
+  useEffect(() => {
+    if (!showQrCode || !isPixPayment) return
+    const trigger = qrButtonRef.current
+    qrModalRef.current?.querySelector('button')?.focus()
+    return () => trigger?.focus()
+  }, [showQrCode, isPixPayment])
+
+  
+  useEffect(() => {
+    if (!isPixPayment || !showQrCode) {
+      setQrCodeDataUrl('')
+      setQrError('')
+      return
+    }
+
+    const controller = new AbortController()
+
+    async function generatePixQrCode() {
+      try {
+        setQrLoading(true)
+        setQrError('')
+        setQrCodeDataUrl('')
+
+        // O total está em reais. Convertemos para centavos.
+        const amountCents = Math.round(Number(total) * 100)
+
+        if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
+          throw new Error('Valor da venda inválido.')
+        }
+
+        const data = await api.generatePix(amountCents, controller.signal)
+
+        const dataUrl = await QRCode.toDataURL(data.payload, {
+          width: 320,
+          margin: 4,
+          color: {
+            dark: '#111827',
+            light: '#ffffff'
+          },
+          errorCorrectionLevel: 'M'
+        })
+
+        if (controller.signal.aborted) return
+        setQrCodeDataUrl(dataUrl)
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error('Erro ao gerar QR Code:', error)
+          setQrError(error.message || 'Não foi possível gerar o QR Code.')
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setQrLoading(false)
+        }
+      }
+    }
+
+    generatePixQrCode()
+
+    return () => controller.abort()
+  }, [isPixPayment, showQrCode, total])
+
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -44,6 +124,11 @@ export function SaleConfirmationModal({
 
     function handleKeyDown(event) {
       if (event.key === 'Escape') {
+        if (qrOpenRef.current) {
+          event.preventDefault()
+          setShowQrCode(false)
+          return
+        }
         if (!loadingRef.current) {
           onCloseRef.current()
         }
@@ -55,7 +140,7 @@ export function SaleConfirmationModal({
         return
       }
 
-      const modal = modalRef.current
+      const modal = qrOpenRef.current ? qrModalRef.current : modalRef.current
 
       if (!modal) {
         return
@@ -119,8 +204,60 @@ export function SaleConfirmationModal({
       role="presentation"
       onMouseDown={handleOverlayMouseDown}
     >
+      {showQrCode && isPixPayment ? (
+        <div
+          ref={qrModalRef}
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="QR Code do Pix"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setShowQrCode(false)
+            }
+          }}
+        >
+          <div className="relative w-full max-w-sm rounded-[28px] border border-line/80 bg-white p-5 shadow-2xl dark:border-shalom-gold/10 dark:bg-slate-900">
+            <button
+              type="button"
+              className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full border border-line/80 bg-white text-slate-700 transition hover:bg-slate-100 dark:border-shalom-gold/10 dark:bg-slate-900 dark:text-slate-200"
+              onClick={() => setShowQrCode(false)}
+              aria-label="Fechar QR Code"
+            >
+              <X size={16} />
+            </button>
+
+            <div className="mx-auto mt-6 flex h-64 w-64 items-center justify-center rounded-2xl border border-line/80 bg-white p-3 shadow-inner dark:border-shalom-gold/10 dark:bg-slate-950">
+              {qrLoading ? (
+                <div className="text-center text-sm text-slate-500">
+                  Gerando QR Code...
+                </div>
+              ) : qrError ? (
+                <div className="text-center text-sm text-red-500">
+                  {qrError}
+                </div>
+              ) : qrCodeDataUrl ? (
+                <img
+                  src={qrCodeDataUrl}
+                  alt="QR Code para pagamento Pix"
+                  className="h-full w-full object-contain"
+                />
+              ) : null}
+            </div>
+
+            <p className="mt-4 text-center text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-300">
+              Pagamento Pix
+            </p>
+            <p className="mt-2 text-center text-2xl font-bold text-slate-900 dark:text-white">
+              {money.format(total)}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       <section
         ref={modalRef}
+        inert={showQrCode && isPixPayment}
         className="dashboard-modal-panel mission-panel text-ink shadow-blue dark:text-slate-50"
         role="dialog"
         aria-modal="true"
@@ -281,6 +418,22 @@ export function SaleConfirmationModal({
           >
             Voltar
           </button>
+
+          {isPixPayment ? (
+            <button
+              ref={qrButtonRef}
+              type="button"
+              className="mission-btn flex min-h-12 items-center justify-center gap-2 border border-line/80 bg-white/70 px-4 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-45 dark:border-shalom-gold/10 dark:bg-white/10"
+              onClick={() => setShowQrCode((current) => !current)}
+              aria-expanded={showQrCode}
+              aria-label="Abrir QR Code do Pix"
+              title="QR Code do Pix"
+              disabled={loading}
+            >
+              <QrCode size={18} />
+              QR Code
+            </button>
+          ) : null}
 
           <button
             ref={confirmButtonRef}
