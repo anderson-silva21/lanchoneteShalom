@@ -165,6 +165,7 @@ jobs:
     timeout-minutes: 20
 
     permissions:
+      actions: read
       contents: read
       pull-requests: read
       security-events: write
@@ -228,7 +229,7 @@ jobs:
 
       - name: Upload Trivy SARIF to code scanning
         if: always() && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('trivy-results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
 
