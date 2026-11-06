@@ -28,6 +28,7 @@ const salesRoutes = require('./routes/sales');
 const spreadsheetRoutes = require('./routes/spreadsheet');
 const systemRoutes = require('./routes/system');
 const userRoutes = require('./routes/users');
+const pixRoutes = require('./routes/apipix');
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -84,6 +85,7 @@ app.use('/api/sales', salesRoutes);
 app.use('/api/spreadsheet', spreadsheetRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/pix', pixRoutes);
 
 app.use(errorHandler);
 

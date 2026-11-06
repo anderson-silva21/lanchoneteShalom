@@ -135,6 +135,7 @@ export const api = {
   updateCombo: (id, combo) => request(`/combos/${id}`, { method: 'PATCH', body: combo }),
   deleteCombo: (id) => request(`/combos/${id}`, { method: 'DELETE' }),
   createSale: (sale) => request('/sales', { method: 'POST', body: sale }),
+  generatePix: (amountCents, signal) => request('/pix/gerar', { method: 'POST', body: { amountCents }, signal }),
   pendingPayments: () => request('/sales/pending', { cache: 'no-store' }),
   cashClosing: (params = {}) => request(`/sales/closing?${new URLSearchParams(params)}`, { cache: 'no-store' }),
   saveCashClosing: (payload) => request('/sales/closing', { method: 'POST', body: payload }),
