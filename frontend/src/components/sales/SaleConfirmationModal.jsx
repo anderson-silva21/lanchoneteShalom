@@ -88,7 +88,7 @@ export function SaleConfirmationModal({
           width: 320,
           margin: 4,
           color: {
-            dark: '#111827',
+            dark: '#000000',
             light: '#ffffff'
           },
           errorCorrectionLevel: 'M'
@@ -227,7 +227,10 @@ export function SaleConfirmationModal({
               <X size={16} />
             </button>
 
-            <div className="mx-auto mt-6 flex h-64 w-64 items-center justify-center rounded-2xl border border-line/80 bg-white p-3 shadow-inner dark:border-shalom-gold/10 dark:bg-slate-950">
+            <p className="mt-8 text-center font-semibold text-slate-900 dark:text-white">
+              Comunidade Católica Shalom
+            </p>
+            <div className="mx-auto mt-4 flex h-64 w-64 items-center justify-center rounded-2xl border border-line/80 bg-white p-3 shadow-inner">
               {qrLoading ? (
                 <div className="text-center text-sm text-slate-500">
                   Gerando QR Code...
@@ -250,6 +253,9 @@ export function SaleConfirmationModal({
             </p>
             <p className="mt-2 text-center text-2xl font-bold text-slate-900 dark:text-white">
               {money.format(total)}
+            </p>
+            <p className="mt-2 break-all text-center text-xs text-slate-500 dark:text-slate-300">
+              financeirosaojosecampos@comshalom.org
             </p>
           </div>
         </div>

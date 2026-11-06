@@ -1,10 +1,9 @@
 
-const crypto = require('crypto')
+const PIX_KEY = 'financeirosaojosecampos@comshalom.org'
+// Campo 54 do BR Code: no maximo 13 caracteres, incluindo ponto e centavos.
+const MAX_AMOUNT_CENTS = 999999999999
 
-const PIX_KEY = process.env.PIX_KEY ||
-  'financeirosaojosecampos@comshalom.org'
-
-const MERCHANT_NAME = 'COMUNIDADE CATOLICA SHALO'
+const MERCHANT_NAME = 'COMUNIDADE CATOLICA SHALOM'
 const MERCHANT_CITY = 'FORTALEZA'
 
 function tlv(id, value) {
@@ -36,23 +35,18 @@ function crc16(payload) {
   return crc.toString(16).toUpperCase().padStart(4, '0')
 }
 
-function gerarPix(valorEmCentavos, txid) {
-  if (!Number.isSafeInteger(valorEmCentavos) || valorEmCentavos <= 0) {
+function gerarPix(valorEmCentavos) {
+  if (!Number.isSafeInteger(valorEmCentavos) || valorEmCentavos <= 0 || valorEmCentavos > MAX_AMOUNT_CENTS) {
     throw new Error('Valor Pix inválido')
   }
 
-  const identificador = txid ||
-    crypto.randomBytes(10).toString('hex').toUpperCase()
-
-  if (!/^[a-zA-Z0-9]{1,25}$/.test(identificador)) {
-    throw new Error('Identificador Pix inválido')
-  }
+  // QR estatico sem conciliacao por pedido: valor padrao definido pelo Pix.
+  const identificador = '***'
 
   // Dados da conta Pix
   const merchantAccount =
     tlv('00', 'br.gov.bcb.pix') +
-    tlv('01', PIX_KEY) +
-    tlv('02', 'Pix')
+    tlv('01', PIX_KEY)
 
   // Converte centavos para reais sem depender de operações
   // de ponto flutuante.
@@ -79,4 +73,4 @@ function gerarPix(valorEmCentavos, txid) {
   }
 }
 
-module.exports = { gerarPix }
+module.exports = { gerarPix, MAX_AMOUNT_CENTS }

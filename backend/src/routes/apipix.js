@@ -2,27 +2,19 @@
 const express = require('express')
 const router = express.Router()
 
-const { gerarPix } = require('../utils/pix')
+const { gerarPix, MAX_AMOUNT_CENTS } = require('../utils/pix')
 
 router.post('/gerar', (req, res) => {
   try {
-    const { amountCents, saleId } = req.body || {}
+    const { amountCents } = req.body || {}
 
-    if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
+    if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || amountCents > MAX_AMOUNT_CENTS) {
       return res.status(400).json({
         message: 'Valor da venda inválido'
       })
     }
 
-    if (saleId !== undefined && (!Number.isSafeInteger(saleId) || saleId <= 0)) {
-      return res.status(400).json({ message: 'Identificador da venda inválido' })
-    }
-
-    const txid = saleId
-      ? `LANC${String(saleId)}`
-      : undefined
-
-    const pix = gerarPix(amountCents, txid)
+    const pix = gerarPix(amountCents)
 
     return res.json({
       payload: pix.payload,

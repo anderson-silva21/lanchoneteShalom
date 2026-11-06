@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createRequire } from 'node:module'
+import process from 'node:process'
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
 
