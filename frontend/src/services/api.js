@@ -91,6 +91,8 @@ export const api = {
   publicLibraryWhatsApp: (id) => request(`/public/library/products/${id}/whatsapp`, { cache: 'no-store' }),
   createPublicLibraryRequest: (payload) => request('/public/library/requests', { method: 'POST', body: payload }),
   publicLibraryRequest: (reference) => request(`/public/library/requests/${encodeURIComponent(reference)}`, { cache: 'no-store' }),
+  selfServiceProducts: () => request('/public/self-service/products', { cache: 'no-store' }),
+  createSelfServiceSale: (payload) => request('/public/self-service/sales', { method: 'POST', body: payload }),
   libraryDashboard: (params = {}) => request(`/library/dashboard?${new URLSearchParams(params)}`, { cache: 'no-store' }),
   librarySpreadsheet: (params = {}) => request(`/library/spreadsheet?${new URLSearchParams(params)}`, { cache: 'no-store' }),
   librarySpreadsheetOptions: () => request('/library/spreadsheet/options', { cache: 'no-store' }),

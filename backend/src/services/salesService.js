@@ -47,14 +47,14 @@ const createSaleTransaction = db.transaction((payload, user) => {
   }
 
   const paymentConfirmedAt = paymentStatus === 'paid' ? brazilTimestamp() : null;
-  const paymentConfirmedBy = paymentStatus === 'paid' ? user.id : null;
+  const paymentConfirmedBy = paymentStatus === 'paid' ? user?.id || null : null;
   const insertSale = db.prepare(`
     INSERT INTO sales
       (total, estimated_profit, payment_method, payment_status, customer_name, payment_confirmed_at, payment_confirmed_by, notes, event_id, sold_by)
     VALUES
       (0, 0, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const saleId = insertSale.run(paymentMethod, paymentStatus, customerName, paymentConfirmedAt, paymentConfirmedBy, payload.notes || null, eventId, user.id).lastInsertRowid;
+  const saleId = insertSale.run(paymentMethod, paymentStatus, customerName, paymentConfirmedAt, paymentConfirmedBy, payload.notes || null, eventId, user?.id || null).lastInsertRowid;
 
   const insertItem = db.prepare(`
     INSERT INTO sale_items
@@ -81,7 +81,7 @@ const createSaleTransaction = db.transaction((payload, user) => {
       referenceType: 'sale',
       referenceId: saleId,
       notes: note,
-      userId: user.id
+      userId: user?.id || null
     });
   }
 

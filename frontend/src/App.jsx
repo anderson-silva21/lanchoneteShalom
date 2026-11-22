@@ -13,6 +13,7 @@ import { SalesTerminal } from './components/SalesTerminal'
 import { SettingsView } from './components/SettingsView'
 import { SpreadsheetView } from './components/SpreadsheetView'
 import { PublicLibraryStorefront } from './components/PublicLibraryStorefront'
+import { SelfServiceKiosk } from './components/SelfServiceKiosk'
 import { api, getToken, setToken } from './services/api'
 
 const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000 // 10 minutes
@@ -76,6 +77,7 @@ function App() {
   const location = useLocation()
   const navigate = useNavigate()
   const isPublicLibrary = typeof window !== 'undefined' && window.location.pathname.startsWith('/livraria')
+  const isSelfService = typeof window !== 'undefined' && window.location.pathname.startsWith('/autoatendimento')
   const [user, setUser] = useState(() => {
     const stored = localStorage.getItem('lanchonete_user')
     return stored ? JSON.parse(stored) : null
@@ -277,6 +279,10 @@ function App() {
 
   if (isPublicLibrary) {
     return <PublicLibraryStorefront />
+  }
+
+  if (isSelfService) {
+    return <SelfServiceKiosk />
   }
 
   if (!user) {
