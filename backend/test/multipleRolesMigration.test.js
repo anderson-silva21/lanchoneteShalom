@@ -15,12 +15,26 @@ const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'shalom-roles-migration-')
 process.env.DB_PATH = path.join(tempDir, 'legacy.sqlite');
 process.env.JWT_SECRET = randomBytes(32).toString('hex');
 const legacy = new Database(process.env.DB_PATH);
-legacy.exec(fs.readFileSync(path.join(__dirname, '../../database/schema.sql'), 'utf8'));
+legacy.exec(fs.readFileSync(path.join(__dirname, '../../database/schema.sql'), 'utf8').replace(", 'library_cashier'", ''));
 const profiles = ['admin', 'manager', 'cashier', 'finance', 'library'];
 for (const [index, role] of profiles.entries()) {
   legacy.prepare('INSERT INTO users (id, name, username, email, password_hash, role) VALUES (?, ?, ?, ?, ?, ?)')
     .run(31 + index, role, role, `${role}@test.local`, bcrypt.hashSync(migrationPassword, 4), role);
 }
+legacy.exec(`
+  CREATE TABLE user_roles (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'cashier', 'finance', 'library')),
+    PRIMARY KEY (user_id, role)
+  );
+  INSERT INTO user_roles (user_id, role) SELECT id, role FROM users;
+  CREATE INDEX idx_user_roles_role ON user_roles(role, user_id);
+  CREATE TRIGGER trg_user_roles_insert AFTER INSERT ON user_roles
+  BEGIN UPDATE users SET role = (SELECT role FROM user_roles WHERE user_id = NEW.user_id ORDER BY role LIMIT 1) WHERE id = NEW.user_id; END;
+  CREATE TRIGGER trg_user_roles_delete AFTER DELETE ON user_roles
+  WHEN EXISTS (SELECT 1 FROM user_roles WHERE user_id = OLD.user_id)
+  BEGIN UPDATE users SET role = (SELECT role FROM user_roles WHERE user_id = OLD.user_id ORDER BY role LIMIT 1) WHERE id = OLD.user_id; END;
+`);
 legacy.prepare("INSERT INTO sales (total, payment_method, sold_by) VALUES (10, 'pix', 33)").run();
 legacy.close();
 

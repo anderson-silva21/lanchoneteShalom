@@ -705,6 +705,23 @@ function ensureUserRoleSchema() {
   createMigrationBackup('users.role library');
   const foreignKeysEnabled = Number(db.pragma('foreign_keys', { simple: true })) === 1;
   db.pragma('foreign_keys = OFF');
+  const userRoleTriggers = tableExists('user_roles') ? `
+    CREATE TRIGGER trg_user_roles_insert AFTER INSERT ON user_roles
+    BEGIN UPDATE users SET role = (SELECT role FROM user_roles WHERE user_id = NEW.user_id
+      ORDER BY CASE role ${USER_ROLES.map((role, index) => `WHEN '${role}' THEN ${index}`).join(' ')} END LIMIT 1)
+      WHERE id = NEW.user_id; END;
+    CREATE TRIGGER trg_user_roles_delete AFTER DELETE ON user_roles
+    WHEN EXISTS (SELECT 1 FROM user_roles WHERE user_id = OLD.user_id)
+    BEGIN UPDATE users SET role = (SELECT role FROM user_roles WHERE user_id = OLD.user_id
+      ORDER BY CASE role ${USER_ROLES.map((role, index) => `WHEN '${role}' THEN ${index}`).join(' ')} END LIMIT 1)
+      WHERE id = OLD.user_id; END;
+    CREATE TRIGGER trg_users_role_projection BEFORE UPDATE OF role ON users
+    WHEN NEW.role != (SELECT role FROM user_roles WHERE user_id = NEW.id
+      ORDER BY CASE role ${USER_ROLES.map((role, index) => `WHEN '${role}' THEN ${index}`).join(' ')} END LIMIT 1)
+    BEGIN SELECT RAISE(ABORT, 'users.role is a projection; write user_roles'); END;
+    CREATE TRIGGER trg_users_initial_role AFTER INSERT ON users
+    BEGIN INSERT INTO user_roles (user_id, role) VALUES (NEW.id, NEW.role); END;
+  ` : '';
 
   const migrate = db.transaction(() => {
     dropSheetViews();
@@ -753,9 +770,13 @@ function ensureUserRoleSchema() {
         created_at
       FROM users;
 
+      DROP TRIGGER IF EXISTS trg_users_initial_role;
+      DROP TRIGGER IF EXISTS trg_user_roles_insert;
+      DROP TRIGGER IF EXISTS trg_user_roles_delete;
       DROP TABLE users;
       ALTER TABLE users_role_migration RENAME TO users;
       CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
+      ${userRoleTriggers}
     `);
   });
 
