@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
 import { decimal, formatDateTime } from '../utils/formatters'
-import { rolesFor, roleOptions, profileLabels } from '../access'
+import { brotherPermissionOptions, rolesFor, roleOptions, profileLabels } from '../access'
 import { RoleSelector } from './RoleSelector'
 
 const permissionRows = [
@@ -41,6 +41,7 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
   const [userDraft, setUserDraft] = useState({ name: '', username: '', roles: ['cashier'] })
   const [editingUser, setEditingUser] = useState(null)
   const [savingRoles, setSavingRoles] = useState(false)
+  const [savingBrotherPermissions, setSavingBrotherPermissions] = useState(false)
   const [generatedPassword, setGeneratedPassword] = useState(null)
   const [confirmation, setConfirmation] = useState('')
   const [message, setMessage] = useState('')
@@ -199,7 +200,24 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
 
   function startRolesEdit(item) {
     setUserMessage('')
-    setEditingUser({ ...item, roles: [...rolesFor(item)] })
+    setEditingUser({ ...item, roles: [...rolesFor(item)], brother_permissions: [...(item.brother_permissions || [])] })
+  }
+
+  async function saveUserBrotherPermissions() {
+    setSavingBrotherPermissions(true)
+    setUserMessage('')
+    try {
+      const result = await api.updateUserBrotherPermissions(editingUser.id, editingUser.brother_permissions)
+      setUsers((current) => current.map((item) => item.id === result.user.id ? result.user : item))
+      setEditingUser((current) => ({ ...current, brother_permissions: result.user.brother_permissions }))
+      setUserMessage(`Permissoes da Gestao de Irmaos de ${result.user.username} atualizadas.`)
+      loadAuditLogs()
+      window.dispatchEvent(new Event('shalom:permissions-changed'))
+    } catch (err) {
+      setUserMessage(getDisplayError(err))
+    } finally {
+      setSavingBrotherPermissions(false)
+    }
   }
 
   async function resetUserPassword(userId) {
@@ -622,6 +640,22 @@ export function SettingsView({ user, setupEnabled = false, onSetupEnabledChange 
           <form onSubmit={saveUserRoles} className="mt-4 grid gap-3 rounded-xl border border-line/80 p-3 dark:border-shalom-gold/10">
             <RoleSelector roles={editingUser.roles} legend={`Perfis de ${editingUser.username}`} disabled={savingRoles}
               onChange={(roles) => setEditingUser({ ...editingUser, roles })} />
+            <fieldset className="grid gap-2 border-t border-line/80 pt-3 dark:border-shalom-gold/10">
+              <legend className="px-1 text-sm font-semibold">Gestao de Irmaos</legend>
+              <p className="mission-muted text-xs">Permissoes individuais. Admin nao recebe acesso aos cadastros ou acompanhamentos automaticamente.</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {brotherPermissionOptions.map(({ value, label }) => (
+                  <label key={value} className="flex min-h-11 items-center gap-2 text-sm">
+                    <input type="checkbox" name="brother_permissions" value={value} checked={editingUser.brother_permissions.includes(value)} disabled={savingBrotherPermissions}
+                      onChange={(event) => setEditingUser((current) => ({ ...current, brother_permissions: event.target.checked ? [...current.brother_permissions, value] : current.brother_permissions.filter((permission) => permission !== value) }))} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <button type="button" className="mission-btn mission-btn-primary min-h-11 justify-self-start px-4 py-2" disabled={savingBrotherPermissions} onClick={saveUserBrotherPermissions}>
+                {savingBrotherPermissions ? 'Salvando...' : 'Salvar permissoes da Gestao de Irmaos'}
+              </button>
+            </fieldset>
             <div className="flex flex-wrap gap-2">
               <button type="submit" className="mission-btn mission-btn-primary min-h-11 px-4 py-2" disabled={savingRoles}>
                 {savingRoles ? 'Salvando...' : 'Salvar perfis'}

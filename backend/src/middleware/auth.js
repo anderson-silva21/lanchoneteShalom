@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const { db } = require('../db');
 const { getJwtSecret } = require('../config/security');
 const { getUserRoles } = require('../services/userRolesService');
+const { getBrotherPermissions } = require('../services/brotherPermissionsService');
 const { hasRole } = require('../utils/roles');
 
 const jwtSecret = getJwtSecret();
@@ -19,6 +20,7 @@ function publicUser(user) {
     email: user.email,
     role: user.role,
     roles: getUserRoles(user.id),
+    brother_permissions: getBrotherPermissions(user.id),
     password_must_change: Boolean(user.password_must_change)
   };
 }

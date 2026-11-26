@@ -8,6 +8,7 @@ const { recordAudit } = require('../services/auditService');
 const { generateTemporaryPassword } = require('../utils/passwords');
 const { USER_ROLES } = require('../utils/roles');
 const { getUserRoles, replaceUserRoles, hasOtherActiveAdmin } = require('../services/userRolesService');
+const { BROTHER_PERMISSIONS, getBrotherPermissions, replaceBrotherPermissions } = require('../services/brotherPermissionsService');
 
 const router = express.Router();
 const rolesSchema = z.array(z.enum(USER_ROLES)).min(1, 'Selecione pelo menos um perfil.')
@@ -32,6 +33,7 @@ function publicUser(row) {
     email: row.email,
     role: row.role,
     roles: getUserRoles(row.id),
+    brother_permissions: getBrotherPermissions(row.id),
     active: Boolean(row.active),
     password_must_change: Boolean(row.password_must_change),
     created_at: row.created_at
@@ -106,6 +108,24 @@ router.patch('/:id/roles', (req, res) => {
     return publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(user.id));
   })();
   return res.json({ user: updated });
+});
+
+router.patch('/:id/brother-permissions', (req, res) => {
+  const { permissions } = z.object({
+    permissions: z.array(z.enum(BROTHER_PERMISSIONS)).refine((items) => new Set(items).size === items.length, 'Permissoes duplicadas.')
+  }).strict().parse(req.body);
+  const user = db.prepare('SELECT id, username, active FROM users WHERE id = ?').get(req.params.id);
+  if (!user || Number(user.active) !== 1) return res.status(404).json({ message: 'Usuario ativo nao encontrado.' });
+  const previous = getBrotherPermissions(user.id);
+  db.transaction(() => {
+    replaceBrotherPermissions(user.id, permissions, req.user.id);
+    recordAudit({
+      req, strict: true, action: 'user.brother_permissions.update', entityType: 'user', entityId: user.id,
+      summary: `Permissoes da Gestao de Irmaos atualizadas: ${user.username}`,
+      metadata: { previous_permissions: previous, new_permissions: permissions }
+    });
+  })();
+  return res.json({ user: publicUser(db.prepare('SELECT * FROM users WHERE id = ?').get(user.id)) });
 });
 
 router.post('/:id/reset-password', (req, res) => {

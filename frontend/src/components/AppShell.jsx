@@ -13,6 +13,7 @@ import {
   ReceiptText,
   Settings,
   Sun,
+  UsersRound,
   WalletCards
 } from 'lucide-react'
 import { canAccessView, profileLabels } from '../access'
@@ -26,6 +27,7 @@ const navItems = [
   { key: 'products', label: 'Produtos', icon: Boxes },
   { key: 'sheet', label: 'Planilha', icon: FileSpreadsheet },
   { key: 'library', label: 'Livraria', icon: BookOpen },
+  { key: 'brothers', label: 'Gestao de Irmaos', icon: UsersRound },
   { key: 'settings', label: 'Sistema', icon: Settings }
 ]
 

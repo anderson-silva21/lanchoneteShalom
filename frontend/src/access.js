@@ -16,6 +16,17 @@ export const roleOptions = [
   { value: 'admin', label: 'Admin' }
 ]
 
+export const brotherPermissionOptions = [
+  { value: 'brothers:read', label: 'Consultar cadastros' },
+  { value: 'brothers:create', label: 'Cadastrar irmãos' },
+  { value: 'brothers:update', label: 'Editar cadastros e vínculos' },
+  { value: 'brothers:groups:manage', label: 'Administrar grupos de oração' },
+  { value: 'brothers:ministries:manage', label: 'Administrar serviços e ministérios' },
+  { value: 'brothers:followups:read', label: 'Consultar acompanhamentos' },
+  { value: 'brothers:followups:create', label: 'Registrar acompanhamentos' },
+  { value: 'brothers:followups:update', label: 'Editar acompanhamentos' }
+]
+
 export function rolesFor(subject) {
   if (Array.isArray(subject)) return subject
   if (typeof subject === 'string') return [subject]
@@ -31,7 +42,12 @@ export function profileLabels(subject) {
 }
 
 export function allowedViewsForRole(subject, options = {}) {
-  return [...new Set(rolesFor(subject).flatMap((role) => viewAccess[role] || []))]
+  const views = rolesFor(subject).flatMap((role) => viewAccess[role] || [])
+  const brotherPermissions = subject?.brother_permissions || []
+  if (brotherPermissions.some((permission) => [
+    'brothers:read', 'brothers:create', 'brothers:groups:manage', 'brothers:ministries:manage'
+  ].includes(permission))) views.push('brothers')
+  return [...new Set(views)]
     .filter((view) => view !== 'setup' || options.setupEnabled)
 }
 

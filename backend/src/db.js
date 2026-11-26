@@ -349,6 +349,81 @@ function ensureLibrarySchema() {
   `);
 }
 
+function ensureBrothersSchema() {
+  createMigrationBackup('brothers module');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS brother_permissions (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      permission TEXT NOT NULL CHECK (permission IN (
+        'brothers:read', 'brothers:create', 'brothers:update',
+        'brothers:groups:manage', 'brothers:ministries:manage',
+        'brothers:followups:read', 'brothers:followups:create', 'brothers:followups:update'
+      )),
+      granted_by INTEGER REFERENCES users(id),
+      granted_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+      PRIMARY KEY (user_id, permission)
+    );
+    CREATE TABLE IF NOT EXISTS brothers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      full_name TEXT NOT NULL, preferred_name TEXT, birth_date TEXT, phone TEXT, email TEXT,
+      postal_code TEXT, address_street TEXT, address_number TEXT, address_complement TEXT,
+      district TEXT, city TEXT, state TEXT, community_joined_on TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+      community_status TEXT, created_by INTEGER REFERENCES users(id), updated_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_brothers_name_birth ON brothers(lower(full_name), birth_date) WHERE birth_date IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_brothers_name ON brothers(full_name COLLATE NOCASE);
+    CREATE INDEX IF NOT EXISTS idx_brothers_status ON brothers(status, full_name COLLATE NOCASE);
+    CREATE TABLE IF NOT EXISTS prayer_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL COLLATE NOCASE UNIQUE, description TEXT,
+      responsible_brother_id INTEGER REFERENCES brothers(id), active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+    );
+    CREATE TABLE IF NOT EXISTS brother_group_memberships (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, brother_id INTEGER NOT NULL REFERENCES brothers(id) ON DELETE RESTRICT,
+      group_id INTEGER NOT NULL REFERENCES prayer_groups(id) ON DELETE RESTRICT, started_on TEXT NOT NULL, ended_on TEXT,
+      created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+      CHECK (ended_on IS NULL OR ended_on >= started_on)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_brother_group_current ON brother_group_memberships(brother_id, group_id) WHERE ended_on IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_brother_group_history ON brother_group_memberships(brother_id, started_on DESC);
+    CREATE TABLE IF NOT EXISTS ministries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL COLLATE NOCASE UNIQUE, description TEXT,
+      responsible_brother_id INTEGER REFERENCES brothers(id), active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+      created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+    );
+    CREATE TABLE IF NOT EXISTS brother_ministry_memberships (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, brother_id INTEGER NOT NULL REFERENCES brothers(id) ON DELETE RESTRICT,
+      ministry_id INTEGER NOT NULL REFERENCES ministries(id) ON DELETE RESTRICT, function_title TEXT,
+      started_on TEXT NOT NULL, ended_on TEXT, created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+      CHECK (ended_on IS NULL OR ended_on >= started_on)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_brother_ministry_current ON brother_ministry_memberships(brother_id, ministry_id) WHERE ended_on IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_brother_ministry_history ON brother_ministry_memberships(brother_id, started_on DESC);
+    CREATE TABLE IF NOT EXISTS brother_followups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, brother_id INTEGER NOT NULL REFERENCES brothers(id) ON DELETE RESTRICT,
+      occurred_on TEXT NOT NULL, responsible_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      category TEXT NOT NULL, notes TEXT NOT NULL, next_on TEXT,
+      status TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('scheduled', 'completed', 'cancelled')),
+      created_by INTEGER NOT NULL REFERENCES users(id), updated_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_brother_followups_timeline ON brother_followups(brother_id, occurred_on DESC, id DESC);
+    CREATE TABLE IF NOT EXISTS brother_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, brother_id INTEGER NOT NULL REFERENCES brothers(id) ON DELETE RESTRICT,
+      actor_user_id INTEGER REFERENCES users(id), event_type TEXT NOT NULL, summary TEXT NOT NULL, details TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_brother_history_timeline ON brother_history(brother_id, created_at DESC, id DESC);
+  `);
+}
+
 function ensureProductImageSchema() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS product_image_files (
@@ -1070,6 +1145,7 @@ function runMigrations() {
   ensureSaleItemCostAuditSchema();
   ensureCashClosingSchema();
   ensureLibrarySchema();
+  ensureBrothersSchema();
   ensureProductImageSchema();
   addColumnIfMissing('users', 'username', 'TEXT');
   addColumnIfMissing('users', 'active', 'INTEGER NOT NULL DEFAULT 1');
