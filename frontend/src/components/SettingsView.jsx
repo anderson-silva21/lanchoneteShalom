@@ -15,7 +15,7 @@ const permissionRows = [
   ['payments', 'Pagamentos', ['admin', 'manager', 'finance']],
   ['products', 'Produtos', ['admin', 'manager', 'finance']],
   ['sheet', 'Planilha', ['admin', 'manager', 'cashier', 'finance']],
-  ['library', 'Livraria', ['admin', 'finance', 'library']],
+  ['library', 'Livraria', ['admin', 'finance', 'library', 'library_cashier']],
   ['settings', 'Sistema', ['admin']]
 ]
 

@@ -111,7 +111,7 @@ function newSaleKey() {
 }
 
 function canWrite(user) {
-  return hasRole(user, 'admin', 'library')
+  return hasRole(user, 'admin', 'library', 'library_cashier')
 }
 
 const libraryPaymentMethods = [
@@ -184,6 +184,7 @@ function LibrarySaleProductCard({ product, quantity, writable, onAdd, onChangeQu
 
 export function LibraryManager({ user }) {
   const writable = canWrite(user)
+  const cashierOnly = hasRole(user, 'library_cashier') && !hasRole(user, 'admin', 'finance', 'library')
   const canManageLibraryFinance = hasRole(user, 'admin', 'finance')
   const location = useLocation()
   const navigate = useNavigate()
@@ -283,6 +284,11 @@ export function LibraryManager({ user }) {
   const isSpreadsheetFilterRoute = Boolean(spreadsheetFilterMatch)
 
   useEffect(() => {
+    if (cashierOnly) {
+      setActiveTab('sales')
+      if (!location.pathname.startsWith('/gestao-livraria/vender') || location.pathname.endsWith('/historico')) navigate('/gestao-livraria/vender', { replace: true })
+      return
+    }
     if (location.pathname.startsWith('/gestao-livraria/catalogo')) setActiveTab('products')
     if (isLibrarySaleRoute) setActiveTab('sales')
     if (isInstallmentRoute) setActiveTab('installments')
@@ -290,7 +296,7 @@ export function LibraryManager({ user }) {
       setActiveTab('spreadsheet')
       if (spreadsheetFilterSection) setSpreadsheetSection(spreadsheetFilterSection === 'estoque' ? 'stock' : 'sales')
     }
-  }, [isInstallmentRoute, isLibrarySaleRoute, isSpreadsheetRoute, location.pathname, spreadsheetFilterSection])
+  }, [cashierOnly, isInstallmentRoute, isLibrarySaleRoute, isSpreadsheetRoute, location.pathname, navigate, spreadsheetFilterSection])
 
   useEffect(() => {
     if (!isSpreadsheetFilterRoute) return
@@ -303,6 +309,15 @@ export function LibraryManager({ user }) {
   const loadData = useCallback(async () => {
     setMessage('')
     try {
+      if (cashierOnly) {
+        const [nextCategories, nextSaleProducts, nextSellers] = await Promise.all([
+          api.libraryCategories(), api.libraryProducts(), api.librarySellersByVisibility(sellerVisibility)
+        ])
+        setCategories(nextCategories)
+        setSaleProducts(nextSaleProducts)
+        setSellers(nextSellers)
+        return
+      }
       const [nextDashboard, nextCategories, nextProducts, nextSaleProducts, nextSales, nextMovements, nextRequests, nextSellers, nextMonitoring] = await Promise.all([
         api.libraryDashboard(dashboardRange),
         api.libraryCategories(),
@@ -326,7 +341,7 @@ export function LibraryManager({ user }) {
     } catch (err) {
       setMessage(err.message)
     }
-  }, [dashboardRange, filters, requestFilters, sellerVisibility])
+  }, [cashierOnly, dashboardRange, filters, requestFilters, sellerVisibility])
 
   useEffect(() => {
     loadData()
@@ -861,7 +876,7 @@ export function LibraryManager({ user }) {
     <div className="mx-auto grid w-full max-w-[1400px] gap-6 pb-4">
       {!isCatalogChildRoute && !isSaleChildRoute && !isInstallmentDetailRoute && !isSpreadsheetFilterRoute ? (
         <nav className="scrollbar-hidden flex gap-5 overflow-x-auto border-b border-line/80 dark:border-shalom-gold/10" role="tablist" aria-label="Areas da Livraria">
-          {tabs.filter((tab) => tab.key !== 'installments' || canManageLibraryFinance).map((tab) => (
+          {tabs.filter((tab) => (!cashierOnly || tab.key === 'sales') && (tab.key !== 'installments' || canManageLibraryFinance)).map((tab) => (
             <button key={tab.key} type="button" role="tab" aria-selected={activeTab === tab.key} className={`section-text-tab shrink-0 ${activeTab === tab.key ? 'section-text-tab-active' : ''}`} onClick={() => selectTab(tab.key)}>
               {tab.label}
             </button>
@@ -1325,7 +1340,7 @@ export function LibraryManager({ user }) {
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div><h2 className="font-display text-xl font-semibold lg:text-2xl">Vender</h2><p className="mission-muted mt-1 hidden text-sm lg:block">Selecione os produtos da Livraria</p></div>
                   <div className="flex items-center gap-1">
-                    <button type="button" className="flex min-h-11 items-center gap-2 px-2 text-sm font-semibold text-shalom-blue dark:text-shalom-gold" onClick={() => navigate('/gestao-livraria/vender/historico')}><History size={18} aria-hidden="true" /><span className="hidden sm:inline">Historico</span></button>
+                    {!cashierOnly ? <button type="button" className="flex min-h-11 items-center gap-2 px-2 text-sm font-semibold text-shalom-blue dark:text-shalom-gold" onClick={() => navigate('/gestao-livraria/vender/historico')}><History size={18} aria-hidden="true" /><span className="hidden sm:inline">Historico</span></button> : null}
                     <button type="button" className="flex min-h-11 items-center gap-2 px-2 text-sm font-semibold text-shalom-blue dark:text-shalom-gold" onClick={() => navigate('/gestao-livraria/vender/cliente')}><UserRound size={18} aria-hidden="true" /> Cliente</button>
                   </div>
                 </div>
@@ -1390,7 +1405,7 @@ export function LibraryManager({ user }) {
           ) : null}
 
           {saleStage === 'concluida' ? (
-            <div className="mx-auto max-w-xl py-8 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200"><Save size={25} /></div><h2 className="mt-4 font-display text-2xl font-semibold">Venda concluida</h2>{completedSale ? <><p className="mt-4 font-display text-3xl font-semibold text-shalom-blue dark:text-shalom-gold">{money.format(completedSale.total)}</p><p className="mission-muted mt-1 text-sm">Venda #{completedSale.id} - {completedSale.payment_method}</p></> : <p className="mission-muted mt-3">A venda foi registrada.</p>}<div className="mt-7 flex flex-col justify-center gap-2 sm:flex-row"><button type="button" className="mission-btn mission-btn-primary px-5 py-3 font-semibold" onClick={startNewLibrarySale}>Nova venda</button><button type="button" className="mission-btn px-5 py-3 font-semibold text-shalom-blue dark:text-shalom-gold" onClick={() => navigate('/gestao-livraria/vender/historico')}>Ver historico</button></div></div>
+            <div className="mx-auto max-w-xl py-8 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200"><Save size={25} /></div><h2 className="mt-4 font-display text-2xl font-semibold">Venda concluida</h2>{completedSale ? <><p className="mt-4 font-display text-3xl text-shalom-blue dark:text-shalom-gold">{money.format(completedSale.total)}</p><p className="mission-muted mt-1 text-sm">Venda #{completedSale.id} - {completedSale.payment_method}</p></> : <p className="mission-muted mt-3">A venda foi registrada.</p>}<div className="mt-7 flex flex-col justify-center gap-2 sm:flex-row"><button type="button" className="mission-btn mission-btn-primary px-5 py-3 font-semibold" onClick={startNewLibrarySale}>Nova venda</button>{!cashierOnly ? <button type="button" className="mission-btn px-5 py-3 font-semibold text-shalom-blue dark:text-shalom-gold" onClick={() => navigate('/gestao-livraria/vender/historico')}>Ver historico</button> : null}</div></div>
           ) : null}
 
           {saleStage === 'historico' ? (

@@ -1,4 +1,4 @@
-const USER_ROLES = ['admin', 'manager', 'cashier', 'finance', 'library'];
+const USER_ROLES = ['admin', 'manager', 'cashier', 'finance', 'library', 'library_cashier'];
 
 function rolesFor(subject) {
   if (Array.isArray(subject)) return subject;

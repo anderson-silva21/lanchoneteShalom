@@ -718,7 +718,7 @@ function ensureUserRoleSchema() {
         username TEXT NOT NULL UNIQUE,
         email TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
-        role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'cashier', 'finance', 'library')),
+        role TEXT NOT NULL CHECK (role IN (${USER_ROLES.map((role) => `'${role}'`).join(', ')})),
         active INTEGER NOT NULL DEFAULT 1,
         password_must_change INTEGER NOT NULL DEFAULT 0,
         login_failed_attempts INTEGER NOT NULL DEFAULT 0,
@@ -985,7 +985,26 @@ function repairLegacyUserForeignKeys() {
 }
 
 function ensureMultipleUserRolesSchema() {
-  if (!tableExists('users') || tableExists('user_roles')) return;
+  if (!tableExists('users')) return;
+  if (tableExists('user_roles')) {
+    const rolesTable = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'user_roles'").get();
+    if (USER_ROLES.every((role) => String(rolesTable?.sql || '').includes(`'${role}'`))) return;
+    createMigrationBackup('user_roles library cashier');
+    db.pragma('foreign_keys = OFF');
+    db.transaction(() => {
+      db.exec(`DROP TRIGGER IF EXISTS trg_users_initial_role; DROP TRIGGER IF EXISTS trg_user_roles_insert; DROP TRIGGER IF EXISTS trg_user_roles_delete; DROP TRIGGER IF EXISTS trg_user_roles_immutable; DROP TRIGGER IF EXISTS trg_users_role_projection;
+        CREATE TABLE user_roles_migration (user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, role TEXT NOT NULL CHECK (role IN (${USER_ROLES.map((role) => `'${role}'`).join(', ')})), PRIMARY KEY (user_id, role));
+        INSERT INTO user_roles_migration SELECT user_id, role FROM user_roles; DROP TABLE user_roles; ALTER TABLE user_roles_migration RENAME TO user_roles;
+        CREATE INDEX idx_user_roles_role ON user_roles(role, user_id);
+        CREATE TRIGGER trg_users_initial_role AFTER INSERT ON users BEGIN INSERT INTO user_roles (user_id, role) VALUES (NEW.id, NEW.role); END;
+        CREATE TRIGGER trg_user_roles_insert AFTER INSERT ON user_roles BEGIN UPDATE users SET role = (SELECT role FROM user_roles WHERE user_id = NEW.user_id ORDER BY CASE role ${USER_ROLES.map((role, index) => `WHEN '${role}' THEN ${index}`).join(' ')} END LIMIT 1) WHERE id = NEW.user_id; END;
+        CREATE TRIGGER trg_user_roles_delete AFTER DELETE ON user_roles WHEN EXISTS (SELECT 1 FROM user_roles WHERE user_id = OLD.user_id) BEGIN UPDATE users SET role = (SELECT role FROM user_roles WHERE user_id = OLD.user_id ORDER BY CASE role ${USER_ROLES.map((role, index) => `WHEN '${role}' THEN ${index}`).join(' ')} END LIMIT 1) WHERE id = OLD.user_id; END;
+        CREATE TRIGGER trg_user_roles_immutable BEFORE UPDATE ON user_roles BEGIN SELECT RAISE(ABORT, 'Replace role assignments instead of updating them'); END;
+        CREATE TRIGGER trg_users_role_projection BEFORE UPDATE OF role ON users WHEN NEW.role != (SELECT role FROM user_roles WHERE user_id = NEW.id ORDER BY CASE role ${USER_ROLES.map((role, index) => `WHEN '${role}' THEN ${index}`).join(' ')} END LIMIT 1) BEGIN SELECT RAISE(ABORT, 'users.role is a projection; write user_roles'); END;`);
+    })();
+    db.pragma('foreign_keys = ON');
+    return;
+  }
   createMigrationBackup('user_roles');
   const primaryRoleFor = (userId) => `SELECT role FROM user_roles WHERE user_id = ${userId}
     ORDER BY CASE role ${USER_ROLES.map((role, index) => `WHEN '${role}' THEN ${index}`).join(' ')} END LIMIT 1`;
@@ -993,7 +1012,7 @@ function ensureMultipleUserRolesSchema() {
     db.exec(`
       CREATE TABLE user_roles (
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'cashier', 'finance', 'library')),
+        role TEXT NOT NULL CHECK (role IN (${USER_ROLES.map((role) => `'${role}'`).join(', ')})),
         PRIMARY KEY (user_id, role)
       );
       INSERT INTO user_roles (user_id, role) SELECT id, role FROM users;

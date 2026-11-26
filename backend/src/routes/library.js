@@ -158,7 +158,7 @@ router.get('/dashboard', libraryOperationalRateLimit, authenticate, requirePermi
   }));
 });
 
-router.get('/sellers', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
+router.get('/sellers', libraryOperationalRateLimit, authenticate, requirePermission('library:cashier-read'), (req, res) => {
   const sellers = listSellers({ visibility: req.query.visibility }).map((seller) => !can(req.user, 'library:write') ? { ...seller, whatsapp_phone: undefined } : seller);
   return res.json(sellers);
 });
@@ -278,7 +278,7 @@ router.post('/requests/:reference/convert', libraryOperationalRateLimit, authent
   return res.status(201).json(sale);
 });
 
-router.get('/categories', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
+router.get('/categories', libraryOperationalRateLimit, authenticate, requirePermission('library:cashier-read'), (req, res) => {
   return res.json(listCategories({ includeInactive: req.query.include_inactive === '1' }));
 });
 
@@ -295,12 +295,16 @@ router.post('/categories', libraryOperationalRateLimit, authenticate, requirePer
   return res.status(201).json(category);
 });
 
-router.get('/products', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
-  return res.json(listProducts({
+router.get('/products', libraryOperationalRateLimit, authenticate, requirePermission('library:cashier-read'), (req, res) => {
+  const products = listProducts({
     q: req.query.q,
     categoryId: req.query.category_id,
     status: req.query.status
-  }));
+  });
+  if (can(req.user, 'library:sale') && !can(req.user, 'library:write')) {
+    return res.json(products.map(({ cost_price, cost, total_cost, gross_profit, margin, ...product }) => product));
+  }
+  return res.json(products);
 });
 
 router.get('/products/:id', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), (req, res) => {
@@ -483,7 +487,7 @@ router.get('/sales/:id', libraryOperationalRateLimit, authenticate, requirePermi
   return res.json(sale);
 });
 
-router.post('/sales', libraryOperationalRateLimit, authenticate, requirePermission('library:read'), requirePermission('library:write'), (req, res) => {
+router.post('/sales', libraryOperationalRateLimit, authenticate, requirePermission('library:sale'), (req, res) => {
   const sale = createSale(saleSchema.parse(req.body), req.user);
   recordAudit({
     req,

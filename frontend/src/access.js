@@ -3,7 +3,8 @@ export const viewAccess = {
   manager: ['sales', 'payments', 'setup', 'products', 'sheet'],
   finance: ['dashboard', 'setup', 'sales', 'payments', 'products', 'sheet', 'library'],
   admin: ['dashboard', 'setup', 'sales', 'payments', 'products', 'sheet', 'library', 'settings'],
-  library: ['library']
+  library: ['library'],
+  library_cashier: ['library']
 }
 
 export const roleOptions = [
@@ -11,6 +12,7 @@ export const roleOptions = [
   { value: 'manager', label: 'Gerente' },
   { value: 'finance', label: 'Financeiro' },
   { value: 'library', label: 'Livraria' },
+  { value: 'library_cashier', label: 'Caixa da Livraria' },
   { value: 'admin', label: 'Admin' }
 ]
 

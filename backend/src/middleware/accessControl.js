@@ -16,6 +16,8 @@ const screenRoles = {
 
 const permissions = {
   'library:read': ['admin', 'finance', 'library'],
+  'library:cashier-read': ['admin', 'finance', 'library', 'library_cashier'],
+  'library:sale': ['admin', 'library', 'library_cashier'],
   'library:write': ['admin', 'library'],
   'library:finance': ['admin', 'finance'],
   'library:sellers:manage': ['admin'],
