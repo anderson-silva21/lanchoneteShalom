@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "test": "node --test test/*.test.js",
     "test:forms": "node --test e2e/formValidation.test.js",
+    "test:brothers": "node --test e2e/brothers-access.test.js",
     "test:pending-sale": "node --test e2e/pending-sale.test.js",
     "preview": "vite preview"
   },

@@ -4,6 +4,7 @@ import { canAccessView, defaultViewForRole, hasRole } from './access'
 import { AppShell } from './components/AppShell'
 import { ChangePasswordScreen } from './components/ChangePasswordScreen'
 import { Dashboard } from './components/Dashboard'
+import { PastoralWorkspace } from './components/PastoralWorkspace'
 import { InitialLoadView } from './components/InitialLoadView'
 import { LibraryManager } from './components/LibraryManager'
 import { LoginScreen } from './components/LoginScreen'
@@ -27,6 +28,7 @@ const viewPaths = {
   products: '/produtos',
   sheet: '/planilha',
   library: '/gestao-livraria',
+  brothers: '/gestao-irmaos',
   settings: '/sistema'
 }
 
@@ -60,6 +62,7 @@ const routePageTitles = {
   '/gestao-livraria/vender/pagamento': 'Pagamento',
   '/gestao-livraria/vender/concluida': 'Venda concluida',
   '/gestao-livraria/vender/historico': 'Historico de vendas',
+  '/gestao-irmaos/novo': 'Novo irmão',
   '/gestao-livraria/planilha/filtros/vendas': 'Filtros de vendas',
   '/gestao-livraria/planilha/filtros/estoque': 'Filtros de estoque'
 }
@@ -304,6 +307,7 @@ function App() {
     products: <ProductManager refreshKey={refreshKey} onChanged={refresh} intent={productIntent} user={user} />,
     sheet: <SpreadsheetView refreshKey={refreshKey} onChanged={refresh} user={user} />,
     library: <LibraryManager user={user} />,
+    brothers: <PastoralWorkspace user={user} />,
     settings: <SettingsView user={user} setupEnabled={setupEnabled} onSetupEnabledChange={setSetupEnabled} onChanged={refresh} />
   }
 

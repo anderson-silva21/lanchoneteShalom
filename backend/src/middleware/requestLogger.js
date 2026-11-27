@@ -41,17 +41,18 @@ function compactUser(user) {
 }
 
 function getRequestContext(req) {
+  const isBrotherDataRequest = req.originalUrl.startsWith('/api/brothers') || req.originalUrl.startsWith('/api/pastoral');
   const context = {
     id: req.id,
     method: req.method,
-    url: req.originalUrl,
+    url: isBrotherDataRequest ? req.originalUrl.split('?')[0] : req.originalUrl,
     ip: req.ip,
     user: compactUser(req.user)
   };
 
   if (req.params && Object.keys(req.params).length > 0) context.params = redactSensitiveData(req.params);
-  if (req.query && Object.keys(req.query).length > 0) context.query = redactSensitiveData(req.query);
-  if (req.body && Object.keys(req.body).length > 0) context.body = redactSensitiveData(req.body);
+  if (!isBrotherDataRequest && req.query && Object.keys(req.query).length > 0) context.query = redactSensitiveData(req.query);
+  if (!isBrotherDataRequest && req.body && Object.keys(req.body).length > 0) context.body = redactSensitiveData(req.body);
 
   return context;
 }
@@ -80,12 +81,13 @@ function logRequestError(error, req, status, extra = {}) {
 }
 
 morgan.token('id', (req) => req.id || '-');
+morgan.token('safe-url', (req) => req.originalUrl.startsWith('/api/brothers') || req.originalUrl.startsWith('/api/pastoral') ? req.originalUrl.split('?')[0] : req.originalUrl);
 morgan.token('user', (req) => {
   if (!req.user) return '-';
   return `${req.user.id}:${req.user.role}`;
 });
 
-const httpLogger = morgan(':id :remote-addr :method :url :status :response-time ms - :res[content-length] user=:user');
+const httpLogger = morgan(':id :remote-addr :method :safe-url :status :response-time ms - :res[content-length] user=:user');
 
 module.exports = {
   assignRequestId,

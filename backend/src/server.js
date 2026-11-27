@@ -18,6 +18,8 @@ const { brazilTimestamp } = require('./utils/time');
 const authRoutes = require('./routes/auth');
 const analyticsRoutes = require('./routes/analytics');
 const backupRoutes = require('./routes/backup');
+const brothersRoutes = require('./routes/brothers');
+const pastoralRoutes = require('./routes/pastoral');
 const comboRoutes = require('./routes/combos');
 const inventoryRoutes = require('./routes/inventory');
 const libraryRoutes = require('./routes/library');
@@ -76,6 +78,8 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/backup', backupRoutes);
+app.use('/api/brothers', brothersRoutes);
+app.use('/api/pastoral', pastoralRoutes);
 app.use('/api/combos', comboRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/library', libraryRoutes);
