@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 const { z } = require('zod');
 const { db } = require('../db');
@@ -10,13 +11,20 @@ const { generateTemporaryPassword } = require('../utils/passwords');
 const { assignRole, assignSheep, endAssignment, endCoordinatorLink, getCommunityOverview, getLinkedBrother, getOwnProfile, getPastoralHome, getSheepProfile, linkPastorToCoordinator, listAppointments, listAssignedSheep, listCalendar, mayManageFollowup, pastoralTree, saveAppointment, saveEvent, saveGroupSchedule, setEventOccurrence, setGroupOccurrence, updateAppointment } = require('../services/pastoralService');
 
 const router = express.Router();
+const pastoralRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 300,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { message: 'Muitas requisicoes na Gestao Pastoral. Tente novamente em instantes.' }
+});
 const date = z.string().refine((value)=>{
   const parsed=Date.parse(`${value}T00:00:00.000Z`);
   return Number.isFinite(parsed)&&new Date(parsed).toISOString().slice(0,10)===value;
 },'Informe uma data valida no formato AAAA-MM-DD.');
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const permissions = z.array(z.enum(BROTHER_PERMISSIONS)).refine((items) => new Set(items).size === items.length, 'Permissoes duplicadas.');
-router.use(authenticate);
+router.use(pastoralRateLimit, authenticate);
 
 router.get('/me', requireBrotherPermission('brothers:self:access'), (req,res) => res.json(getOwnProfile(req.user)));
 router.get('/overview', requireAnyBrotherPermission('brothers:read','brothers:create','brothers:update','brothers:groups:manage','brothers:ministries:manage','brothers:calendar:read','brothers:calendar:manage','brothers:followups:read','brothers:followups:create','brothers:self:access','brothers:users:manage'), (req,res)=>res.json(getCommunityOverview(req.user)));

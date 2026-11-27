@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
 const { requireAnyBrotherPermission, requireBrotherPermission } = require('../middleware/brotherAccess');
@@ -12,6 +13,13 @@ const {
 } = require('../services/brothersService');
 
 const router = express.Router();
+const brothersRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 300,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { message: 'Muitas requisicoes na Gestao de Irmaos. Tente novamente em instantes.' }
+});
 const nullableText = (max) => z.string().trim().max(max).nullable().optional();
 const optionalId = z.preprocess((value) => value === '' || value === undefined ? null : value, z.coerce.number().int().positive().nullable().optional());
 const isoDate = z.string().refine((value) => {
@@ -49,7 +57,7 @@ const followupSchema = z.object({
   status: z.enum(['scheduled', 'completed', 'cancelled']).default('completed')
 }).strict();
 
-router.use(authenticate);
+router.use(brothersRateLimit, authenticate);
 
 router.get('/', requireBrotherPermission('brothers:read'), (req, res) => {
   return res.json(listBrothers({
