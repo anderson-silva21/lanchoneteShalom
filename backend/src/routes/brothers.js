@@ -1,6 +1,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
+const { db } = require('../db');
 const { authenticate } = require('../middleware/auth');
 const { requireAnyBrotherPermission, requireBrotherPermission } = require('../middleware/brotherAccess');
 const { hasBrotherPermission } = require('../services/brotherPermissionsService');

@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const bcrypt = require('bcryptjs');
 const { z } = require('zod');
 const { db } = require('../db');
@@ -11,6 +12,13 @@ const { getUserRoles, replaceUserRoles, hasOtherActiveAdmin } = require('../serv
 const { BROTHER_PERMISSIONS, getBrotherPermissions, replaceBrotherPermissions } = require('../services/brotherPermissionsService');
 
 const router = express.Router();
+const usersRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { message: 'Muitas requisicoes de usuarios. Tente novamente em instantes.' }
+});
 const rolesSchema = z.array(z.enum(USER_ROLES)).min(1, 'Selecione pelo menos um perfil.')
   .refine((roles) => new Set(roles).size === roles.length, 'Perfis duplicados.');
 
@@ -44,7 +52,7 @@ function emailForUsername(username) {
   return `${username}@lanchonete.local`;
 }
 
-router.use(authenticate, requireScreen('settings'));
+router.use(usersRateLimit, authenticate, requireScreen('settings'));
 
 router.get('/', (req, res) => {
   const users = db.prepare(`
