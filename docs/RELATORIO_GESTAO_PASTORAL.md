@@ -1,6 +1,6 @@
 # Relatório de implementação — Gestão de Irmãos, Serviços, Grupos e Calendário
 
-**Data:** 26/11/2026  
+**Data:** 27/11/2026
 **Branch:** `feature/gestao-irmaos`  
 **Situação:** implementação local concluída e validada; sem commit, merge ou publicação.
 
@@ -42,11 +42,19 @@ Ampliar a Gestão de Irmãos com estrutura organizacional flexível, administra�
 - Migrações adicionam campos e tabelas de estrutura de serviços, grupos, pastores de grupo, vínculos, calendário e históricos, preservando os dados existentes.
 - Atualizados `GLOSSARY.md`, `docs/BROTHERS_MODULE.md` e `docs/adr/0003-pastoral-access-calendar.md` com os conceitos e decisões da evolução.
 
+### Redesign UX/UI
+
+- Navegacao mobile global em uma linha, com acessos principais e menu Mais; navegacao interna compacta no celular.
+- Visao geral com indicadores compactos e listas de eventos e atividades.
+- Listagem com avatar por iniciais, situacao comunitaria e filtros recolhiveis.
+- Calendario e organograma adaptados para consulta em tela estreita; acoes de gestao agrupadas.
+- Capturas revisadas em 390x844, 360x800 e 1440x900, incluindo visao geral, irmaos, perfil, organograma, calendario e inicio pastoral.
+
 ## Validação executada
 
 - Backend: **105 testes aprovados**.
 - Frontend unitário: **20 testes aprovados**.
-- Fluxos E2E: **5 testes aprovados**, incluindo permissões, Admin, perfil exclusivo do módulo e início pastoral em tela de celular.
+- Fluxos E2E: **9 testes aprovados**, incluindo permissoes, Admin, menu lateral desktop, cadastro e perfil mobile, navegacao pastoral e responsividade das secoes em 320, 360, 375, 390, 414, 768, 1024 e 1440 px.
 - ESLint: aprovado.
 - Build de produção: concluído.
 - `git diff --check`: concluído sem erros.

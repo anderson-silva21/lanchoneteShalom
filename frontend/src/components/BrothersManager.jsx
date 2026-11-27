@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Plus, Save, Search, UsersRound } from 'lucide-react'
+import { ArrowLeft, Filter, Plus, Save, Search } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
 import { formatDate } from '../utils/formatters'
@@ -11,6 +11,9 @@ const blankBrother = {
 }
 function localToday() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+}
+function brotherInitials(person) {
+  return String(person?.preferred_name || person?.full_name || '?').trim().split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
 }
 const blankFollowup = { occurred_on: localToday(), responsible_user_id: null, category: '', notes: '', next_on: '', status: 'completed', start_time: '', end_time: '', location: '' }
 
@@ -58,8 +61,11 @@ export function BrothersManager({ user, hideSectionNavigation = false }) {
   const [editingMinistryId, setEditingMinistryId] = useState(null)
   const [membershipDraft, setMembershipDraft] = useState({ group_id: '', ministry_id: '', function_title: '', started_on: localToday() })
   const [message, setMessage] = useState('')
+  const [postalCodeLookupMessage, setPostalCodeLookupMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const loadingBrotherId = useRef(null)
+  const postalCodeLookupId = useRef(0)
+  const lastLookedUpPostalCode = useRef('')
 
   const visibleSections = useMemo(() => [
     ...(canRead || canCreate ? [{ key: 'people', label: 'Irmaos' }] : []),
@@ -101,6 +107,9 @@ export function BrothersManager({ user, hideSectionNavigation = false }) {
     try {
       const profile = await api.brother(id)
       navigate(`/gestao-irmaos/${id}`)
+      postalCodeLookupId.current += 1
+      lastLookedUpPostalCode.current = String(profile.postal_code || '').replace(/\D/g, '')
+      setPostalCodeLookupMessage('')
       setSelected(profile); setDraft({ ...blankBrother, ...profile }); setCreating(false); setEditing(false)
       if (canReadFollowups) setFollowups(await api.brotherFollowups(id))
       else setFollowups([])
@@ -109,8 +118,42 @@ export function BrothersManager({ user, hideSectionNavigation = false }) {
   }, [canReadFollowups, navigate])
 
   function startCreate() {
+    postalCodeLookupId.current += 1
+    lastLookedUpPostalCode.current = ''
+    setPostalCodeLookupMessage('')
     setSelected(null); setFollowups([]); setDraft(blankBrother); setCreating(true); setEditing(true); setMessage('')
     navigate('/gestao-irmaos/novo')
+  }
+
+  function updatePostalCode(value) {
+    postalCodeLookupId.current += 1
+    lastLookedUpPostalCode.current = ''
+    setPostalCodeLookupMessage('')
+    setDraft((current) => ({ ...current, postal_code: value }))
+  }
+
+  async function lookupAddressByPostalCode(value) {
+    const postalCode = String(value || '').replace(/\D/g, '')
+    if (postalCode.length !== 8 || postalCode === lastLookedUpPostalCode.current) return
+
+    const requestId = ++postalCodeLookupId.current
+    setPostalCodeLookupMessage('Consultando CEP...')
+    try {
+      const address = await api.brotherAddressByPostalCode(postalCode)
+      if (requestId !== postalCodeLookupId.current) return
+      setDraft((current) => ({
+        ...current,
+        address_street: address.address_street ?? '',
+        district: address.district ?? '',
+        city: address.city ?? '',
+        state: address.state ?? ''
+      }))
+      lastLookedUpPostalCode.current = postalCode
+      setPostalCodeLookupMessage('Endereco preenchido pelo CEP. Confira os dados antes de salvar.')
+    } catch (error) {
+      if (requestId !== postalCodeLookupId.current) return
+      setPostalCodeLookupMessage(error.message)
+    }
   }
 
   const routeBrotherId = Number(location.pathname.match(/^\/gestao-irmaos\/(\d+)$/)?.[1] || 0)
@@ -120,6 +163,9 @@ export function BrothersManager({ user, hideSectionNavigation = false }) {
       openBrother(routeBrotherId).finally(() => { loadingBrotherId.current = null })
     }
     if (location.pathname === '/gestao-irmaos/novo' && !creating) {
+      postalCodeLookupId.current += 1
+      lastLookedUpPostalCode.current = ''
+      setPostalCodeLookupMessage('')
       setSelected(null); setDraft(blankBrother); setCreating(true); setEditing(true)
     }
     if (location.pathname === '/gestao-irmaos' && (selected?.id || creating)) {
@@ -215,7 +261,7 @@ export function BrothersManager({ user, hideSectionNavigation = false }) {
     <div className="mx-auto grid w-full max-w-6xl gap-5 pb-6">
       <header className="flex flex-wrap items-center gap-3 border-b border-line/80 pb-4 dark:border-shalom-gold/10">
         {selected || creating ? <button type="button" className="mission-btn inline-flex min-h-11 items-center gap-2 px-3" onClick={() => navigate('/gestao-irmaos')}><ArrowLeft size={17} /> Voltar</button> : null}
-        <div className="min-w-0 flex-1"><h2 className="font-display text-xl font-semibold">{selected?.preferred_name || selected?.full_name || (creating ? 'Novo cadastro' : 'Gestao de Irmaos')}</h2><p className="mission-muted mt-1 text-sm">Cadastros comunitarios com acesso individualizado.</p></div>
+        <div className="min-w-0 flex-1"><h2 className="font-display text-xl font-semibold">{selected?.preferred_name || selected?.full_name || (creating ? 'Novo irmao' : 'Irmaos da comunidade')}</h2><p className="mission-muted mt-1 text-sm">Encontre um irmao pelo nome ou por seus vinculos.</p></div>
         {!selected && !creating && canCreate && section === 'people' ? <button type="button" className="mission-btn mission-btn-primary inline-flex min-h-11 items-center gap-2 px-4 font-semibold" onClick={startCreate}><Plus size={17} /> Novo irmao</button> : null}
       </header>
 
@@ -225,14 +271,13 @@ export function BrothersManager({ user, hideSectionNavigation = false }) {
       {message ? <p role="status" className="border-l-2 border-shalom-orange px-3 py-2 text-sm">{message}</p> : null}
 
       {section === 'people' && !selected && !creating ? <>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="relative sm:col-span-2"><span className="sr-only">Pesquisar irmao</span><Search size={17} className="pointer-events-none absolute left-3 top-1/2 mission-muted" /><input className="mission-input h-11 w-full pl-9 pr-3" placeholder="Pesquisar por nome" value={search} onChange={(event) => { setSearch(event.target.value); setFilters((current) => ({ ...current, page: 1 })) }} /></label>
-          <select aria-label="Filtrar grupo de oracao" className="mission-input h-11 px-3" value={filters.group_id} onChange={(event) => setFilters((current) => ({ ...current, group_id: event.target.value, page: 1 }))}><option value="">Todos os grupos</option>{groups.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-          <select aria-label="Filtrar servico" className="mission-input h-11 px-3" value={filters.ministry_id} onChange={(event) => setFilters((current) => ({ ...current, ministry_id: event.target.value, page: 1 }))}><option value="">Todos os servicos</option>{ministries.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-          <select aria-label="Situacao cadastral" className="mission-input h-11 px-3" value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value, page: 1 }))}><option value="">Todas as situacoes</option><option value="active">Ativos</option><option value="inactive">Inativos</option></select>
+        <div className="brothers-directory-filters">
+          <label className="relative"><span className="sr-only">Pesquisar irmao</span><Search size={17} className="pointer-events-none absolute left-3 top-1/2 mission-muted -translate-y-1/2" /><input className="mission-input h-11 w-full pl-9 pr-3" placeholder="Pesquisar por nome" value={search} onChange={(event) => { setSearch(event.target.value); setFilters((current) => ({ ...current, page: 1 })) }} /></label>
+          <details className="brothers-filter-disclosure sm:hidden"><summary><Filter size={16}/> Filtros</summary><div className="grid gap-2 pt-2"><select aria-label="Filtrar grupo de oracao" className="mission-input h-11 px-3" value={filters.group_id} onChange={(event) => setFilters((current) => ({ ...current, group_id: event.target.value, page: 1 }))}><option value="">Todos os grupos</option>{groups.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select aria-label="Filtrar servico" className="mission-input h-11 px-3" value={filters.ministry_id} onChange={(event) => setFilters((current) => ({ ...current, ministry_id: event.target.value, page: 1 }))}><option value="">Todos os servicos</option>{ministries.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select aria-label="Situacao cadastral" className="mission-input h-11 px-3" value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value, page: 1 }))}><option value="">Todas as situacoes</option><option value="active">Ativos</option><option value="inactive">Inativos</option></select></div></details>
+          <div className="hidden gap-2 sm:grid sm:grid-cols-3"><select aria-label="Filtrar grupo de oracao" className="mission-input h-11 px-3" value={filters.group_id} onChange={(event) => setFilters((current) => ({ ...current, group_id: event.target.value, page: 1 }))}><option value="">Todos os grupos</option>{groups.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select aria-label="Filtrar servico" className="mission-input h-11 px-3" value={filters.ministry_id} onChange={(event) => setFilters((current) => ({ ...current, ministry_id: event.target.value, page: 1 }))}><option value="">Todos os servicos</option>{ministries.filter((item) => item.active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><select aria-label="Situacao cadastral" className="mission-input h-11 px-3" value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value, page: 1 }))}><option value="">Todas as situacoes</option><option value="active">Ativos</option><option value="inactive">Inativos</option></select></div>
         </div>
         <div className="divide-y divide-line/80 dark:divide-shalom-gold/10">
-          {directory.items.map((item) => <button type="button" key={item.id} disabled={busy} onClick={() => openBrother(item.id)} className="flex min-h-16 w-full items-center gap-3 py-3 text-left hover:text-shalom-blue dark:hover:text-shalom-gold"><UsersRound size={19} className="shrink-0" /><span className="min-w-0 flex-1"><strong className="block truncate">{item.preferred_name || item.full_name}</strong><span className="mission-muted mt-1 block truncate text-xs">Cadastro {item.status === 'active' ? 'ativo' : 'inativo'}</span></span><span className="mission-muted text-xs">Abrir perfil</span></button>)}
+          {directory.items.map((item) => <button type="button" key={item.id} disabled={busy} onClick={() => openBrother(item.id)} className="brother-directory-row"><span className="brother-avatar">{item.photo_url ? <img src={item.photo_url} alt="" /> : brotherInitials(item)}</span><span className="min-w-0 flex-1"><strong className="block truncate">{item.preferred_name || item.full_name}</strong><span className="mission-muted mt-1 block truncate text-xs">{item.community_status || 'Comunidade Shalom'}</span></span><span className={`brother-status ${item.status === 'active' ? 'is-active' : ''}`}>{item.status === 'active' ? 'Ativo' : 'Inativo'}</span><span className="brother-open-label">Perfil</span></button>)}
           {!directory.items.length ? <p className="mission-muted py-8 text-center text-sm">Nenhum irmao encontrado.</p> : null}
         </div>
         <div className="flex items-center justify-between"><span className="mission-muted text-xs">{directory.pagination.total} cadastros</span><div className="flex gap-2"><button type="button" className="mission-btn min-h-10 px-3" disabled={filters.page <= 1} onClick={() => setFilters((current) => ({ ...current, page: current.page - 1 }))}>Anterior</button><span className="self-center text-sm">{directory.pagination.page}/{Math.max(directory.pagination.total_pages, 1)}</span><button type="button" className="mission-btn min-h-10 px-3" disabled={filters.page >= directory.pagination.total_pages} onClick={() => setFilters((current) => ({ ...current, page: current.page + 1 }))}>Proxima</button></div></div>
@@ -248,7 +293,7 @@ export function BrothersManager({ user, hideSectionNavigation = false }) {
           <label className="text-sm font-medium">E-mail<input type="email" maxLength={254} className="mission-input mt-1 h-11 w-full px-3" value={draft.email || ''} onChange={(event) => setDraft({ ...draft, email: event.target.value })} /></label>
           <label className="text-sm font-medium">Ingresso na comunidade<input type="date" className="mission-input mt-1 h-11 w-full px-3" value={draft.community_joined_on || ''} onChange={(event) => setDraft({ ...draft, community_joined_on: event.target.value })} /></label>
           <h3 className="font-display text-lg font-semibold sm:col-span-2 lg:col-span-3">Endereco</h3>
-          <label className="text-sm font-medium">CEP<input maxLength={12} className="mission-input mt-1 h-11 w-full px-3" value={draft.postal_code || ''} onChange={(event) => setDraft({ ...draft, postal_code: event.target.value })} /></label>
+          <label className="text-sm font-medium">CEP<input inputMode="numeric" autoComplete="postal-code" maxLength={12} className="mission-input mt-1 h-11 w-full px-3" value={draft.postal_code || ''} onChange={(event) => updatePostalCode(event.target.value)} onBlur={(event) => lookupAddressByPostalCode(event.currentTarget.value)} />{postalCodeLookupMessage && <span role="status" className="mission-muted mt-1 block text-xs">{postalCodeLookupMessage}</span>}</label>
           <label className="text-sm font-medium sm:col-span-2">Logradouro<input maxLength={180} className="mission-input mt-1 h-11 w-full px-3" value={draft.address_street || ''} onChange={(event) => setDraft({ ...draft, address_street: event.target.value })} /></label>
           <label className="text-sm font-medium">Numero<input maxLength={30} className="mission-input mt-1 h-11 w-full px-3" value={draft.address_number || ''} onChange={(event) => setDraft({ ...draft, address_number: event.target.value })} /></label>
           <label className="text-sm font-medium">Complemento<input maxLength={100} className="mission-input mt-1 h-11 w-full px-3" value={draft.address_complement || ''} onChange={(event) => setDraft({ ...draft, address_complement: event.target.value })} /></label>

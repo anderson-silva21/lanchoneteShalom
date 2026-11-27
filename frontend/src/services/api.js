@@ -86,6 +86,7 @@ export const api = {
   deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),
   updateUserBrotherPermissions: (id, permissions) => request(`/users/${id}/brother-permissions`, { method: 'PATCH', body: { permissions } }),
   brothers: (params = {}) => request(`/brothers?${new URLSearchParams(params)}`, { cache: 'no-store' }),
+  brotherAddressByPostalCode: (postalCode) => request(`/brothers/address-by-postal-code?${new URLSearchParams({ postal_code: postalCode })}`, { cache: 'no-store' }),
   brother: (id) => request(`/brothers/${id}`, { cache: 'no-store' }),
   createBrother: (payload) => request('/brothers', { method: 'POST', body: payload }),
   updateBrother: (id, payload) => request(`/brothers/${id}`, { method: 'PATCH', body: payload }),

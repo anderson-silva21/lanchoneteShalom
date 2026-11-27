@@ -59,6 +59,31 @@ router.get('/', requireBrotherPermission('brothers:read'), (req, res) => {
   }));
 });
 
+router.get('/address-by-postal-code', requireAnyBrotherPermission('brothers:create', 'brothers:update'), async (req, res) => {
+  const postalCode = String(req.query.postal_code || '');
+  if (!/^\d{8}$/.test(postalCode)) return res.status(400).json({ message: 'Informe um CEP com 8 digitos.' });
+
+  try {
+    const response = await fetch(`https://viacep.com.br/ws/${postalCode}/json/`, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(5000)
+    });
+    if (!response.ok) return res.status(502).json({ message: 'Consulta de CEP indisponivel no momento.' });
+
+    const address = await response.json();
+    if (address.erro) return res.status(404).json({ message: 'CEP nao encontrado.' });
+
+    return res.json({
+      address_street: address.logradouro || '',
+      district: address.bairro || '',
+      city: address.localidade || '',
+      state: address.uf || ''
+    });
+  } catch {
+    return res.status(502).json({ message: 'Nao foi possivel consultar o CEP. Tente novamente.' });
+  }
+});
+
 router.post('/', requireBrotherPermission('brothers:create'), (req, res) => {
   const created = createBrother(brotherSchema.parse(req.body), req.user, req);
   return res.status(201).json(hasBrotherPermission(req.user, 'brothers:read') ? created : { id: created.id, created: true });
