@@ -37,7 +37,7 @@ function errorHandler(error, req, res, next) {
 
   logRequestError(error, req, status, {
     responseMessage: payload.message,
-    issues: isValidationError && !req.originalUrl.startsWith('/api/brothers') ? error.issues : undefined,
+    issues: isValidationError && !req.originalUrl.startsWith('/api/brothers') && !req.originalUrl.startsWith('/api/pastoral') ? error.issues : undefined,
     details: error.details
   });
 

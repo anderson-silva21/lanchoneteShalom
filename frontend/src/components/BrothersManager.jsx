@@ -12,9 +12,10 @@ const blankBrother = {
 function localToday() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 }
-const blankFollowup = { occurred_on: localToday(), responsible_user_id: null, category: '', notes: '', next_on: '', status: 'completed' }
+const blankFollowup = { occurred_on: localToday(), responsible_user_id: null, category: '', notes: '', next_on: '', status: 'completed', start_time: '', end_time: '', location: '' }
 
 function hasPermission(user, permission) {
+  if (user?.role === 'admin' || user?.roles?.includes('admin')) return true
   return user?.brother_permissions?.includes(permission) || false
 }
 
@@ -26,7 +27,7 @@ function DateLabel({ value }) {
   return value ? formatDate(value) : '—'
 }
 
-export function BrothersManager({ user }) {
+export function BrothersManager({ user, hideSectionNavigation = false }) {
   const location = useLocation()
   const navigate = useNavigate()
   const canRead = hasPermission(user, 'brothers:read')
@@ -170,7 +171,7 @@ export function BrothersManager({ user }) {
 
   async function saveFollowup(event) {
     event.preventDefault(); setBusy(true); setMessage('')
-    const payload = { ...followupDraft, next_on: valueOrNull(followupDraft.next_on), responsible_user_id: followupDraft.responsible_user_id || null }
+    const payload = { ...followupDraft, next_on: valueOrNull(followupDraft.next_on), start_time: valueOrNull(followupDraft.start_time), end_time: valueOrNull(followupDraft.end_time), location: valueOrNull(followupDraft.location), responsible_user_id: followupDraft.responsible_user_id || null }
     try {
       if (editingFollowupId) await api.updateBrotherFollowup(selected.id, editingFollowupId, payload)
       else await api.createBrotherFollowup(selected.id, payload)
@@ -218,7 +219,7 @@ export function BrothersManager({ user }) {
         {!selected && !creating && canCreate && section === 'people' ? <button type="button" className="mission-btn mission-btn-primary inline-flex min-h-11 items-center gap-2 px-4 font-semibold" onClick={startCreate}><Plus size={17} /> Novo irmao</button> : null}
       </header>
 
-      {!selected && !creating && visibleSections.length > 1 ? <nav className="scrollbar-hidden flex gap-5 overflow-x-auto border-b border-line/80 dark:border-shalom-gold/10" aria-label="Areas da Gestao de Irmaos">
+      {!hideSectionNavigation && !selected && !creating && visibleSections.length > 1 ? <nav className="scrollbar-hidden flex gap-5 overflow-x-auto border-b border-line/80 dark:border-shalom-gold/10" aria-label="Areas da Gestao de Irmaos">
         {visibleSections.map((item) => <button key={item.key} type="button" className={`section-text-tab shrink-0 ${section === item.key ? 'section-text-tab-active' : ''}`} onClick={() => setSection(item.key)}>{item.label}</button>)}
       </nav> : null}
       {message ? <p role="status" className="border-l-2 border-shalom-orange px-3 py-2 text-sm">{message}</p> : null}

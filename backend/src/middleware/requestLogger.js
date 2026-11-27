@@ -41,7 +41,7 @@ function compactUser(user) {
 }
 
 function getRequestContext(req) {
-  const isBrotherDataRequest = req.originalUrl.startsWith('/api/brothers');
+  const isBrotherDataRequest = req.originalUrl.startsWith('/api/brothers') || req.originalUrl.startsWith('/api/pastoral');
   const context = {
     id: req.id,
     method: req.method,
@@ -81,7 +81,7 @@ function logRequestError(error, req, status, extra = {}) {
 }
 
 morgan.token('id', (req) => req.id || '-');
-morgan.token('safe-url', (req) => req.originalUrl.startsWith('/api/brothers') ? req.originalUrl.split('?')[0] : req.originalUrl);
+morgan.token('safe-url', (req) => req.originalUrl.startsWith('/api/brothers') || req.originalUrl.startsWith('/api/pastoral') ? req.originalUrl.split('?')[0] : req.originalUrl);
 morgan.token('user', (req) => {
   if (!req.user) return '-';
   return `${req.user.id}:${req.user.role}`;

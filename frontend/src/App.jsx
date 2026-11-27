@@ -4,7 +4,7 @@ import { canAccessView, defaultViewForRole, hasRole } from './access'
 import { AppShell } from './components/AppShell'
 import { ChangePasswordScreen } from './components/ChangePasswordScreen'
 import { Dashboard } from './components/Dashboard'
-import { BrothersManager } from './components/BrothersManager'
+import { PastoralWorkspace } from './components/PastoralWorkspace'
 import { InitialLoadView } from './components/InitialLoadView'
 import { LibraryManager } from './components/LibraryManager'
 import { LoginScreen } from './components/LoginScreen'
@@ -307,7 +307,7 @@ function App() {
     products: <ProductManager refreshKey={refreshKey} onChanged={refresh} intent={productIntent} user={user} />,
     sheet: <SpreadsheetView refreshKey={refreshKey} onChanged={refresh} user={user} />,
     library: <LibraryManager user={user} />,
-    brothers: <BrothersManager user={user} />,
+    brothers: <PastoralWorkspace user={user} />,
     settings: <SettingsView user={user} setupEnabled={setupEnabled} onSetupEnabledChange={setSetupEnabled} onChanged={refresh} />
   }
 

@@ -40,10 +40,13 @@ test('telas legadas de inventario e relatorios nao fazem parte da navegacao', ()
   assert.equal(canAccessView('finance', 'settings'), false)
 })
 
-test('Gestao de Irmaos depende de permissao explicita, inclusive para Admin', () => {
-  assert.equal(canAccessView('admin', 'brothers'), false)
+test('Admin sempre acessa Gestao de Irmaos e os demais perfis dependem de concessao', () => {
+  assert.equal(canAccessView('admin', 'brothers'), true)
   assert.equal(canAccessView({ roles: ['admin'], brother_permissions: ['brothers:read'] }, 'brothers'), true)
-  assert.equal(canAccessView({ roles: ['cashier'], brother_permissions: ['brothers:followups:read'] }, 'brothers'), false)
+  assert.equal(canAccessView({ roles: ['cashier'], brother_permissions: ['brothers:followups:read'] }, 'brothers'), true)
   assert.equal(canAccessView({ roles: ['cashier'], brother_permissions: ['brothers:create'] }, 'brothers'), true)
   assert.equal(canAccessView({ roles: ['cashier'], brother_permissions: ['brothers:groups:manage'] }, 'brothers'), true)
+  assert.deepEqual(allowedViewsForRole({ role: 'brothers', roles: ['brothers'] }), ['brothers'])
+  assert.equal(canAccessView({ role: 'brothers', roles: ['brothers'] }, 'sales'), false)
+  assert.equal(canAccessView({ role: 'brothers', roles: ['brothers'] }, 'library'), false)
 })

@@ -357,7 +357,9 @@ function ensureBrothersSchema() {
       permission TEXT NOT NULL CHECK (permission IN (
         'brothers:read', 'brothers:create', 'brothers:update',
         'brothers:groups:manage', 'brothers:ministries:manage',
-        'brothers:followups:read', 'brothers:followups:create', 'brothers:followups:update'
+        'brothers:followups:read', 'brothers:followups:create', 'brothers:followups:update',
+        'brothers:users:manage', 'brothers:pastoral:coordinate', 'brothers:pastoral:manage',
+        'brothers:calendar:read', 'brothers:calendar:manage', 'brothers:self:access'
       )),
       granted_by INTEGER REFERENCES users(id),
       granted_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
@@ -415,13 +417,160 @@ function ensureBrothersSchema() {
       updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
     );
     CREATE INDEX IF NOT EXISTS idx_brother_followups_timeline ON brother_followups(brother_id, occurred_on DESC, id DESC);
+    CREATE TABLE IF NOT EXISTS brother_followup_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, followup_id INTEGER NOT NULL REFERENCES brother_followups(id) ON DELETE RESTRICT,
+      actor_user_id INTEGER REFERENCES users(id), change_type TEXT NOT NULL,
+      previous_occurred_on TEXT, occurred_on TEXT, previous_start_time TEXT, start_time TEXT,
+      previous_end_time TEXT, end_time TEXT, previous_status TEXT, status TEXT,
+      changed_at TEXT NOT NULL DEFAULT (datetime('now','-3 hours'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_brother_followup_history ON brother_followup_history(followup_id,changed_at DESC);
     CREATE TABLE IF NOT EXISTS brother_history (
       id INTEGER PRIMARY KEY AUTOINCREMENT, brother_id INTEGER NOT NULL REFERENCES brothers(id) ON DELETE RESTRICT,
       actor_user_id INTEGER REFERENCES users(id), event_type TEXT NOT NULL, summary TEXT NOT NULL, details TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
     );
     CREATE INDEX IF NOT EXISTS idx_brother_history_timeline ON brother_history(brother_id, created_at DESC, id DESC);
+    CREATE TABLE IF NOT EXISTS brother_account_links (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      brother_id INTEGER NOT NULL UNIQUE REFERENCES brothers(id) ON DELETE RESTRICT,
+      linked_by INTEGER REFERENCES users(id), linked_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours'))
+    );
+    CREATE TABLE IF NOT EXISTS brother_pastoral_roles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, brother_id INTEGER NOT NULL REFERENCES brothers(id) ON DELETE RESTRICT,
+      role TEXT NOT NULL CHECK (role IN ('coordinator','pastor','sheep')),
+      started_on TEXT NOT NULL, ended_on TEXT, assigned_by INTEGER REFERENCES users(id),
+      CHECK (ended_on IS NULL OR ended_on >= started_on)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_brother_pastoral_role_current ON brother_pastoral_roles(brother_id) WHERE ended_on IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_pastoral_coordinator_current ON brother_pastoral_roles(role) WHERE role = 'coordinator' AND ended_on IS NULL;
+    CREATE TABLE IF NOT EXISTS pastoral_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pastor_brother_id INTEGER NOT NULL REFERENCES brothers(id) ON DELETE RESTRICT,
+      sheep_brother_id INTEGER NOT NULL REFERENCES brothers(id) ON DELETE RESTRICT,
+      started_on TEXT NOT NULL, ended_on TEXT, assigned_by INTEGER REFERENCES users(id),
+      CHECK (pastor_brother_id != sheep_brother_id), CHECK (ended_on IS NULL OR ended_on >= started_on)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_pastoral_assignment_current ON pastoral_assignments(sheep_brother_id) WHERE ended_on IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_pastoral_assignment_pastor ON pastoral_assignments(pastor_brother_id, ended_on, sheep_brother_id);
+    CREATE TABLE IF NOT EXISTS pastoral_coordinator_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      coordinator_brother_id INTEGER NOT NULL REFERENCES brothers(id) ON DELETE RESTRICT,
+      pastor_brother_id INTEGER NOT NULL REFERENCES brothers(id) ON DELETE RESTRICT,
+      started_on TEXT NOT NULL, ended_on TEXT, assigned_by INTEGER REFERENCES users(id),
+      CHECK (coordinator_brother_id != pastor_brother_id), CHECK (ended_on IS NULL OR ended_on >= started_on)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_coordinator_pastor_current ON pastoral_coordinator_assignments(pastor_brother_id) WHERE ended_on IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_coordinator_assignment_history ON pastoral_coordinator_assignments(coordinator_brother_id,ended_on,pastor_brother_id);
+    CREATE TABLE IF NOT EXISTS community_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, description TEXT,
+      event_type TEXT NOT NULL CHECK (event_type IN ('work','pastoral_meeting','other')),
+      event_date TEXT NOT NULL, start_time TEXT, end_time TEXT, location TEXT,
+      responsible_user_id INTEGER REFERENCES users(id), visibility TEXT NOT NULL DEFAULT 'community' CHECK (visibility IN ('community','pastoral','private')),
+      status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled','cancelled','completed')),
+      recurrence_interval INTEGER NOT NULL DEFAULT 0 CHECK (recurrence_interval >= 0), recurrence_until TEXT,
+      created_by INTEGER NOT NULL REFERENCES users(id), updated_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')), updated_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+      CHECK (end_time IS NULL OR start_time IS NULL OR end_time > start_time)
+    );
+    CREATE INDEX IF NOT EXISTS idx_community_events_date ON community_events(event_date, status, event_type);
+    CREATE TABLE IF NOT EXISTS community_event_occurrences (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, event_id INTEGER NOT NULL REFERENCES community_events(id) ON DELETE CASCADE,
+      event_date TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('scheduled','cancelled','completed')),
+      title TEXT, description TEXT, start_time TEXT, end_time TEXT, location TEXT,
+      UNIQUE (event_id,event_date), CHECK (end_time IS NULL OR start_time IS NULL OR end_time > start_time)
+    );
+    CREATE TABLE IF NOT EXISTS community_event_participants (
+      event_id INTEGER NOT NULL REFERENCES community_events(id) ON DELETE CASCADE,
+      brother_id INTEGER NOT NULL REFERENCES brothers(id) ON DELETE RESTRICT,
+      PRIMARY KEY (event_id,brother_id)
+    );
+    CREATE TABLE IF NOT EXISTS prayer_group_schedules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, group_id INTEGER NOT NULL REFERENCES prayer_groups(id) ON DELETE RESTRICT,
+      day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6), start_time TEXT NOT NULL, end_time TEXT NOT NULL,
+      location TEXT, starts_on TEXT NOT NULL, ends_on TEXT, interval_weeks INTEGER NOT NULL DEFAULT 1 CHECK (interval_weeks BETWEEN 1 AND 52),
+      active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)), created_by INTEGER REFERENCES users(id),
+      CHECK (end_time > start_time), CHECK (ends_on IS NULL OR ends_on >= starts_on)
+    );
+    CREATE INDEX IF NOT EXISTS idx_prayer_group_schedule_current ON prayer_group_schedules(group_id, active, starts_on);
+    CREATE TABLE IF NOT EXISTS prayer_group_occurrences (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, schedule_id INTEGER NOT NULL REFERENCES prayer_group_schedules(id) ON DELETE CASCADE,
+      event_date TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('scheduled','cancelled','completed')),
+      start_time TEXT, end_time TEXT, location TEXT, UNIQUE (schedule_id,event_date),
+      CHECK (end_time IS NULL OR start_time IS NULL OR end_time > start_time)
+    );
   `);
+  addColumnIfMissing('brothers', 'photo_url', 'TEXT');
+  addColumnIfMissing('brother_followups', 'start_time', 'TEXT');
+  addColumnIfMissing('brother_followups', 'end_time', 'TEXT');
+  addColumnIfMissing('brother_followups', 'location', 'TEXT');
+  addColumnIfMissing('community_event_occurrences', 'moved_to_date', 'TEXT');
+  addColumnIfMissing('prayer_group_occurrences', 'moved_to_date', 'TEXT');
+  addColumnIfMissing('prayer_groups', 'service_id', 'INTEGER REFERENCES ministries(id) ON DELETE SET NULL');
+  addColumnIfMissing('prayer_groups', 'habitual_day_of_week', 'INTEGER');
+  addColumnIfMissing('prayer_groups', 'habitual_start_time', 'TEXT');
+  addColumnIfMissing('prayer_groups', 'location', 'TEXT');
+  addColumnIfMissing('prayer_groups', 'starts_on', 'TEXT');
+  addColumnIfMissing('prayer_group_schedules', 'group_profile_schedule', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing('brother_ministry_memberships', 'structure_node_id', 'INTEGER REFERENCES ministry_structure_nodes(id) ON DELETE SET NULL');
+  addColumnIfMissing('community_events', 'ministry_id', 'INTEGER REFERENCES ministries(id) ON DELETE SET NULL');
+  addColumnIfMissing('community_events', 'group_id', 'INTEGER REFERENCES prayer_groups(id) ON DELETE SET NULL');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ministry_structure_nodes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ministry_id INTEGER NOT NULL REFERENCES ministries(id) ON DELETE RESTRICT,
+      parent_node_id INTEGER REFERENCES ministry_structure_nodes(id) ON DELETE RESTRICT,
+      node_type TEXT NOT NULL CHECK (node_type IN ('coordination','team','custom')),
+      name TEXT NOT NULL, description TEXT,
+      responsible_brother_id INTEGER REFERENCES brothers(id) ON DELETE SET NULL,
+      active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now','-3 hours')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now','-3 hours'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_ministry_structure_parent ON ministry_structure_nodes(ministry_id,parent_node_id,active);
+    CREATE TABLE IF NOT EXISTS ministry_structure_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      node_id INTEGER NOT NULL REFERENCES ministry_structure_nodes(id) ON DELETE RESTRICT,
+      actor_user_id INTEGER REFERENCES users(id), action TEXT NOT NULL,
+      summary TEXT NOT NULL, details TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','-3 hours'))
+    );
+    CREATE TABLE IF NOT EXISTS ministry_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ministry_id INTEGER NOT NULL REFERENCES ministries(id) ON DELETE RESTRICT,
+      actor_user_id INTEGER REFERENCES users(id), action TEXT NOT NULL,
+      summary TEXT NOT NULL, details TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','-3 hours'))
+    );
+    CREATE TABLE IF NOT EXISTS prayer_group_pastors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL REFERENCES prayer_groups(id) ON DELETE RESTRICT,
+      brother_id INTEGER NOT NULL REFERENCES brothers(id) ON DELETE RESTRICT,
+      started_on TEXT NOT NULL, ended_on TEXT, created_by INTEGER REFERENCES users(id),
+      CHECK (ended_on IS NULL OR ended_on >= started_on)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_prayer_group_pastor_current ON prayer_group_pastors(group_id,brother_id) WHERE ended_on IS NULL;
+    CREATE TABLE IF NOT EXISTS prayer_group_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL REFERENCES prayer_groups(id) ON DELETE RESTRICT,
+      actor_user_id INTEGER REFERENCES users(id), action TEXT NOT NULL,
+      summary TEXT NOT NULL, details TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now','-3 hours'))
+    );
+  `);
+  const permissionSql = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'brother_permissions'").get()?.sql || '';
+  if (!permissionSql.includes('brothers:users:manage')) {
+    createMigrationBackup('pastoral permissions');
+    db.exec(`ALTER TABLE brother_permissions RENAME TO brother_permissions_legacy;
+      CREATE TABLE brother_permissions (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        permission TEXT NOT NULL CHECK (permission IN ('brothers:read','brothers:create','brothers:update','brothers:groups:manage','brothers:ministries:manage','brothers:followups:read','brothers:followups:create','brothers:followups:update','brothers:users:manage','brothers:pastoral:coordinate','brothers:pastoral:manage','brothers:calendar:read','brothers:calendar:manage','brothers:self:access')),
+        granted_by INTEGER REFERENCES users(id), granted_at TEXT NOT NULL DEFAULT (datetime('now', '-3 hours')),
+        PRIMARY KEY (user_id,permission));
+      INSERT INTO brother_permissions SELECT * FROM brother_permissions_legacy;
+      DROP TABLE brother_permissions_legacy;`);
+  }
 }
 
 function ensureProductImageSchema() {
@@ -1308,8 +1457,11 @@ function initDatabase() {
     migrateLegacyStockBatches();
   });
   seed();
-  ensureBrazilTimestampTriggers();
   runMigrations();
+  // A role/FK migration can intentionally drop compatibility views and triggers.
+  // Reapply the idempotent schema after the final migration pass.
+  runSchema();
+  ensureBrazilTimestampTriggers();
 }
 
 module.exports = {

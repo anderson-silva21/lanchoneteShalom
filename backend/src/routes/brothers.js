@@ -3,10 +3,12 @@ const { z } = require('zod');
 const { authenticate } = require('../middleware/auth');
 const { requireAnyBrotherPermission, requireBrotherPermission } = require('../middleware/brotherAccess');
 const { hasBrotherPermission } = require('../services/brotherPermissionsService');
+const { mayManageFollowup } = require('../services/pastoralService');
 const { recordAudit } = require('../services/auditService');
 const {
-  addMembership, createBrother, endMembership, getBrother, listBrotherPeople, listBrothers, listFollowups, listGroups, listMinistries,
-  saveFollowup, saveGroup, saveMinistry, updateBrother
+  addMembership, addMinistryNodeMember, createBrother, endGroupPastor, endMembership, getBrother, getPrayerGroup,
+  listBrotherPeople, listBrothers, listFollowups, listGroups, listMinistries, ministryStructure, saveFollowup,
+  saveGroup, saveGroupPastor, saveMinistry, saveMinistryNode, transferGroupMember, updateBrother
 } = require('../services/brothersService');
 
 const router = express.Router();
@@ -28,8 +30,11 @@ const brotherSchema = z.object({
 }).strict();
 const brotherUpdateSchema = brotherSchema.partial().refine((payload) => Object.keys(payload).length > 0, 'Informe ao menos um campo.');
 const groupSchema = z.object({
-  name: z.string().trim().min(2).max(120), description: nullableText(500),
-  responsible_brother_id: z.coerce.number().int().positive(), active: z.boolean().default(true)
+  name: z.string().trim().min(2).max(120), description: nullableText(1000),
+  responsible_brother_id: optionalId, service_id: optionalId,
+  habitual_day_of_week: z.coerce.number().int().min(0).max(6).nullable().optional(),
+  habitual_start_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
+  location: nullableText(240), starts_on: date, active: z.boolean().default(true)
 }).strict();
 const ministrySchema = groupSchema;
 const followupSchema = z.object({
@@ -37,6 +42,9 @@ const followupSchema = z.object({
   responsible_user_id: optionalId,
   category: z.string().trim().min(2).max(80),
   notes: z.string().trim().min(2).max(10000),
+  start_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
+  end_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
+  location: nullableText(240),
   next_on: date,
   status: z.enum(['scheduled', 'completed', 'cancelled']).default('completed')
 }).strict();
@@ -56,12 +64,43 @@ router.post('/', requireBrotherPermission('brothers:create'), (req, res) => {
   return res.status(201).json(hasBrotherPermission(req.user, 'brothers:read') ? created : { id: created.id, created: true });
 });
 
-router.get('/people', requireAnyBrotherPermission('brothers:read', 'brothers:groups:manage', 'brothers:ministries:manage'), (req, res) => {
+router.get('/people', requireAnyBrotherPermission('brothers:read', 'brothers:groups:manage', 'brothers:ministries:manage', 'brothers:pastoral:manage', 'brothers:users:manage'), (req, res) => {
   return res.json(listBrotherPeople());
 });
 
 router.get('/groups', requireAnyBrotherPermission('brothers:read', 'brothers:groups:manage'), (req, res) => {
-  return res.json(listGroups());
+  return res.json(listGroups({service_id:req.query.service_id,responsible_brother_id:req.query.responsible_brother_id,day_of_week:req.query.day_of_week,active:req.query.active,q:String(req.query.q||'')}));
+});
+
+router.get('/groups/:groupId', requireAnyBrotherPermission('brothers:read','brothers:groups:manage'), (req,res)=>res.json(getPrayerGroup(Number(req.params.groupId))));
+
+router.get('/groups/:groupId/members', requireAnyBrotherPermission('brothers:read','brothers:groups:manage'), (req,res)=>res.json(getPrayerGroup(Number(req.params.groupId)).members));
+
+router.post('/groups/:groupId/members', requireBrotherPermission('brothers:groups:manage'), (req,res)=>{
+  const payload=z.object({brother_id:z.coerce.number().int().positive(),started_on:date}).strict().parse(req.body);
+  return res.status(201).json(addMembership('group',payload.brother_id,{...payload,group_id:Number(req.params.groupId)},req.user,req));
+});
+
+router.patch('/groups/:groupId/members/:membershipId/end', requireBrotherPermission('brothers:groups:manage'), (req,res)=>{
+  const {ended_on}=z.object({ended_on:isoDate}).strict().parse(req.body);
+  const current=db.prepare('SELECT brother_id FROM brother_group_memberships WHERE id=? AND group_id=?').get(req.params.membershipId,req.params.groupId);
+  if(!current) return res.status(404).json({message:'Vinculo de grupo nao encontrado.'});
+  return res.json(endMembership('group',current.brother_id,Number(req.params.membershipId),ended_on,req.user,req));
+});
+
+router.post('/groups/:groupId/members/:membershipId/transfer', requireBrotherPermission('brothers:groups:manage'), (req,res)=>{
+  const payload=z.object({group_id:z.coerce.number().int().positive(),started_on:isoDate}).strict().parse(req.body);
+  return res.status(201).json(transferGroupMember(Number(req.params.groupId),Number(req.params.membershipId),payload,req.user,req));
+});
+
+router.post('/groups/:groupId/pastors', requireBrotherPermission('brothers:groups:manage'), (req,res)=>{
+  const payload=z.object({brother_id:z.coerce.number().int().positive(),started_on:isoDate}).strict().parse(req.body);
+  return res.status(201).json(saveGroupPastor(Number(req.params.groupId),payload.brother_id,payload.started_on,req.user,req));
+});
+
+router.patch('/groups/:groupId/pastors/:linkId/end', requireBrotherPermission('brothers:groups:manage'), (req,res)=>{
+  const {ended_on}=z.object({ended_on:isoDate}).strict().parse(req.body);
+  return res.json(endGroupPastor(Number(req.params.groupId),Number(req.params.linkId),ended_on,req.user,req));
 });
 
 router.post('/groups', requireBrotherPermission('brothers:groups:manage'), (req, res) => {
@@ -84,18 +123,30 @@ router.patch('/ministries/:ministryId', requireBrotherPermission('brothers:minis
   return res.json(saveMinistry(Number(req.params.ministryId), ministrySchema.parse(req.body), req.user, req));
 });
 
+router.get('/ministries/:ministryId/structure', requireAnyBrotherPermission('brothers:read','brothers:ministries:manage'), (req,res)=>res.json(ministryStructure(Number(req.params.ministryId))));
+const structureNodeSchema=z.object({parent_node_id:optionalId,node_type:z.enum(['coordination','team','custom']),name:z.string().trim().min(2).max(120),description:nullableText(1000),responsible_brother_id:optionalId,active:z.boolean().default(true)}).strict();
+router.post('/ministries/:ministryId/nodes', requireBrotherPermission('brothers:ministries:manage'), (req,res)=>res.status(201).json(saveMinistryNode(Number(req.params.ministryId),null,structureNodeSchema.parse(req.body),req.user,req)));
+router.patch('/ministries/:ministryId/nodes/:nodeId', requireBrotherPermission('brothers:ministries:manage'), (req,res)=>res.json(saveMinistryNode(Number(req.params.ministryId),Number(req.params.nodeId),structureNodeSchema.parse(req.body),req.user,req)));
+router.post('/ministries/:ministryId/nodes/:nodeId/members', requireBrotherPermission('brothers:ministries:manage'), (req,res)=>{
+  const payload=z.object({brother_id:z.coerce.number().int().positive(),function_title:nullableText(100),started_on:isoDate}).strict().parse(req.body);
+  res.status(201).json(addMinistryNodeMember(Number(req.params.ministryId),Number(req.params.nodeId),payload.brother_id,payload,req.user,req));
+});
+
 router.get('/:id/followups', requireBrotherPermission('brothers:followups:read'), (req, res) => {
   const brotherId = Number(req.params.id);
+  if (!mayManageFollowup(req.user, brotherId)) return res.status(403).json({ message: 'O irmao nao esta vinculado a sua responsabilidade pastoral.' });
   const followups = listFollowups(brotherId);
   recordAudit({ req, strict: true, action: 'brother.followup.read', entityType: 'brother', entityId: brotherId, summary: 'Acompanhamentos consultados.' });
   return res.json(followups);
 });
 
 router.post('/:id/followups', requireBrotherPermission('brothers:followups:create'), (req, res) => {
+  if (!mayManageFollowup(req.user, Number(req.params.id))) return res.status(403).json({ message: 'O irmao nao esta vinculado a sua responsabilidade pastoral.' });
   return res.status(201).json(saveFollowup(null, Number(req.params.id), followupSchema.parse(req.body), req.user, req));
 });
 
 router.patch('/:id/followups/:followupId', requireBrotherPermission('brothers:followups:update'), (req, res) => {
+  if (!mayManageFollowup(req.user, Number(req.params.id))) return res.status(403).json({ message: 'O irmao nao esta vinculado a sua responsabilidade pastoral.' });
   return res.json(saveFollowup(Number(req.params.followupId), Number(req.params.id), followupSchema.parse(req.body), req.user, req));
 });
 

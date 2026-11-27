@@ -60,9 +60,9 @@ async function request(pathname, token, options = {}) {
   return { response, body: await response.json().catch(() => null) };
 }
 
-test('permissoes explicitas separam cadastro de acompanhamentos e a listagem omite dados pessoais', async () => {
+test('Admin tem acesso completo e permissoes explicitas separam cadastro de acompanhamentos', async () => {
   const adminList = await request('/brothers', adminToken);
-  assert.equal(adminList.response.status, 403, `Admin nao recebe acesso automatico ao cadastro: ${JSON.stringify(adminList.body)}`);
+  assert.equal(adminList.response.status, 200, `Admin deve consultar cadastros: ${JSON.stringify(adminList.body)}`);
 
   const grant = await request(`/users/${coordinatorId}/brother-permissions`, adminToken, {
     method: 'PATCH', body: { permissions: ['brothers:read', 'brothers:create', 'brothers:followups:create'] }
@@ -77,8 +77,8 @@ test('permissoes explicitas separam cadastro de acompanhamentos e a listagem omi
   });
   assert.equal(created.response.status, 201);
   brotherId = created.body.id;
-  assert.equal((await request(`/brothers/${brotherId}/followups`, adminToken)).response.status, 403,
-    'Admin nao recebe acesso automatico aos acompanhamentos');
+  assert.equal((await request(`/brothers/${brotherId}/followups`, adminToken)).response.status, 200,
+    'Admin deve consultar acompanhamentos');
 
   const followup = await request(`/brothers/${brotherId}/followups`, coordinatorToken, {
     method: 'POST', body: { occurred_on: '2026-11-26', category: 'pastoral', notes: 'Conteudo confidencial', status: 'completed' }

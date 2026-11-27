@@ -1,3 +1,3 @@
-# Permissões explícitas para Gestão de Irmãos
+﻿# Permissoes explicitas para Gestao de Irmaos
 
-As permissões da Gestão de Irmãos são concessões individuais, separadas dos perfis operacionais existentes. Admin pode administrar as concessões, mas não recebe acesso aos cadastros ou acompanhamentos por consequência do próprio perfil; acompanhar e consultar registros sensíveis são permissões distintas. Isso evita ampliar o acesso a dados pessoais quando contas recebem permissões administrativas gerais.
+As permissoes da Gestao de Irmaos sao concessoes individuais, separadas dos perfis operacionais existentes. O perfil Admin recebe acesso completo aos cadastros, grupos, servicos e acompanhamentos, inclusive quando as concessoes individuais nao estao gravadas. Os demais perfis precisam de concessoes individuais; para eles, leitura, criacao e edicao de acompanhamentos continuam distintas.
