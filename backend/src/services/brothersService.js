@@ -144,16 +144,15 @@ function updateBrother(brotherId, payload, actor, req) {
 function listGroups(filters = {}) {
   const clauses = [];
   const params = [];
-  if (filters.service_id) { clauses.push('g.service_id = ?'); params.push(Number(filters.service_id)); }
   if (filters.responsible_brother_id) { clauses.push('g.responsible_brother_id = ?'); params.push(Number(filters.responsible_brother_id)); }
   if (filters.day_of_week !== '' && filters.day_of_week !== undefined) { clauses.push('g.habitual_day_of_week = ?'); params.push(Number(filters.day_of_week)); }
   if (filters.active !== '' && filters.active !== undefined) { clauses.push('g.active = ?'); params.push(filters.active === 'true' || filters.active === true ? 1 : 0); }
   if (filters.q?.trim()) { clauses.push('(g.name LIKE ? COLLATE NOCASE OR g.description LIKE ? COLLATE NOCASE)'); params.push(`%${filters.q.trim()}%`, `%${filters.q.trim()}%`); }
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   return db.prepare(`SELECT g.id,g.name,g.description,g.responsible_brother_id,b.full_name AS responsible_name,g.active,
-      g.service_id,m.name AS service_name,g.habitual_day_of_week,g.habitual_start_time,g.location,g.starts_on,
+      g.habitual_day_of_week,g.habitual_start_time,g.location,g.starts_on,
       COALESCE((SELECT COUNT(*) FROM brother_group_memberships x WHERE x.group_id=g.id AND x.ended_on IS NULL),0) AS member_count
-    FROM prayer_groups g LEFT JOIN brothers b ON b.id=g.responsible_brother_id LEFT JOIN ministries m ON m.id=g.service_id
+    FROM prayer_groups g LEFT JOIN brothers b ON b.id=g.responsible_brother_id
     ${where} ORDER BY g.name COLLATE NOCASE`).all(...params).map((row) => ({ ...row, active: Boolean(row.active) }));
 }
 
@@ -182,18 +181,17 @@ function saveGroup(id, payload, actor, req) {
   if (payload.responsible_brother_id && !db.prepare("SELECT id FROM brothers WHERE id = ? AND status = 'active'").get(payload.responsible_brother_id)) {
     throw notFound('Responsavel ativo nao encontrado.');
   }
-  if (payload.service_id && !db.prepare('SELECT id FROM ministries WHERE id=? AND active=1').get(payload.service_id)) throw notFound('Servico ou ministerio ativo nao encontrado.');
   if (payload.habitual_day_of_week !== undefined && payload.habitual_day_of_week !== null && (payload.habitual_day_of_week < 0 || payload.habitual_day_of_week > 6)) throw Object.assign(new Error('Dia da semana invalido.'),{status:400});
   const result = db.transaction(() => {
     let groupId = id;
     const previous = id ? db.prepare('SELECT * FROM prayer_groups WHERE id = ?').get(id) : null;
     if (id) {
       if (!db.prepare('SELECT id FROM prayer_groups WHERE id = ?').get(id)) throw notFound('Grupo de oracao nao encontrado.');
-      db.prepare(`UPDATE prayer_groups SET name=?,description=?,responsible_brother_id=?,active=?,service_id=?,habitual_day_of_week=?,habitual_start_time=?,location=?,starts_on=?,updated_at=datetime('now','-3 hours') WHERE id=?`)
-        .run(payload.name,payload.description??null,payload.responsible_brother_id??null,payload.active?1:0,payload.service_id??null,payload.habitual_day_of_week??null,payload.habitual_start_time??null,payload.location??null,payload.starts_on??null,id);
+      db.prepare(`UPDATE prayer_groups SET name=?,description=?,responsible_brother_id=?,active=?,habitual_day_of_week=?,habitual_start_time=?,location=?,starts_on=?,updated_at=datetime('now','-3 hours') WHERE id=?`)
+        .run(payload.name,payload.description??null,payload.responsible_brother_id??null,payload.active?1:0,payload.habitual_day_of_week??null,payload.habitual_start_time??null,payload.location??null,payload.starts_on??null,id);
     } else {
-      groupId = Number(db.prepare(`INSERT INTO prayer_groups (name,description,responsible_brother_id,active,created_by,service_id,habitual_day_of_week,habitual_start_time,location,starts_on)
-        VALUES (?,?,?,?,?,?,?,?,?,?)`).run(payload.name,payload.description??null,payload.responsible_brother_id??null,payload.active?1:0,actor.id,payload.service_id??null,payload.habitual_day_of_week??null,payload.habitual_start_time??null,payload.location??null,payload.starts_on??dateToday()).lastInsertRowid);
+      groupId = Number(db.prepare(`INSERT INTO prayer_groups (name,description,responsible_brother_id,active,created_by,habitual_day_of_week,habitual_start_time,location,starts_on)
+        VALUES (?,?,?,?,?,?,?,?,?)`).run(payload.name,payload.description??null,payload.responsible_brother_id??null,payload.active?1:0,actor.id,payload.habitual_day_of_week??null,payload.habitual_start_time??null,payload.location??null,payload.starts_on??dateToday()).lastInsertRowid);
     }
     if (previous?.responsible_brother_id && previous.responsible_brother_id !== payload.responsible_brother_id) {
       writeHistory(previous.responsible_brother_id, actor.id, 'group.responsibility.ended', 'Responsabilidade em grupo de oracao encerrada.', { group_id: groupId });
@@ -210,7 +208,7 @@ function saveGroup(id, payload, actor, req) {
       } else if(schedule) db.prepare('UPDATE prayer_group_schedules SET active=0 WHERE id=?').run(schedule.id);
     }
     db.prepare('INSERT INTO prayer_group_history (group_id,actor_user_id,action,summary,details) VALUES (?,?,?,?,?)')
-      .run(groupId,actor.id,id?'updated':'created',id?'Dados do grupo atualizados.':'Grupo de oracao criado.',JSON.stringify({name:payload.name,service_id:payload.service_id??null,active:payload.active}));
+      .run(groupId,actor.id,id?'updated':'created',id?'Dados do grupo atualizados.':'Grupo de oracao criado.',JSON.stringify({name:payload.name,active:payload.active}));
     writeAudit(req, id ? 'brother.group.update' : 'brother.group.create', groupId, id ? 'Grupo de oracao atualizado.' : 'Grupo de oracao criado.');
     return groupId;
   })();

@@ -5,18 +5,18 @@ import { formatDateTime } from '../utils/formatters'
 
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 const days = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
-const blankGroup = () => ({ name: '', description: '', responsible_brother_id: '', service_id: '', habitual_day_of_week: '', habitual_start_time: '', location: '', starts_on: today(), active: true })
+const blankGroup = () => ({ name: '', description: '', responsible_brother_id: '', habitual_day_of_week: '', habitual_start_time: '', location: '', starts_on: today(), active: true })
 const blankMinistry = () => ({ name: '', description: '', responsible_brother_id: '', active: true })
 const field = 'mission-input mt-1 min-h-11 w-full px-3'
 
-export function PrayerGroupsManager({ user, services, people }) {
+export function PrayerGroupsManager({ user, people }) {
   const canManage = user?.role === 'admin' || user?.roles?.includes('admin') || user?.brother_permissions?.includes('brothers:groups:manage')
   const [groups, setGroups] = useState([])
   const [allGroups, setAllGroups] = useState([])
   const [pastors, setPastors] = useState([])
   const [detail, setDetail] = useState(null)
   const [draft, setDraft] = useState(blankGroup)
-  const [filters, setFilters] = useState({ q: '', service_id: '', responsible_brother_id: '', day_of_week: '', active: 'true' })
+  const [filters, setFilters] = useState({ q: '', responsible_brother_id: '', day_of_week: '', active: 'true' })
   const [membership, setMembership] = useState({ brother_id: '', started_on: today() })
   const [pastor, setPastor] = useState({ brother_id: '', started_on: today() })
   const [transferDraft,setTransferDraft]=useState({membership_id:'',group_id:'',started_on:today()})
@@ -37,7 +37,7 @@ export function PrayerGroupsManager({ user, services, people }) {
   }
   async function save(event) {
     event.preventDefault(); setBusy(true); setMessage('')
-    const payload = { ...draft, responsible_brother_id: draft.responsible_brother_id || null, service_id: draft.service_id || null, habitual_day_of_week: draft.habitual_day_of_week === '' ? null : Number(draft.habitual_day_of_week), habitual_start_time:draft.habitual_start_time||null,starts_on: draft.starts_on || null }
+    const payload = { ...draft, responsible_brother_id: draft.responsible_brother_id || null, habitual_day_of_week: draft.habitual_day_of_week === '' ? null : Number(draft.habitual_day_of_week), habitual_start_time:draft.habitual_start_time||null,starts_on: draft.starts_on || null }
     try {
       const saved = editingId ? await api.updateBrotherGroup(editingId, payload) : await api.createBrotherGroup(payload)
       setEditingId(null); setDraft(blankGroup()); await load(); await openGroup(saved.id)
@@ -77,7 +77,7 @@ export function PrayerGroupsManager({ user, services, people }) {
       <form onSubmit={save} className="mt-3 grid gap-3 sm:grid-cols-2">
         <label className="text-sm">Nome<input required maxLength={120} className={field} value={draft.name} onChange={(event)=>setDraft({...draft,name:event.target.value})}/></label>
         <label className="text-sm">Responsável<select className={field} value={draft.responsible_brother_id} onChange={(event)=>setDraft({...draft,responsible_brother_id:event.target.value})}><option value="">Selecionar responsável</option>{people.map((person)=><option key={person.id} value={person.id}>{person.preferred_name||person.full_name}</option>)}</select></label>
-        <label className="text-sm">Serviço relacionado<select className={field} value={draft.service_id} onChange={(event)=>setDraft({...draft,service_id:event.target.value})}><option value="">Sem serviço relacionado</option>{services.filter((service)=>service.active).map((service)=><option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
+
         <label className="text-sm">Dia habitual<select className={field} value={draft.habitual_day_of_week} onChange={(event)=>setDraft({...draft,habitual_day_of_week:event.target.value})}><option value="">Sem recorrência</option>{days.map((day,index)=><option value={index} key={day}>{day}</option>)}</select></label>
         <label className="text-sm">Horário habitual<input type="time" className={field} value={draft.habitual_start_time} onChange={(event)=>setDraft({...draft,habitual_start_time:event.target.value})}/></label>
         <label className="text-sm">Local<input maxLength={240} className={field} value={draft.location} onChange={(event)=>setDraft({...draft,location:event.target.value})}/></label>
@@ -89,12 +89,11 @@ export function PrayerGroupsManager({ user, services, people }) {
     </details>}
     <div className="grid gap-2 sm:grid-cols-2">
       <input aria-label="Buscar grupo" placeholder="Buscar grupo" className={field} value={filters.q} onChange={(event)=>setFilters({...filters,q:event.target.value})}/>
-      <select aria-label="Filtrar serviço" className={field} value={filters.service_id} onChange={(event)=>setFilters({...filters,service_id:event.target.value})}><option value="">Todos os serviços</option>{services.map((service)=><option key={service.id} value={service.id}>{service.name}</option>)}</select>
       <select aria-label="Filtrar responsável" className={field} value={filters.responsible_brother_id} onChange={(event)=>setFilters({...filters,responsible_brother_id:event.target.value})}><option value="">Todos os responsáveis</option>{people.map((person)=><option key={person.id} value={person.id}>{person.preferred_name||person.full_name}</option>)}</select>
       <div className="grid grid-cols-2 gap-2"><select aria-label="Filtrar dia habitual" className={field} value={filters.day_of_week} onChange={(event)=>setFilters({...filters,day_of_week:event.target.value})}><option value="">Todos os dias</option>{days.map((day,index)=><option key={day} value={index}>{day}</option>)}</select><select aria-label="Filtrar situação" className={field} value={filters.active} onChange={(event)=>setFilters({...filters,active:event.target.value})}><option value="">Todas as situações</option><option value="true">Ativos</option><option value="false">Inativos</option></select></div>
     </div>
     <div className="divide-y divide-line/80 dark:divide-shalom-gold/10">{groups.map((group)=><div key={group.id} className="py-3">
-      <div className="flex items-start gap-3"><UsersRound size={19} className="mt-1 shrink-0 text-shalom-blue dark:text-shalom-gold"/><div className="min-w-0 flex-1"><strong>{group.name}</strong><p className="mission-muted mt-1 text-xs">{group.responsible_name||'Sem responsável'}{group.service_name?` · ${group.service_name}`:''} · {group.member_count} integrantes · {group.active?'Ativo':'Inativo'}</p><p className="mission-muted mt-1 text-xs">{group.habitual_day_of_week!==null&&group.habitual_day_of_week!==undefined?`${days[group.habitual_day_of_week]}${group.habitual_start_time?` às ${group.habitual_start_time}`:''}`:'Sem encontro habitual'}{group.location?` · ${group.location}`:''}</p></div>{canManage&&<button aria-label={`Editar ${group.name}`} className="mission-btn min-h-10 px-3" onClick={()=>{setEditingId(group.id);setDraft({...blankGroup(),...group,habitual_day_of_week:group.habitual_day_of_week??'',habitual_start_time:group.habitual_start_time||'',service_id:group.service_id||'',responsible_brother_id:group.responsible_brother_id||''});window.scrollTo({top:0,behavior:'smooth'})}}>Editar</button>}</div>
+      <div className="flex items-start gap-3"><UsersRound size={19} className="mt-1 shrink-0 text-shalom-blue dark:text-shalom-gold"/><div className="min-w-0 flex-1"><strong>{group.name}</strong><p className="mission-muted mt-1 text-xs">{group.responsible_name||'Sem responsável'} · {group.member_count} integrantes · {group.active?'Ativo':'Inativo'}</p><p className="mission-muted mt-1 text-xs">{group.habitual_day_of_week!==null&&group.habitual_day_of_week!==undefined?`${days[group.habitual_day_of_week]}${group.habitual_start_time?` às ${group.habitual_start_time}`:''}`:'Sem encontro habitual'}{group.location?` · ${group.location}`:''}</p></div>{canManage&&<button aria-label={`Editar ${group.name}`} className="mission-btn min-h-10 px-3" onClick={()=>{setEditingId(group.id);setDraft({...blankGroup(),...group,habitual_day_of_week:group.habitual_day_of_week??'',habitual_start_time:group.habitual_start_time||'',responsible_brother_id:group.responsible_brother_id||''});window.scrollTo({top:0,behavior:'smooth'})}}>Editar</button>}</div>
       <button type="button" className="mt-2 min-h-10 pl-8 text-sm font-semibold text-shalom-blue dark:text-shalom-gold" onClick={()=>openGroup(group.id)}>{detail?.id===group.id?'Atualizar detalhes':'Participantes e histórico'} <ChevronDown size={15} className="inline"/></button>
       {detail?.id===group.id&&<div className="ml-8 mt-2 border-l border-line pl-3 dark:border-shalom-gold/15">
         <h3 className="text-sm font-semibold">Integrantes atuais</h3>{detail.members.filter((member)=>!member.ended_on).map((member)=><div key={member.membership_id} className="flex flex-wrap items-center gap-2 border-b border-line/60 py-2 text-sm dark:border-shalom-gold/10"><span className="mr-auto">{member.preferred_name||member.full_name}</span>{canManage&&<><button className="min-h-9 px-2 text-xs text-shalom-blue dark:text-shalom-gold" onClick={()=>transferMember(member)}>Transferir</button><button className="min-h-9 px-2 text-xs text-shalom-wine" onClick={()=>removeMember(member)}>Remover</button></>}</div>)}

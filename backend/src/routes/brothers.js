@@ -31,7 +31,7 @@ const brotherSchema = z.object({
 const brotherUpdateSchema = brotherSchema.partial().refine((payload) => Object.keys(payload).length > 0, 'Informe ao menos um campo.');
 const groupSchema = z.object({
   name: z.string().trim().min(2).max(120), description: nullableText(1000),
-  responsible_brother_id: optionalId, service_id: optionalId,
+  responsible_brother_id: optionalId,
   habitual_day_of_week: z.coerce.number().int().min(0).max(6).nullable().optional(),
   habitual_start_time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable().optional(),
   location: nullableText(240), starts_on: date, active: z.boolean().default(true)
@@ -94,7 +94,7 @@ router.get('/people', requireAnyBrotherPermission('brothers:read', 'brothers:gro
 });
 
 router.get('/groups', requireAnyBrotherPermission('brothers:read', 'brothers:groups:manage'), (req, res) => {
-  return res.json(listGroups({service_id:req.query.service_id,responsible_brother_id:req.query.responsible_brother_id,day_of_week:req.query.day_of_week,active:req.query.active,q:String(req.query.q||'')}));
+  return res.json(listGroups({responsible_brother_id:req.query.responsible_brother_id,day_of_week:req.query.day_of_week,active:req.query.active,q:String(req.query.q||'')}));
 });
 
 router.get('/groups/:groupId', requireAnyBrotherPermission('brothers:read','brothers:groups:manage'), (req,res)=>res.json(getPrayerGroup(Number(req.params.groupId))));

@@ -10,7 +10,7 @@ Adicionar o perfil tecnico `brothers`, que abre somente o modulo. Administradore
 
 Persistir a hierarquia pastoral e seus historicos, produzir o organograma em consulta dinamica e limitar a arvore pelo usuario autenticado e suas ligacoes pastorais. Servicos e ministerios sao entidades independentes e podem definir arvores organizacionais diferentes com nos hierarquicos configuraveis; nos e integrantes guardam situacao e datas de vinculo.
 
-Tratar grupos de oracao como comunidades com cadastro proprio, integrantes e pastores vinculados separadamente, servico relacionado e agenda habitual. Participacoes em grupos nao substituem vinculos pastorais. Transferencias encerram o vinculo anterior e preservam o historico.
+Tratar grupos de oracao como comunidades independentes, com cadastro proprio, integrantes e pastores vinculados separadamente e agenda habitual, sem vinculo com servicos ou ministerios. Participacoes em grupos nao substituem vinculos pastorais. Transferencias encerram o vinculo anterior e preservam o historico.
 
 Guardar eventos comunitarios em tabelas proprias com visibilidade, participantes e referencias opcionais a servico ou grupo. Compromissos pessoais sao eventos privados do proprio usuario. Expandir recorrencias semanais para o intervalo requisitado, guardando excecoes por data para que ajustes nao reescrevam a serie.
 

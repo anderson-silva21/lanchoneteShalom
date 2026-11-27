@@ -507,6 +507,7 @@ function ensureBrothersSchema() {
   addColumnIfMissing('community_event_occurrences', 'moved_to_date', 'TEXT');
   addColumnIfMissing('prayer_group_occurrences', 'moved_to_date', 'TEXT');
   addColumnIfMissing('prayer_groups', 'service_id', 'INTEGER REFERENCES ministries(id) ON DELETE SET NULL');
+  db.exec('UPDATE prayer_groups SET service_id = NULL WHERE service_id IS NOT NULL');
   addColumnIfMissing('prayer_groups', 'habitual_day_of_week', 'INTEGER');
   addColumnIfMissing('prayer_groups', 'habitual_start_time', 'TEXT');
   addColumnIfMissing('prayer_groups', 'location', 'TEXT');

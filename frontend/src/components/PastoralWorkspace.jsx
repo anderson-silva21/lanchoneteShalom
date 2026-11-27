@@ -347,7 +347,7 @@ export function PastoralWorkspace({ user }) {
 
     {section==='ministries'&&<ServicesManager user={user} people={people}/>}
 
-    {section==='groups'&&<PrayerGroupsManager user={user} services={ministries} people={people}/>}
+    {section==='groups'&&<PrayerGroupsManager user={user} people={people}/>}
 
     {section==='org'&&<OrgChart tree={tree} people={people} user={user} refresh={reloadTree}/>}
 
